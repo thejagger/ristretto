@@ -88,3 +88,31 @@ its verbatim-open-findings requirement) and `commands/brew.md`'s verdict step ("
 open after round 3 → commit it as `needs-review`. Never `git restore`.").
 
 Source: `commands/brew.md:175`.
+
+## The nine deleted table tests
+
+A ticket whose acceptance list described a table — nine columns in this order, twenty rows
+a page, the filter label in its own row above it, a header prefix per column, the link
+frozen to the right edge, no sort control — produced a test per line. Every one passed,
+none could ever catch a defect, and adding a tenth column would turn four of them red.
+Reviewed afterwards by hand, thirteen tests came out as nine deletions and four merges;
+what survived was the data (values found by label), the request the paging control sends,
+the status variants, and the link's href. What died was order, position, styling, static
+labels, a fixture asserted against another fixture, and a one-time migration check.
+
+The rule already in place — *a `Decisions:` ruling is never an assertion* — did not catch
+any of it, because these lines were not rulings smuggled into `Acceptance:`. They were
+ordinary acceptance criteria, checkable, and visible to a user, which is what the old test
+("who can see it") asked. A user can see the column order. That is why the question had to
+change.
+
+**Rule produced:** ask what a red run would mean before writing the test. If the only
+answer is *someone changed the design on purpose*, it is a change detector, not a test —
+it binds the code and is checked by reading, like a ruling. Find a value by its label or
+key, never by its position; leave a shared component's rendering to that component's own
+tests; and anything that can only be false until the diff lands (a migration that ran, a
+fixture matching a fixture) is proven by the diff, not by a permanent test.
+
+**Where it lives now:** `briefs/common.md`'s Tests section, `commands/prep.md`'s criterion
+rules (where such a line is written into `Decisions:` instead of `Acceptance:`), and the
+reviewer's `lean` bucket.
