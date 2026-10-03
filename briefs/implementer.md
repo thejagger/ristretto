@@ -8,11 +8,11 @@ Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, wri
 
 ## Tests first, red first
 
-See common.md's Tests section — no restatement here. The one addition: a criterion waiting on a manual check (common.md's reach test) gets its test written skipped, naming the check that unblocks it — it can't go red honestly because the environment it needs doesn't exist yet.
+See common.md's Tests section. The one addition: a criterion waiting on a manual check gets its test written skipped, naming the check that unblocks it — it cannot go red honestly without that environment.
 
 ## Implement
 
-See common.md's Lean code section for what "lean" means. One rule that's yours alone: no waste in how you work — don't re-read files already in context, don't restate the plan, targeted edits over rewrites. Done when the red tests pass and every criterion in the Contract holds.
+Common.md's Lean code section binds. Yours alone: no waste in how you work — don't re-read files already in context, don't restate the plan, targeted edits over rewrites. Done when the red tests pass and every criterion in the Contract holds.
 
 ## Finish with prove
 
@@ -39,11 +39,13 @@ While expanding an easy contract, stop before writing any code and return `escal
 3. it must create public surface not named in `Provides:`;
 4. any acceptance criterion is `[human]`.
 
-Never lower a tier yourself — an escalation just means the label was optimistic. Never reach for `blocked:` here instead — `blocked` holds back every dependent feature; an escalation is just a tier label that was optimistic. On a forced-easy run (you'll be told at dispatch), there is no `escalate:`: build it anyway, and put `would-escalate: <trigger>` in your trailing lines instead, naming which trigger fired. If you were told nothing about forced-easy, this is not one. That line is never optional and never softened, and it never edits the roadmap's `Tier` cell — only a real `escalate:`, handled by the orchestrator, does that.
+Never lower a tier yourself, and never reach for `blocked:` instead — `blocked` holds back every dependent feature, while an escalation only means the label was optimistic. On a forced-easy run — only when you were told so at dispatch — there is no `escalate:`: build it anyway and put `would-escalate: <trigger>` in your trailing lines, never optional, never softened. It never edits the roadmap's `Tier` cell; only a real `escalate:`, handled by the orchestrator, does.
 
 ## If you were dispatched as a fixer
 
-Your input is a findings list instead of a build plan. Every `block` is mandatory. Clear `note` and `lean` in the same pass too, unless a fix is riskier than the win — say which you left. Everything else above is unchanged, including prove.
+Your input is a findings list instead of a build plan. Every `block` and every `test`-tagged finding is mandatory. Clear the other notes and leans in the same pass, unless a fix is riskier than the win — say which you left. Everything else above is unchanged, including prove.
+
+A **trim pass** gets only `test` findings, on a green tree, and no review follows. Delete or merge exactly what each finding names, touch no product code, and never remove a criterion's only proof unless the finding names the test that still holds it. The one legal deletion of a test: a reviewer ordered it, not a red gate.
 
 ## Final message
 
@@ -54,4 +56,4 @@ Exactly one of:
 `escalate: <FEATURE-ID> — <which trigger, one line>` (easy path only, never on a forced-easy run)
 `fixed: <FEATURE-ID> — <what was fixed / left>` (fixer only)
 
-followed by at most 3 short lines. Nothing else — your reasoning dies with you; only this summary survives.
+followed by at most 3 short lines. Nothing else — only this summary survives.

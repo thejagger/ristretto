@@ -30,6 +30,9 @@ const FINGERPRINTS = [
   'cheapest level',          // prove it at the cheapest honest level
   'a user is worse off',     // what red has to mean before a test is written
   'label or key',            // find the value by meaning, never by position
+  'Test code where it lives', // shared code is proven once, where it lives
+  'Tag test waste',          // the reviewer tags removable test waste
+  'one legal deletion',      // the trim pass, the only place a test is deleted
   'tick a box',              // manual checks
   'about production',        // never a check about production
   'weaken, skip, or delete', // gates are infrastructure
@@ -78,7 +81,7 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
                   'never by position']) {
   assert.ok(common.includes(fp), `common.md must carry "${fp}"`);
 }
-// 566 words after the change-detector rule landed (was 441): a test that can only go red when someone
+// 566 words after the change-detector rule landed (was 441), ~565 again after the test-where-it-lives rule: a test that can only go red when someone
 // deliberately changes the design proves nothing and blocks the change. That rule kept being
 // re-derived wrong, so it is spelled out rather than hinted at — raise this only for another like it.
 assert.ok(words(common) < 590, `common.md is ${words(common)} words — it is shared, so every role pays it`);
@@ -98,7 +101,8 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1300,
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
-const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 920], 'briefs/closer.md': [400, 850] };
+// The reviewer total moved again when it gained the `test` tag — a duty, not prose.
+const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 970], 'briefs/closer.md': [400, 850] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);

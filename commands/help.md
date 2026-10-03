@@ -69,8 +69,13 @@ HOUSE RULES
     criterion an existing test already covers is cited, not re-tested. red has
     to mean a user is worse off: an assertion only a deliberate design change
     could turn red — a column order, a label, a style, a ruling — detects a
-    change, not a defect, and binds the code by being read instead. the suite
-    is charged to every later feature at every stop.
+    change, not a defect, and binds the code by being read instead. a test
+    belongs to the code that can break: shared logic is proven once where it
+    lives, and a sibling screen gets one wiring test, not a renamed copy. the
+    suite is charged to every later feature at every stop.
+  • test waste is removed, not recorded — the reviewer tags it "test", and a
+    trim pass deletes or merges exactly what it names before the commit, on a
+    green tree, with no extra review round. the closer counts it "trimmed".
   • deterministic gates — while implementing, a Stop hook runs your repo's
     lint + typecheck + test (.ristretto.json) and blocks until green.
     enforced, not self-reported. evidence is recorded, not claimed.

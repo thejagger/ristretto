@@ -105,7 +105,7 @@ While an eligible feature exists:
      > Build plan: `.ristretto/build/<FEATURE-ID>.md`
      > Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
 3. **Act on the implementer's result.**
-   - `blocked: <reason>` → row `blocked`, next feature — the implementer never writes the roadmap, that's yours.
+   - `blocked: <reason>` → row `blocked`, next feature; the roadmap is yours, never the implementer's.
    - `escalate: <trigger>` (easy only, never forced-easy) → dispatch the planner (above), then a fresh implementer off its plan, cheap model; closer flips `Tier` to `normal` and records `escalated from easy: <trigger>`.
    - `ready:` or `needs-human:` → review.
 4. **Review**, unless the diff is trivial (< 15 lines, no new logic) — capable model:
@@ -113,18 +113,18 @@ While an eligible feature exists:
    > Diff: <files touched / branch vs merge-base>
    > Read `${CLAUDE_PLUGIN_ROOT}/briefs/reviewer.md` and follow it.
 5. **Act on the verdict — capped at 3 rounds:**
-   - `review: clean` or `review: notes-only` → closer, status `done`, notes/leans copied verbatim into `## Open findings`.
+   - `review: clean` or `review: notes-only` → closer, status `done`, notes/leans copied verbatim into `## Open findings`. `test`-tagged findings first get a **trim pass**: the fixer below, given only those; no review after.
    - `review: blocking (n)` → a fixer, cheap model:
      > IMPLEMENTER for ristretto feature **<FEATURE-ID>** — fixer.
      > Findings: <the reviewer's block/note/lean list, verbatim>
      > Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
 
-     A fixer `blocked: <reason>` is handled like an implementer's — row `blocked`, next feature — unless it turns on a decision the plan never made, covered by `decision taken:` below. Otherwise a fresh reviewer, round 2, scoped as in `pull`: round-1 blocks plus any new block in files the fixer touched — elsewhere reported, not a new round; no new notes/leans. Clean → closer, `done`, `review: resolved`.
-   - **Round 3**, if blocks remain: a fresh implementer one model tier up, given the plan, the open findings, the diff, and which criterion has failed review twice — never the failed diffs, which would anchor it to a bad approach. If the findings turn on a decision the plan never made, take the recommended reading, implement it, record `decision taken: <question> → <ruling> — not in the contract`, carried into the result line. One final scoped re-review; clean → `done` · `review: resolved`.
-   - **Still open after round 3** → closer, status `needs-review`, findings copied verbatim. Never `git restore` — `gate.js state` first: PROVEN GREEN means finished work, an open opinion, not a failure. `needs-review` satisfies `Depends:`, downstream features keep brewing; name every feature built on that foundation in the report.
-6. **Dispatch the closer**, cheap model, told the status and the verdict fields `closer.md`'s Evidence line needs — you tracked them, the closer never guesses:
+     A fixer's `blocked:` is handled like an implementer's, unless it turns on a decision the plan never made — see `decision taken:` below. Otherwise a fresh reviewer, round 2, scoped as in `pull`: round-1 blocks plus any new block in files the fixer touched — elsewhere reported, not a new round; no new notes/leans. Clean → closer, `done`, `review: resolved`.
+   - **Round 3**, if blocks remain: a fresh implementer one model tier up, given the plan, the open findings, the diff, and which criterion has failed review twice — never the failed diffs, which anchor it. If the findings turn on a decision the plan never made, take the recommended reading, implement it, record `decision taken: <question> → <ruling> — not in the contract`, carried into the result line. One final scoped re-review; clean → `done` · `review: resolved`.
+   - **Still open after round 3** → closer, status `needs-review`, findings copied verbatim. Never `git restore` — `gate.js state` first: PROVEN GREEN means finished work, an open opinion, not a failure. Downstream features keep brewing; name every one built on that foundation in the report.
+6. **Dispatch the closer**, cheap model, told the status and the verdict fields its Evidence line needs — you tracked them; it never guesses:
    > CLOSER for ristretto feature **<FEATURE-ID>** — close **<done | needs-human | needs-review>**.
-   > Record: review <clean | notes-only | resolved | needs-review> · rounds <n> · open <b> block, <n> note, <l> lean; <open findings / decision taken: / would-escalate: / escalated from easy:, as applicable>
+   > Record: review <clean | notes-only | resolved | needs-review> · rounds <n> · open <b> block, <n> note, <l> lean · trimmed <t>; <open findings / decision taken: / would-escalate: / escalated from easy:, as applicable>
    > Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it.
 7. **Record the result, print nothing else.** `☕ <FEATURE-ID> brewed (n/m)`, `🔧 <FEATURE-ID> brewed, needs a human check — <check> (n/m)`, `👀 <FEATURE-ID> brewed, needs review — <count> finding(s) open (n/m)`, or `⛔ <FEATURE-ID> blocked — <reason> (n/m)`. `n` is features finished in any terminal state, up by one each line; `m` is every `planned` row when the loop started, fixed. A round-3 decision adds `· decision taken: <ruling>`. **That line, a blocker, and the final report are the whole of what the main chat gets** — nothing about which subagent runs or which round.
 8. **Hygiene.** `git status --short` must be clean before the next feature starts — dirty means a subagent died mid-work; handle it via "When a subagent dies" below (`gate.js state` before any restore), then delete any leftover `.ristretto/build/<FEATURE-ID>.md` for a row that blocked.

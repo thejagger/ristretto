@@ -19,9 +19,10 @@ The suite is a shared cost, paid again at every stop, by every feature, for the 
 - **Red first**: write the test, run it, confirm it fails before implementing. A test that passes before implementation proves nothing.
 - **One test per criterion**, unless the criterion has genuinely independent cases.
 - **Prove it at the cheapest level that is still honest** — a pure function over a component, a component over an HTTP request, over a browser — and say which criterion forced you lower.
-- **Reuse before writing**: cite an existing test that already covers the criterion instead of adding one. A criterion already enforced repo-wide earns zero tests, and saying so is a complete proof, not a gap.
-- **Red must mean a user is worse off** — a wrong value, a lost record, a dead link, an unhandled error. Say what red would mean before writing it. If the only answer is *someone changed the design on purpose* — a column order, a label's wording, a class or a style, the arrangement or count of chrome, a fixture matching a fixture, a migration that already ran — it is a change detector, not a test. Like a `Decisions:` ruling, it binds the code and is checked by reading, never asserted. Order that *is* the product, results sorted newest first, is behaviour and earns its test.
-- **Find it by its label or key, never by position**: a test a reorder turns red was pinning the order. Leave a shared component's own rendering to that component's own tests — assert what you pass it and what you do with what it gives back.
+- **Reuse before writing**: cite an existing test that covers the criterion instead of adding one. A criterion enforced repo-wide earns zero tests, and saying so is a complete proof.
+- **Red must mean a user is worse off** — a wrong value, a lost record, a dead link, an unhandled error. If red could only mean *someone changed the design on purpose* — a column order, a label's wording, a style, the arrangement of chrome, a fixture matching a fixture, a migration that already ran — it is a change detector: like a `Decisions:` ruling, it binds the code and is read, never asserted. Sorting that works earns its test; the default sort is a ruling.
+- **Test code where it lives, once**: shared code — a component, a service, a helper — is proven in its own test; each screen using it earns one wiring test plus tests for what it does differently. A spec copied from a sibling means the logic was copied too; the copy is the finding.
+- **Find it by its label or key, never by position**: a test a reorder turns red was pinning the order.
 
 ## Lean code
 

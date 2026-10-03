@@ -11,7 +11,7 @@ Stage only what you touched — never `git add -A`. `feat(<FEATURE-ID>): <summar
 Correct `Provides:` to what was built — a drifted `Provides:` poisons every dependent feature, since the archived plan is what the next planner reads as fact. Append `## Evidence`: proof, gate summary, and these two lines verbatim:
 
 ```
-review: <clean | notes-only | resolved | needs-review> · rounds: <n> · open: <b> block, <n> note, <l> lean
+review: <clean | notes-only | resolved | needs-review> · rounds: <n> · open: <b> block, <n> note, <l> lean · trimmed: <t>
 tier: <normal | easy | easy (forced)>[ · escalated from easy: <trigger>]
 ```
 

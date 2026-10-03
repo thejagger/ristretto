@@ -116,3 +116,38 @@ fixture matching a fixture) is proven by the diff, not by a permanent test.
 **Where it lives now:** `briefs/common.md`'s Tests section, `commands/prep.md`'s criterion
 rules (where such a line is written into `Decisions:` instead of `Acceptance:`), and the
 reviewer's `lean` bucket.
+
+## The copies that came after
+
+Two weeks after the change-detector rule, the column-order tests were gone and the suite was
+growing anyway. In one repo, one ticket wrote the same fourteen save-and-lock tests into three
+sibling detail screens, and four list screens each carried their own copy of the client-switch
+reload with its own 160–330-line spec — two of them identical but for twelve lines. The spec
+copies came from code copies: every list component had its own `reloadOnClientSwitch` effect.
+And the code copies came from prep, whose contract said "the two screens stay separate
+siblings" and "same guarantees as DGS-162, re-asserted on this screen" — never separating a
+shared component from shared logic.
+
+The reviewer had seen it. DGS-151's review filed "the same fail path tested six times across
+three suites" as a `lean`, and a `lean` never costs a round, so it went into `## Open findings`
+and shipped with the rest.
+
+**Rules produced:** test code where it lives, once — shared code in its own test, one wiring
+test per consumer, and prep rules on where repeated logic lives before it orders a test (one
+function both screens call is the default; re-point only the sibling being copied). And test
+waste is removed rather than recorded: the reviewer tags it `test` only when the fix is a
+deletion or a merge into a test it names, and a trim pass applies those on the green tree
+before the commit, with no review round after it. The closer records `trimmed: <t>`.
+
+**Where they live now:** `briefs/common.md` (test code where it lives), `commands/prep.md`
+(the sibling decision), `briefs/reviewer.md` (the tag), `briefs/implementer.md` (the trim
+pass), the three flows (routing tagged findings to it), `briefs/closer.md` (the count).
+
+**Replayed against ui-angs before landing:** a prep replay of DGS-163 under the new rules lifted
+the client-switch and failed-load logic into one shared helper, cited the sibling's existing
+tests, and ordered one component spec with five new tests where the original had four spec
+files. A reviewer replay of DGS-151 tagged four findings `test`, covering 22 test blocks, each
+naming the test that still proves the case, and left the one fix that needs new test code
+untagged. A trim pass on a cheap model, given only those four findings, applied all of them:
+22 test blocks removed or merged and 278 spec lines deleted. The user specs went from 95 tests to 71, and
+`prove` passed on the full suite with only the four failures the repo baseline already tolerated.

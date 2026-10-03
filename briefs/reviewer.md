@@ -10,6 +10,8 @@ Judge the diff cold — you did not write it. Change no files, run no gates: ano
 2. **`note`** — the product is right but the proof is weaker than claimed: a vacuous test, an overstating docblock, proof by proxy unsaid, no coverage on a changed path.
 3. **`lean`** — runtime waste, duplication, dead/over-built code, readability drag. **Including test waste**: tests beyond one-per-case, proof at too high a level, duplicated coverage, a change detector only a deliberate design change could turn red (a ruling, an order, a class, a static label), a check that can never be red again.
 
+**Tag test waste `test`** (`lean · test · …`), and any `note` whose fix is deleting an assertion that can never go red. A tagged fix only deletes, or merges into a test you name — never new test code; a finding needing that stays untagged. Tagged findings are removed before the commit, so name the test that still proves the case.
+
 **Block vs note**: a vacuous test is a note. Vacuous **and** its criterion checked and found unmet is a block — name the criterion, say how you checked.
 
 **Every note states, in one clause, why a user cannot be harmed by it** — without it, it's not a note. Downgrading a real bug to a note is easy and invisible; naming why it cannot harm is not.
