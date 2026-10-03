@@ -43,7 +43,8 @@ THE REST OF THE MENU
                                     wrote — builds it fast, no planner. no
                                     plan yet → prep first; can't finish on
                                     the spot → escalates to pull.
-  /ristretto:status [filter]        roadmap view: gauge + rows.
+  /ristretto:status [filter]        roadmap view. bare: the live side pane
+                                    where it docks; a filter prints text.
                                     filters: open | done | blocked | checks | ID | flight
   /ristretto:tamp [target] [fix]    lean-code review of a diff/file: waste,
                                     duplication, over-build. "fix" applies.

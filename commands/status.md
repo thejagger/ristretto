@@ -1,5 +1,5 @@
 ---
-description: Print the project roadmap — a read-only view of what's planned, in progress, and done. Changes nothing.
+description: Shows the project roadmap — as a live side pane where ristretto's mod can dock one, as text with a filter. Changes nothing.
 argument-hint: '[optional filter: "open", "done", "blocked", "checks", "review", "easy", a flight slug, or a feature ID]'
 ---
 
