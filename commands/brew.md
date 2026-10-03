@@ -1,6 +1,6 @@
 ---
 description: Builds every open feature in sequence, unattended.
-argument-hint: [easy]
+argument-hint: "[easy]"
 ---
 
 You are running **BREW** — an autonomous loop over the roadmap. The user batch-planned with `prep`; judgment is front-loaded into the plans. You make **zero product decisions**: acceptance criteria define "done", the gates decide when a feature may close, and anything undecidable becomes `blocked` — never a guess.
