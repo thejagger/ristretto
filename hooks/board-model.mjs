@@ -1,6 +1,8 @@
 // Pure logic of the roadmap board: no $, no Node, no DOM — hooks/board.tsx feeds it what the
 // session did and draws what it returns. Tested by scripts/board-model.test.js.
 
+import { parsePlan } from './board-plan.mjs';
+
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
 export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null };
@@ -48,7 +50,7 @@ export function parseRoadmap(text) {
 
   const head = cells(lines[at]).map((c) => c.toLowerCase());
   const col = (...names) => head.findIndex((h) => names.includes(h));
-  const [iFlight, iId, iTitle, iTier, iStatus, iPlan] = [col('flight'), col('feature', 'id'), col('title'), col('tier'), col('status'), col('plan')];
+  const [iFlight, iId, iTitle, iTier, iStatus, iPlan, iCommit] = [col('flight'), col('feature', 'id'), col('title'), col('tier'), col('status'), col('plan'), col('commit')];
 
   const rows = [];
   let end = lines.length;
@@ -63,6 +65,7 @@ export function parseRoadmap(text) {
       title: iTitle < 0 ? '' : row[iTitle] || '',
       tier: iTier >= 0 && /^easy\b/.test(row[iTier] || '') ? 'easy' : 'normal',
       plan: planOf(iPlan < 0 ? '' : row[iPlan] || ''),
+      commit: iCommit < 0 ? '' : (row[iCommit] || '').replace(/`/g, '').replace(/^[—–-]$/, '').trim(),
       ...statusOf(iStatus < 0 ? '' : row[iStatus] || ''),
     });
   }
@@ -90,13 +93,7 @@ function planOf(cell) {
 // A plan's first blocker, from its `- Blockers:` line: the inline text, or the first item
 // under it. `—` is none.
 export function blockerOf(plan) {
-  const lines = plan.split(/\r?\n/);
-  const at = lines.findIndex((line) => /^\s*-\s+Blockers:/.test(line));
-  if (at < 0) return null;
-  const inline = lines[at].replace(/^\s*-\s+Blockers:\s*/, '').trim();
-  if (inline) return /^[—–-]$/.test(inline) ? null : inline;
-  const item = /^\s+-\s+(.+?)\s*$/.exec(lines[at + 1] || '');
-  return item ? item[1] : null;
+  return parsePlan(plan).blockers[0] ?? null;
 }
 
 const BRIEF = /^\s*(?:>\s*)?(PLANNER|IMPLEMENTER|REVIEWER|CLOSER) for ristretto feature \*\*([^*]+)\*\*([^\n]*)/;

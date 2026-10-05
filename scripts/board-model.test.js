@@ -50,6 +50,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(r.rows[2].tier, 'easy');
     assert.strictEqual(r.rows[2].title, 'Galerie | Alben', 'an escaped pipe stays in the title');
     assert.strictEqual(r.rows[3].reason, 'no source for Ferienplan');
+    assert.deepStrictEqual(r.rows.map((x) => x.commit), ['713a2d6', '', '', ''], 'the Commit column, backticks dropped');
 
     // CRLF must parse exactly like LF — Windows checkouts write it.
     assert.deepStrictEqual(m.parseRoadmap(current.replace(/\n/g, '\r\n')), r, 'CRLF parses like LF');
