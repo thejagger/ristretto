@@ -238,29 +238,33 @@ function iconSvg(status: string) {
 const CUP = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path d="M6.5 1.8c-.9 1 .9 1.8 0 2.9M9.5 1.8c-.9 1 .9 1.8 0 2.9M12.5 1.8c-.9 1 .9 1.8 0 2.9" fill="none" stroke="${HUE.inactive}" stroke-width="1.2" stroke-linecap="round"/><path d="M3 7h12v5.5a4.5 4.5 0 0 1-4.5 4.5h-3A4.5 4.5 0 0 1 3 12.5z" fill="${HUE.claude}"/><path d="M15 8.5h1.3a2.2 2.2 0 0 1 0 4.4H15" fill="none" stroke="${HUE.claude}" stroke-width="1.6"/><rect x="2" y="17.6" width="14" height="1.4" rx=".7" fill="${HUE.claude}" fill-opacity=".55"/></svg>`
 
 // The run's steps as a tracker: dots on a line, done green with a tick, the current one in
-// Claude's accent with a ring, the rest hollow; each labelled underneath.
-function trackerSvg(steps: { label: string; state: string }[]) {
-  const gap = 84
-  const width = 16 + gap * (steps.length - 1) + 60
-  const x = (i: number) => 14 + i * gap
+// Claude's accent with a ring, the rest hollow; each labelled underneath. A step is drawn at a
+// fixed size and only the lines between steps stretch, so a wide pane spreads the steps out
+// instead of scaling them up. A step carries the stubs of its lines up to its edges.
+const STEP = 72
+const trackLine = (done: boolean, x1: number, x2: number) =>
+  `<rect x="${x1}" y="8" width="${Math.max(0, x2 - x1)}" height="2" fill="${done ? HUE.success : HUE.inactive}" fill-opacity="${done ? 1 : 0.4}"/>`
+function stepSvg(st: { label: string; state: string }, into: boolean | null, out: boolean | null) {
+  const c = STEP / 2
   const parts: string[] = []
-  for (let i = 0; i < steps.length - 1; i++) {
-    const done = steps[i + 1].state !== 'todo'
-    parts.push(`<line x1="${x(i) + 7}" y1="9" x2="${x(i + 1) - 7}" y2="9" stroke="${done ? HUE.success : HUE.inactive}" stroke-opacity="${done ? 1 : 0.4}" stroke-width="2"/>`)
+  if (into !== null) parts.push(trackLine(into, 0, c - 6))
+  if (out !== null) parts.push(trackLine(out, c + 6, STEP))
+  if (st.state === 'done') {
+    parts.push(`<circle cx="${c}" cy="9" r="6" fill="${HUE.success}"/><path d="M${c - 3} 9.2l2 2 4-4.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`)
+  } else if (st.state === 'current') {
+    parts.push(`<circle cx="${c}" cy="9" r="8" fill="${HUE.claude}" fill-opacity="0.25"/><circle cx="${c}" cy="9" r="5" fill="${HUE.claude}"/>`)
+  } else {
+    parts.push(`<circle cx="${c}" cy="9" r="5" fill="none" stroke="${HUE.inactive}" stroke-width="1.5"/>`)
   }
-  steps.forEach((st, i) => {
-    if (st.state === 'done') {
-      parts.push(`<circle cx="${x(i)}" cy="9" r="6" fill="${HUE.success}"/><path d="M${x(i) - 3} 9.2l2 2 4-4.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`)
-    } else if (st.state === 'current') {
-      parts.push(`<circle cx="${x(i)}" cy="9" r="8" fill="${HUE.claude}" fill-opacity="0.25"/><circle cx="${x(i)}" cy="9" r="5" fill="${HUE.claude}"/>`)
-    } else {
-      parts.push(`<circle cx="${x(i)}" cy="9" r="5" fill="none" stroke="${HUE.inactive}" stroke-width="1.5"/>`)
-    }
-    const hue = st.state === 'done' ? HUE.success : st.state === 'current' ? HUE.claude : HUE.inactive
-    const weight = st.state === 'current' ? 600 : 400
-    parts.push(`<text x="${x(i)}" y="32" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="${weight}" fill="${hue}">${st.label}</text>`)
-  })
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="38" viewBox="0 0 ${width} 38">${parts.join('')}</svg>`
+  const hue = st.state === 'done' ? HUE.success : st.state === 'current' ? HUE.claude : HUE.inactive
+  const weight = st.state === 'current' ? 600 : 400
+  parts.push(`<text x="${c}" y="32" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="${weight}" fill="${hue}">${st.label}</text>`)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${STEP}" height="38" viewBox="0 0 ${STEP} 38">${parts.join('')}</svg>`
+}
+
+// The stretch of line between two steps: as wide as the pane leaves it, never taller.
+function lineSvg(done: boolean) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="18" viewBox="0 0 1000 18" preserveAspectRatio="none">${trackLine(done, 0, 1000)}</svg>`
 }
 
 function isRoadmap(path: unknown) {
@@ -587,7 +591,28 @@ export const register: Register = on => {
                 </Box>
                 <Text dimColor wrap="truncate-end">{v.now.detail}</Text>
                 {rich ? (
-                  <Svg alt={v.now.steps.map((s: any) => `${s.label}: ${s.state}`).join(', ')} source={trackerSvg(v.now.steps)} />
+                  <Box flexDirection="row" alignItems="flex-start">
+                    {v.now.steps.flatMap((s: any, i: number, all: any[]) => {
+                      const reached = (j: number) => all[j].state !== 'todo'
+                      const step = (
+                        <Svg
+                          key={`step-${i}`}
+                          alt={`${s.label}: ${s.state}`}
+                          width={STEP}
+                          height={38}
+                          source={stepSvg(s, i > 0 ? reached(i) : null, i < all.length - 1 ? reached(i + 1) : null)}
+                        />
+                      )
+                      return i === 0
+                        ? [step]
+                        : [
+                            <Box key={`line-${i}`} flexDirection="column" flexGrow={1} flexShrink={1}>
+                              <Svg alt="" height={18} source={lineSvg(reached(i))} />
+                            </Box>,
+                            step,
+                          ]
+                    })}
+                  </Box>
                 ) : (
                 <Box flexDirection="row" gap={2}>
                   {v.now.steps.map((s: any) => (
