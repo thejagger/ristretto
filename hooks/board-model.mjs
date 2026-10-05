@@ -6,7 +6,7 @@ import { trend } from './board-runs.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
-export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null };
+export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null, plans: {}, checks: {} };
 
 // A table line's cells, `\|` kept as a literal pipe inside its cell. No lookbehind: the hooks
 // engine's runtime is not Node, and a regex it cannot compile would keep the module from loading.

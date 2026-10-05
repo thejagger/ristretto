@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardLive } from '../types'
-import { EMPTY_BOARD, bar, blockerOf, docks, fold, markerState, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import type { Board, BoardLive, BoardPlan, BoardRecord, BoardRun } from '../types'
+import { EMPTY_BOARD, bar, docks, fold, markerState, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { parseChecks, parsePlan } from './board-plan.mjs'
+import { addGate, addTokens, endRun, keep, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md and of the run this session
 // is doing, plus buttons that start pull/shot/brew the way typing them would. It observes and
@@ -10,6 +12,7 @@ import { EMPTY_BOARD, bar, blockerOf, docks, fold, markerState, parseBrief, pars
 
 const PANE = 'ristretto-board'
 const ROADMAP = 'docs/ristretto/roadmap.md'
+const CHECKS = 'docs/ristretto/manual-checks.md'
 const MARKER = '.ristretto/pulling'
 
 const board = atom({ plugin: 'ristretto', key: 'board' } as const, EMPTY_BOARD as Board)
@@ -17,12 +20,16 @@ const live = atom({ plugin: 'ristretto', key: 'live' } as const, null as BoardLi
 const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false)
 const showDone = atom({ plugin: 'ristretto', key: 'showDone' } as const, false)
 const tick = atom({ plugin: 'ristretto', key: 'tick' } as const, 0)
+const openRow = atom({ plugin: 'ristretto', key: 'open' } as const, null as string | null)
+const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
+const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
 let roadmapMtime = -1
 let hasRoadmap = false
 let autoOpened = false
 let docked = false
 let timers: { cancel: () => void }[] = []
+let storeKey = ''
 
 // Unasked, the pane opens once, and only where it docks beside the transcript; on the
 // terminal's main screen it would land inline, so there /ristretto:status prints it as text.
@@ -44,14 +51,25 @@ async function refreshBoard($: EngineInterface) {
     }
     const mtime = (await $.fs.stat(ROADMAP)).mtimeMs
     const parsed = parseRoadmap(String(await $.fs.read(ROADMAP)))
-    // A blocked row with no reason in the roadmap says why from its plan's Blockers.
+    // What each open plan says, plus the opened row's plan whatever its status; and the
+    // manual checks. A plan that cannot be read is simply absent. A blocked row with no
+    // reason in the roadmap says why from its plan's Blockers.
+    const opened = await read($, openRow)
+    const plans: Record<string, BoardPlan> = {}
     for (const row of parsed.rows) {
-      if (row.status !== 'blocked' || row.reason || !row.plan) continue
+      if (!row.plan || (row.status === 'done' && row.id !== opened)) continue
       try {
-        row.reason = blockerOf(String(await $.fs.read(`docs/ristretto/${row.plan}`))) ?? ''
+        plans[row.id] = parsePlan(String(await $.fs.read(`docs/ristretto/${row.plan}`)))
       } catch {
-        // No plan to read: the row shows its title.
+        // The opened row says its plan was not found.
       }
+      if (row.status === 'blocked' && !row.reason) row.reason = plans[row.id]?.blockers[0] ?? ''
+    }
+    let checks: Record<string, { done: boolean; text: string }[]> = {}
+    try {
+      if (await $.fs.exists(CHECKS)) checks = parseChecks(String(await $.fs.read(CHECKS)))
+    } catch {
+      // No checks to show.
     }
     let plugin = ''
     try {
@@ -60,7 +78,7 @@ async function refreshBoard($: EngineInterface) {
       // Without the plugin's version the format line is skipped; the board itself still draws.
     }
     const name = (await $.session.cwd()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
-    await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error }))
+    await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))
     roadmapMtime = mtime
     maybeAutoOpen($)
   } catch (err) {
@@ -73,9 +91,25 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
   try {
     const now = await $.clock.now()
     await update($, live, l => fold(l, obs, now))
+    await account($)
   } catch {
     // An observation that fails leaves the board as it was; it must never fail the event.
   }
+}
+
+// A run follows the feature the fold says is running; when it moves on, the finished run is
+// closed with the status the roadmap now shows and kept across sessions.
+async function account($: EngineInterface) {
+  const now = await $.clock.now()
+  const usd = (await $.session.usage()).cost?.usd ?? null
+  const step = track(await read($, run), await read($, live), now, usd)
+  await update($, run, () => step.run)
+  if (!step.ended) return
+  await refreshBoard($)
+  const status = (await read($, board)).rows.find(r => r.id === step.ended!.id)?.status ?? 'unknown'
+  const next = keep(await read($, runs), endRun(step.ended, now, usd, status))
+  await update($, runs, () => next)
+  if (storeKey) await $.store.set(storeKey, next)
 }
 
 // Whose run the marker is, from the session id gate.js writes into it and its age.
@@ -198,6 +232,10 @@ export const register: Register = on => {
     const started = await next(e)
     for (const timer of timers) timer.cancel()
     timers = [$.clock.every(5000, () => void poll($)), $.clock.every(1000, () => void advanceClock($))]
+    // Run records live in the engine's store, per repo, so the history outlives the session.
+    storeKey = `runs:${await $.session.root()}`
+    const kept = await $.store.get(storeKey)
+    await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
     await refreshBoard($)
     await poll($)
     return started
@@ -249,20 +287,28 @@ export const register: Register = on => {
 
   on('classic.Stop', async ($, e, next) => {
     await observe($, { kind: 'gate-start' })
+    const t0 = await $.clock.now()
     const result = await next(e)
+    const ms = (await $.clock.now()) - t0
+    await update($, run, r => addGate(r, ms, result.block !== undefined))
     await observe($, { kind: 'gate-end', red: result.block !== undefined })
     return result
   })
 
   on('classic.SubagentStop', async ($, e, next) => {
     await observe($, { kind: 'gate-start' })
+    const t0 = await $.clock.now()
     const result = await next(e)
+    const ms = (await $.clock.now()) - t0
+    await update($, run, r => addGate(r, ms, result.block !== undefined))
     await observe($, { kind: 'gate-end', red: result.block !== undefined })
     return result
   })
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
+    // Every turn while a run is live, main loop and subagents, counts toward its tokens.
+    await update($, run, r => addTokens(r, e.usage))
     await refreshBoard($)
     if (e.agentId === undefined) {
       await observeMarker($)
@@ -279,7 +325,19 @@ export const register: Register = on => {
     const current = await read($, live)
     const now = Math.max(await read($, tick), current?.since ?? 0)
     const showing = await read($, showDone)
-    const v = view(await read($, board), current, now, await read($, elsewhere), showing)
+    const boardValue = await read($, board)
+    const v = view(boardValue, current, now, await read($, elsewhere), {
+      showDone: showing,
+      open: await read($, openRow),
+      plans: boardValue.plans,
+      checks: boardValue.checks,
+      runs: await read($, runs),
+    })
+    // One row open at a time; opening a done row reads its archived plan.
+    const toggleRow = async (id: string) => {
+      await update($, openRow, (o: string | null) => (o === id ? null : id))
+      await refreshBoard($)
+    }
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
     const rich = Svg !== undefined
     // On desktop a button carries a sign rather than a word; the terminal keeps the word.
