@@ -1,7 +1,8 @@
 // Pure logic of the roadmap board: no $, no Node, no DOM — hooks/board.tsx feeds it what the
 // session did and draws what it returns. Tested by scripts/board-model.test.js.
 
-import { parsePlan } from './board-plan.mjs';
+import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
+import { trend } from './board-runs.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
@@ -215,21 +216,48 @@ const LOOK = {
 
 const PREP = 'no roadmap here — /ristretto:prep starts one';
 
-function rowOf(row, busy) {
+function rowOf(row, ctx) {
   const look = LOOK[row.status];
+  const plan = ctx.plans[row.id];
+  const waiting = row.status === 'planned' ? waitingOn(plan, ctx.statusOf) : [];
   const out = {
     key: `row-${row.id}`,
     id: row.id,
     status: row.status,
     mark: look.mark,
     tone: look.tone,
-    tag: row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
+    tag: waiting.length > 0 ? 'waits on' : row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
     detail: row.reason || row.title,
+    waiting,
+    toggle: { open: ctx.open === row.id },
   };
-  if (row.status === 'planned' && !busy) {
+  if (row.status === 'planned' && !ctx.busy && waiting.length === 0) {
     out.action = { label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
   }
+  if (ctx.open === row.id) out.details = detailsOf(row, plan, ctx);
   return out;
+}
+
+// What an opened row says: what it needs, what done means for it, and what happened.
+function detailsOf(row, plan, ctx) {
+  const details = {
+    deps: plan ? plan.depends.map((id) => {
+      const status = ctx.statusOf.get(id) ?? 'missing';
+      return { id, status, ok: SATISFIES.has(status) };
+    }) : [],
+    acceptance: plan ? plan.acceptance.map((a, i) => ({ ...a, proof: row.status === 'done' ? proofFor(plan, i + 1) : null })) : [],
+    blockers: row.status === 'blocked' && plan ? plan.blockers : [],
+    findings: row.status === 'needs-review' && plan ? plan.findings : [],
+    checks: row.status === 'needs-human' ? ctx.checks[row.id] ?? [] : [],
+    review: plan ? plan.review : null,
+    gate: plan ? plan.gate : null,
+    commit: row.commit || null,
+    run: ctx.runOf.get(row.id) ?? null,
+    missing: !plan,
+  };
+  if (!ctx.busy && row.status === 'blocked') details.action = { label: 'refine', command: 'ristretto:prep', args: `${row.id} deep` };
+  if (!ctx.busy && row.status === 'needs-review') details.action = { label: 'judge', command: 'ristretto:pull', args: row.id };
+  return details;
 }
 
 // The run card: what runs, where it stands, how long, and its gate. Steps follow the command —
@@ -263,14 +291,19 @@ function nowOf(rows, live, now, elsewhere) {
 }
 
 // The pane as a view: a summary card, the run card, what needs a person, what is next, and
-// the done rows folded into one line. No start action anywhere while a run is active —
-// this session's, or `elsewhere`, another's — so the pane can never start a second run.
-export function view(board, live, now, elsewhere = false, showDone = false) {
+// what happened, newest first. One row (`opts.open`) opens to its details. No action anywhere
+// while a run is active — this session's, or `elsewhere`, another's — so the pane can never
+// start a second run.
+export function view(board, live, now, elsewhere = false, opts = {}) {
   if (board.error === 'no-roadmap' || board.error === 'no-table') return { kind: 'message', text: PREP };
   if (board.error) return { kind: 'message', text: `roadmap unreadable (${board.error}) — /ristretto:status shows it as text` };
 
   const rows = board.rows;
   const busy = live !== null || elsewhere;
+  const statusOf = new Map(rows.map((r) => [r.id, r.status]));
+  const records = opts.runs ?? [];
+  const runOf = new Map(records.map((rec) => [rec.id, rec])); // the latest run of each feature wins
+  const ctx = { busy, open: opts.open ?? null, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf };
   const count = (status) => rows.filter((r) => r.status === status).length;
   const done = count('done');
   if (rows.length > 0 && done === rows.length && !busy) return { kind: 'cup', total: rows.length };
@@ -284,6 +317,9 @@ export function view(board, live, now, elsewhere = false, showDone = false) {
     .map(({ status, n, text, tone }) => ({ status, n, text: `${n} ${text}`, tone }));
 
   const summary = { name: board.name || 'roadmap', done, total: rows.length, counts };
+  summary.segments = ['done', 'needs-review', 'needs-human', 'blocked', 'in-progress', 'planned', 'unknown']
+    .map((status) => ({ status, n: count(status), tone: LOOK[status].tone }))
+    .filter((s) => s.n > 0);
   if (!busy && count('planned') > 0) summary.action = { label: 'brew all', command: 'ristretto:brew', args: '' };
 
   const notices = [];
@@ -300,14 +336,19 @@ export function view(board, live, now, elsewhere = false, showDone = false) {
   const grouped = (picked) => [...new Set(picked.map((r) => r.flight))].sort((a, b) => (a === '') - (b === '')).map((flight) => ({
     key: `flight-${flight || 'other'}`,
     flight,
-    rows: picked.filter((r) => r.flight === flight).map((r) => rowOf(r, busy)),
+    rows: picked.filter((r) => r.flight === flight).map((r) => rowOf(r, ctx)),
   }));
   const sections = [
     { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)) },
     { key: 'up-next', title: 'up next', groups: grouped(rows.filter(next)) },
   ].filter((section) => section.groups.length > 0);
 
+  // What happened, newest first: features with a measured run by when it ended, then the
+  // rest in reverse roadmap order (a later row is a later feature).
   const finished = rows.filter((r) => r.status === 'done');
+  const measured = finished.filter((r) => runOf.has(r.id)).sort((a, b) => runOf.get(b.id).endedAt - runOf.get(a.id).endedAt);
+  const ordered = [...measured, ...finished.filter((r) => !runOf.has(r.id)).reverse()];
+  const shown = opts.showDone ? ordered : ordered.slice(0, 5);
   return {
     kind: 'board',
     summary,
@@ -316,9 +357,10 @@ export function view(board, live, now, elsewhere = false, showDone = false) {
     sections,
     done: finished.length === 0 ? null : {
       count: finished.length,
-      open: showDone,
-      rows: showDone ? finished.map((r) => rowOf(r, busy)) : [],
-      toggle: { label: showDone ? 'hide' : 'show' },
+      rows: shown.map((r) => ({ ...rowOf(r, ctx), run: runOf.get(r.id) ?? null })),
+      more: ordered.length - shown.length,
+      trend: trend(records),
+      toggle: { label: opts.showDone ? 'hide' : 'show all' },
     },
   };
 }

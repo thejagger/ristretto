@@ -222,8 +222,7 @@ const shown = (v) => JSON.stringify(v);
 
     // Done rows fold into one line until asked for; what needs a person stays in view with its reason.
     const folded = m.view(board, null, 0);
-    assert.deepStrictEqual([folded.done.count, folded.done.rows.length], [1, 0]);
-    assert.strictEqual(m.view(board, null, 0, false, true).done.rows.length, 1);
+    assert.deepStrictEqual([folded.done.count, folded.done.rows.length, folded.done.more], [1, 1, 0], 'up to five done rows show');
     assert.ok(/no source/.test(shown(folded)), 'a blocked row shows why');
     assert.ok(!folded.sections.some((sec) => sec.groups.some((g) => g.rows.some((r) => r.id === 'c'))), 'done rows are not in the open sections');
   }
@@ -338,6 +337,65 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(v.sections.find((sec) => sec.key === 'needs-you').groups.map((g) => g.flight), ['nodes-sync']);
     const loose = m.view({ name: 't', rows: [{ flight: '', id: 'rbac', title: 'x', tier: 'normal', plan: '', status: 'planned', reason: '' }, ...r.rows], format: { project: null, plugin: '' }, error: null }, null, 0);
     assert.deepStrictEqual(loose.sections.find((sec) => sec.key === 'up-next').groups.map((g) => g.flight), ['lnw', 'mail', ''], 'rows without a flight come last, as in /ristretto:status');
+  }
+
+  // 7. The overview: what a row waits on, what an open row says, and what happened.
+  {
+    const row = (id, status, extra = {}) => ({ flight: '', id, title: id, tier: 'normal', plan: `plans/${id}.md`, commit: '', status, reason: '', ...extra });
+    const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [
+      row('core', 'done', { commit: 'abc1234' }), row('old', 'done'), row('mid', 'done'),
+      row('a', 'planned'), row('b', 'planned'), row('k', 'blocked', { reason: 'no API' }), row('rv', 'needs-review'),
+    ] };
+    const plans = {
+      a: { acceptance: [{ auto: true, text: 'A works' }], depends: ['core'], blockers: [], evidence: [], review: null, gate: null, findings: [] },
+      b: { acceptance: [], depends: ['a', 'ghost'], blockers: [], evidence: [], review: null, gate: null, findings: [] },
+      k: { acceptance: [], depends: [], blockers: ['API docs → Anatol', 'write API → Anatol'], evidence: [], review: null, gate: null, findings: [] },
+      rv: { acceptance: [], depends: [], blockers: [], evidence: [], review: 'review: needs-review · rounds: 3', gate: null, findings: ['bug · x.php:1 · wrong'] },
+      core: { acceptance: [{ auto: true, text: 'boots' }, { auto: false, text: 'cert trusted' }], depends: [], blockers: [], evidence: [{ criteria: [1], proof: 'test_boot' }], review: 'review: clean · rounds: 1', gate: 'exit 0', findings: [] },
+    };
+    const runs = [
+      { id: 'mid', startedAt: 0, endedAt: 100, ms: 100, usd: 1, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 1, ms: 60000, red: 0 }, status: 'done' },
+      { id: 'core', startedAt: 200, endedAt: 900, ms: 700, usd: 2, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 2, ms: 120000, red: 1 }, status: 'done' },
+    ];
+    const v = m.view(board, null, 0, false, { plans, runs });
+
+    // Waiting: b depends on an unbuilt a and on a name not on the roadmap; a's dependency is done.
+    const next = v.sections.find((s) => s.key === 'up-next').groups.flatMap((g) => g.rows);
+    const b = next.find((x) => x.id === 'b');
+    assert.deepStrictEqual(b.waiting, [{ id: 'a', status: 'planned' }, { id: 'ghost', status: 'missing' }]);
+    assert.strictEqual(b.action, undefined, 'a waiting row cannot be started');
+    assert.strictEqual(b.tag, 'waits on');
+    assert.ok(next.find((x) => x.id === 'a').action, 'a row whose dependencies are built can');
+
+    // Status segments for the summary bar, in a fixed order, empty ones left out.
+    assert.deepStrictEqual(v.summary.segments.map((s) => [s.status, s.n]), [['done', 3], ['needs-review', 1], ['blocked', 1], ['planned', 2]]);
+
+    // What happened: newest run first, rows without a record after, in reverse roadmap order.
+    assert.deepStrictEqual(v.done.rows.map((x) => x.id), ['core', 'mid', 'old']);
+    assert.deepStrictEqual([v.done.rows[0].run.usd, v.done.rows[2].run], [2, null]);
+    assert.deepStrictEqual(v.done.trend, [1, 2]);
+
+    // One row open at a time, each saying what its status needs said.
+    const opened = (id) => {
+      const w = m.view(board, null, 0, false, { plans, runs, open: id });
+      return [...w.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)), ...w.done.rows].find((x) => x.id === id);
+    };
+    assert.strictEqual(next.find((x) => x.id === 'a').details, undefined, 'closed rows carry no details');
+    const da = opened('a').details;
+    assert.deepStrictEqual([da.deps, da.acceptance[0].proof], [[{ id: 'core', status: 'done', ok: true }], null]);
+    const dk = opened('k').details;
+    assert.deepStrictEqual([dk.blockers.length, dk.action], [2, { label: 'refine', command: 'ristretto:prep', args: 'k deep' }]);
+    const drv = opened('rv').details;
+    assert.deepStrictEqual([drv.findings, drv.action.command, drv.action.args], [['bug · x.php:1 · wrong'], 'ristretto:pull', 'rv']);
+    const dcore = opened('core').details;
+    assert.deepStrictEqual(dcore.acceptance.map((x) => x.proof), ['test_boot', null], 'each criterion with its proof');
+    assert.deepStrictEqual([dcore.commit, dcore.run.gates.red, dcore.review], ['abc1234', 1, 'review: clean · rounds: 1']);
+    const dold = opened('old').details;
+    assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
+
+    // No action from an open row while a run is active.
+    const busy = m.view(board, null, 0, true, { plans, runs, open: 'k' });
+    assert.strictEqual(busy.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)).find((x) => x.id === 'k').details.action, undefined);
   }
 
   console.log('board-model.test.js: all checks passed');
