@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardLive, BoardPlan, BoardRecord, BoardRun } from '../types'
-import { EMPTY_BOARD, bar, docks, fold, markerState, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_BOARD, bar, docks, elapsed, fold, markerState, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
-import { addGate, addTokens, endRun, keep, track } from './board-runs.mjs'
+import { addGate, addTokens, count, endRun, keep, money, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md and of the run this session
 // is doing, plus buttons that start pull/shot/brew the way typing them would. It observes and
@@ -152,13 +152,6 @@ async function advanceClock($: EngineInterface) {
   }
 }
 
-// The progress bar as a pill where the surface draws SVG: box-drawing glyphs are wider than a
-// cell there, so a text bar wraps. Claude's accent over a neutral track reads in both themes.
-function barSvg(done: number, total: number) {
-  const w = total > 0 ? Math.round((1000 * done) / total) : 0
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="6" viewBox="0 0 1000 6" preserveAspectRatio="none"><rect width="1000" height="6" rx="3" fill="#8a8a8a" fill-opacity="0.25"/><rect width="${w}" height="6" rx="3" fill="#D97757"/></svg>`
-}
-
 // Where the surface draws SVG (the desktop app), status reads as shape and color instead of
 // glyphs. SVG cannot read the theme, so these are mid-tone hues that hold on light and dark.
 const HUE: Record<string, string> = {
@@ -168,6 +161,38 @@ const HUE: Record<string, string> = {
   error: '#D9614C',
   permission: '#5B8DEF',
   inactive: '#8A8A8A',
+}
+
+// The summary's progress as one stacked pill, a segment per status in the view's order, where
+// the surface draws SVG: box-drawing glyphs are wider than a cell there, so a text bar wraps.
+// What is still planned is the faint track the rest fills.
+function statusBarSvg(segments: { status: string; n: number; tone: string }[]) {
+  const total = segments.reduce((sum, s) => sum + s.n, 0) || 1
+  let x = 0
+  const parts = segments.map(s => {
+    const w = (1000 * s.n) / total
+    const rect = `<rect x="${x.toFixed(1)}" width="${w.toFixed(1)}" height="8" fill="${HUE[s.tone] ?? HUE.inactive}"${s.status === 'planned' || s.status === 'unknown' ? ' fill-opacity="0.25"' : ''}/>`
+    x += w
+    return rect
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="8" viewBox="0 0 1000 8" preserveAspectRatio="none"><clipPath id="pill"><rect width="1000" height="8" rx="4"/></clipPath><g clip-path="url(#pill)">${parts.join('')}</g></svg>`
+}
+
+// A run's length against the longest one shown, its gate time drawn solid from the start.
+function runBarSvg(ms: number, gateMs: number, maxMs: number) {
+  const w = Math.max(6, Math.round((160 * ms) / (maxMs || 1)))
+  const g = Math.min(w, Math.round((160 * gateMs) / (maxMs || 1)))
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="6" viewBox="0 0 160 6"><rect width="${w}" height="6" rx="3" fill="${HUE.claude}" fill-opacity="0.3"/><rect width="${g}" height="6" rx="3" fill="${HUE.claude}"/></svg>`
+}
+
+// Gate minutes per run as a small line, oldest left, the latest run a dot.
+function sparkSvg(values: number[]) {
+  const max = Math.max(1, ...values)
+  const step = values.length > 1 ? 120 / (values.length - 1) : 0
+  const at = values.map((v, i) => [i * step + 3, 17 - (14 * v) / max])
+  const pts = at.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const [lx, ly] = at[at.length - 1]
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="126" height="20" viewBox="0 0 126 20"><polyline points="${pts}" fill="none" stroke="${HUE.claude}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.4" fill="${HUE.claude}"/></svg>`
 }
 
 // A chip as a rounded pill: tinted fill, text in the hue. The width is estimated from the
@@ -318,7 +343,8 @@ export const register: Register = on => {
   })
 
   // deun's layout in Claude's colors: a summary card, a run card, what needs a person, what is
-  // next, the done rows folded away. Every color is a theme key, so light and dark both hold.
+  // next, what happened. A row opens (▸) to a card of its details. Text colors are theme keys,
+  // so light and dark both hold; shapes are SVG in HUE where the surface draws it.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
     const canPress = e.surface !== 'mobile' && Button !== undefined
@@ -372,15 +398,101 @@ export const register: Register = on => {
       ) : (
         <Text key={key} dimColor bold>{title.toUpperCase()}</Text>
       )
-    const row = (r: any, dim = false) => (
-      <Box key={r.key} flexDirection="row" gap={1} alignItems="center">
-        {mark(r)}
-        <Text bold={!dim} dimColor={dim}>{r.id}</Text>
-        {r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
-        <Box flexGrow={1} flexShrink={1} overflow="hidden">
-          <Text dimColor wrap="truncate-end">{r.detail}</Text>
+    // Run bars share one scale: the longest run shown is full width.
+    const longest = Math.max(1, ...((v as any).done?.rows ?? []).map((r: any) => r.run?.ms ?? 0))
+    // A run in one line: how long, what it cost, how many tokens, how long the gates took.
+    const runLine = (rec: any) =>
+      [elapsed(rec.ms), money(rec.usd), `${count(rec.tokens.in + rec.tokens.out)} tok`, `gate ${elapsed(rec.gates.ms)}${rec.gates.red ? ` · ${rec.gates.red} red` : ''}`].join(' · ')
+    // An opened row's card, in the row's color and indented under it: what it waits on, what
+    // done means for it (with the proof once done), what stops it, and what its run cost.
+    const detailsCard = (r: any) => {
+      const d = r.details
+      const facts = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`, d.run && runLine(d.run)].filter(Boolean)
+      return (
+        <Box key={`details-${r.key}`} flexDirection="column" marginLeft={2} borderStyle="round" borderColor={r.tone} paddingX={1} paddingY={rich ? 1 : 0} gap={rich ? 1 : 0}>
+          {d.missing && <Text dimColor>plan not found</Text>}
+          {d.deps.length > 0 && (
+            <Box flexDirection="row" columnGap={2} rowGap={0} flexWrap="wrap" alignItems="center">
+              <Text dimColor>depends on</Text>
+              {d.deps.map((x: any) => (
+                <Box key={`dep-${x.id}`} flexDirection="row" gap={1} alignItems="center">
+                  {mark({ status: x.ok ? 'done' : x.status === 'missing' ? 'unknown' : x.status, tone: x.ok ? 'success' : 'inactive', mark: x.ok ? '✓' : '○', tag: x.status })}
+                  <Text dimColor={!x.ok}>{x.id}{x.status === 'missing' ? ' (not on the roadmap)' : ''}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+          {d.acceptance.length > 0 && (
+            <Box flexDirection="column">
+              <Text bold dimColor>{rich ? 'Acceptance' : 'ACCEPTANCE'}</Text>
+              {d.acceptance.map((a: any, i: number) => (
+                <Box key={`acc-${i}`} flexDirection="column" marginTop={rich ? 1 : 0}>
+                  <Box flexDirection="row" gap={1}>
+                    {a.proof
+                      ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' })
+                      : a.auto
+                        ? <Text dimColor>{i + 1}.</Text>
+                        : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
+                    <Box flexShrink={1}>
+                      <Text wrap="wrap">{a.text}</Text>
+                    </Box>
+                  </Box>
+                  {a.proof && (
+                    <Box marginLeft={rich ? 3 : 2}>
+                      <Text dimColor wrap="truncate-end">{a.proof}</Text>
+                    </Box>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          )}
+          {d.blockers.map((b: string, i: number) => (
+            <Box key={`blk-${i}`} flexDirection="row" gap={1}>
+              {mark({ status: 'blocked', tone: 'error', mark: '✕', tag: 'blocker' })}
+              <Box flexShrink={1}><Text color="error" wrap="wrap">{b}</Text></Box>
+            </Box>
+          ))}
+          {d.findings.map((f: string, i: number) => (
+            <Box key={`fnd-${i}`} flexDirection="row" gap={1}>
+              {mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}
+              <Box flexShrink={1}><Text wrap="wrap">{f}</Text></Box>
+            </Box>
+          ))}
+          {d.checks.map((c: any, i: number) => (
+            <Box key={`chk-${i}`} flexDirection="row" gap={1}>
+              {c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}
+              <Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{c.text}</Text></Box>
+            </Box>
+          ))}
+          {facts.length > 0 && <Text dimColor wrap="wrap">{facts.join('  ·  ')}</Text>}
+          {d.action && <Box flexDirection="row">{press(d.action, true)}</Box>}
         </Box>
-        {r.action && press(r.action)}
+      )
+    }
+    const row = (r: any, dim = false) => (
+      <Box key={r.key} flexDirection="column" gap={rows}>
+        <Box flexDirection="row" gap={1} alignItems="center">
+          {canPress && (
+            <Button key={`open-${r.key}`} label={r.toggle.open ? '▾' : '▸'} plain dimColor onPress={() => void toggleRow(r.id)} />
+          )}
+          {mark(r)}
+          <Text bold={!dim} dimColor={dim}>{r.id}</Text>
+          {r.waiting.length > 0
+            ? chip(`tag-${r.key}`, `waits on ${r.waiting.map((w: any) => w.id).join(', ')}`, 'inactive')
+            : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
+          <Box flexGrow={1} flexShrink={1} overflow="hidden">
+            <Text dimColor wrap="truncate-end">{r.detail}</Text>
+          </Box>
+          {r.run !== undefined && <Text dimColor>{r.run ? `${elapsed(r.run.ms)} · ${money(r.run.usd)}` : '—'}</Text>}
+          {r.action && press(r.action)}
+        </Box>
+        {r.run && (
+          <Box flexDirection="row" gap={1} alignItems="center" marginLeft={canPress ? 4 : 2}>
+            {rich && <Svg alt={`${elapsed(r.run.ms)}, gates ${elapsed(r.run.gates.ms)}`} width={160} height={6} source={runBarSvg(r.run.ms, r.run.gates.ms, longest)} />}
+            <Text dimColor>{`${count(r.run.tokens.in + r.run.tokens.out)} tok · gate ${elapsed(r.run.gates.ms)}${r.run.gates.red ? ` · ${r.run.gates.red} red` : ''}`}</Text>
+          </Box>
+        )}
+        {r.details && detailsCard(r)}
       </Box>
     )
 
@@ -410,7 +522,7 @@ export const register: Register = on => {
             {v.summary.action && press(v.summary.action, true)}
           </Box>
           {Svg ? (
-            <Svg alt={`${v.summary.done} of ${v.summary.total} brewed`} height={6} source={barSvg(v.summary.done, v.summary.total)} />
+            <Svg alt={v.summary.segments.map((s: any) => `${s.n} ${s.status}`).join(', ')} height={8} source={statusBarSvg(v.summary.segments)} />
           ) : (
             <Box flexDirection="row">
               <Text color="claude">{'━'.repeat(filled.filled)}</Text>
@@ -486,17 +598,26 @@ export const register: Register = on => {
 
         {v.done && (
           <Box key="done" flexDirection="column">
-            <Box flexDirection="row" gap={1} alignItems="center">
-              {mark({ key: 'done', id: 'done', status: 'done', tag: 'done', tone: 'success', mark: '✓' })}
-              <Box flexGrow={1}>
-                <Text dimColor>{v.done.count} done</Text>
-              </Box>
-              {canPress && (
-                <Button key="toggle-done" label={rich ? (v.done.open ? '▴' : '▾') : v.done.toggle.label} onPress={() => update($, showDone, (x: boolean) => !x)} />
+            <Box flexDirection="row" gap={2} alignItems="center">
+              {heading('h-done', `done · ${v.done.count}`)}
+              {v.done.trend.length > 1 && (
+                <Box flexDirection="row" gap={1} alignItems="center">
+                  {rich && <Svg alt={`gate minutes per run: ${v.done.trend.join(', ')}`} width={126} height={20} source={sparkSvg(v.done.trend)} />}
+                  <Text dimColor>{rich ? 'gate time' : `gate min ${v.done.trend.join(' ')}`}</Text>
+                </Box>
               )}
             </Box>
-            {v.done.rows.length > 0 && (
-              <Box flexDirection="column" gap={rows} marginTop={rows}>{v.done.rows.map((r: any) => row(r, true))}</Box>
+            <Box flexDirection="column" gap={rows} marginTop={rows}>{v.done.rows.map((r: any) => row(r, true))}</Box>
+            {canPress && (v.done.more > 0 || showing) && (
+              <Box flexDirection="row" marginTop={rows}>
+                <Button
+                  key="toggle-done"
+                  label={showing ? v.done.toggle.label : `${v.done.toggle.label} ${v.done.count}`}
+                  plain
+                  dimColor
+                  onPress={() => update($, showDone, (x: boolean) => !x)}
+                />
+              </Box>
             )}
           </Box>
         )}
