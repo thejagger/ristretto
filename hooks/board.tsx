@@ -102,12 +102,27 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
 async function account($: EngineInterface) {
   const now = await $.clock.now()
   const usd = (await $.session.usage()).cost?.usd ?? null
-  const step = track(await read($, run), await read($, live), now, usd)
-  await update($, run, () => step.run)
-  if (!step.ended) return
+  const before = await read($, run)
+  const step = track(before, await read($, live), now, usd)
+  if (step.run === before) return
+  // Tokens and gate time keep arriving while this ran: only the call that still finds the run
+  // it read moves it on, and it closes the run as it stands then, counts included.
+  let moved = false
+  let closing: BoardRun | null = null
+  await update($, run, r => {
+    if ((r?.id ?? null) !== (before?.id ?? null)) return r
+    moved = true
+    closing = r
+    return step.run
+  })
+  if (!moved || !closing) return
   await refreshBoard($)
-  const status = (await read($, board)).rows.find(r => r.id === step.ended!.id)?.status ?? 'unknown'
-  const next = keep(await read($, runs), endRun(step.ended, now, usd, status))
+  const ended: BoardRun = closing
+  const status = (await read($, board)).rows.find(r => r.id === ended.id)?.status ?? 'unknown'
+  // Another session in this repo may have kept runs since this one loaded them: add to what
+  // the store holds now, not to this session's copy.
+  const stored = storeKey ? await $.store.get(storeKey) : null
+  const next = keep(Array.isArray(stored) ? (stored as BoardRecord[]) : await read($, runs), endRun(ended, now, usd, status))
   await update($, runs, () => next)
   if (storeKey) await $.store.set(storeKey, next)
 }
@@ -310,6 +325,19 @@ export const register: Register = on => {
     return ran
   })
 
+  // Every model request while a run is live, main loop and subagents, counts toward its
+  // tokens as it is answered: a pull's implementer and closer work in the main loop, whose
+  // turn only completes after the run has closed. The response streams through untouched.
+  on('turn.step', async function* ($, e, next) {
+    const res = yield* next(e)
+    try {
+      await update($, run, r => addTokens(r, res.usage))
+    } catch {
+      // A missed count must never fail the request.
+    }
+    return res
+  })
+
   on('classic.Stop', async ($, e, next) => {
     await observe($, { kind: 'gate-start' })
     const t0 = await $.clock.now()
@@ -332,8 +360,6 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    // Every turn while a run is live, main loop and subagents, counts toward its tokens.
-    await update($, run, r => addTokens(r, e.usage))
     await refreshBoard($)
     if (e.agentId === undefined) {
       await observeMarker($)
@@ -446,6 +472,7 @@ export const register: Register = on => {
               ))}
             </Box>
           )}
+          {d.unitemised && <Text dimColor wrap="wrap">proof not itemised — the plan's Evidence covers these as prose</Text>}
           {d.blockers.map((b: string, i: number) => (
             <Box key={`blk-${i}`} flexDirection="row" gap={1}>
               {mark({ status: 'blocked', tone: 'error', mark: '✕', tag: 'blocker' })}

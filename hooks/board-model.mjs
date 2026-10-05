@@ -84,11 +84,12 @@ export function parseRoadmap(text) {
   return { rows, format, error: null };
 }
 
-// The plan a row links to, relative to docs/ristretto/: `[plan](plans/x.md)` or a bare path.
+// The plan a row links to, relative to docs/ristretto/: `[plan](plans/x.md)` or a bare path;
+// a repo-relative `docs/ristretto/plans/x.md` (immo-wert) reads the same.
 function planOf(cell) {
   const link = /\(([^)\s]+\.md)\)/.exec(cell);
-  if (link) return link[1];
-  return /^[^\s[\]()]+\.md$/.test(cell) ? cell : '';
+  const path = link ? link[1] : /^[^\s[\]()]+\.md$/.test(cell) ? cell : '';
+  return path.replace(/^\.?\/?docs\/ristretto\//, '');
 }
 
 // A plan's first blocker, from its `- Blockers:` line: the inline text, or the first item
@@ -254,6 +255,8 @@ function detailsOf(row, plan, ctx) {
     commit: row.commit || null,
     run: ctx.runOf.get(row.id) ?? null,
     missing: !plan,
+    // A done plan whose Evidence is prose proves its criteria, just not one by one.
+    unitemised: row.status === 'done' && plan?.itemised === false,
   };
   if (!ctx.busy && row.status === 'blocked') details.action = { label: 'refine', command: 'ristretto:prep', args: `${row.id} deep` };
   if (!ctx.busy && row.status === 'needs-review') details.action = { label: 'judge', command: 'ristretto:pull', args: row.id };

@@ -16,6 +16,7 @@ export type BoardPlan = {
   review: string | null
   gate: string | null
   findings: string[]
+  itemised: boolean | null
 }
 export type BoardRun = {
   id: string

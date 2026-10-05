@@ -391,6 +391,11 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(dcore.acceptance.map((x) => x.proof), ['test_boot', null], 'each criterion with its proof');
     assert.deepStrictEqual([dcore.commit, dcore.run.gates.red, dcore.review], ['abc1234', 1, 'review: clean · rounds: 1']);
     const dold = opened('old').details;
+    plans.mid = { ...plans.core, evidence: [], itemised: false };
+    assert.strictEqual(opened('mid').details.unitemised, true, 'prose Evidence: said so, not drawn as nothing proved');
+    assert.strictEqual(dcore.unitemised, false);
+    // immo-wert writes Plan cells repo-relative.
+    assert.strictEqual(m.parseRoadmap(['| Feature | Status | Plan |', '|---|---|---|', '| x | planned | [plan](docs/ristretto/plans/x.md) |'].join('\n')).rows[0].plan, 'plans/x.md');
     assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
 
     // No action from an open row while a run is active.
