@@ -177,9 +177,11 @@ function authors(range) {
 
 // ---- classification -----------------------------------------------------
 // ONE batched call: per-commit hash, subject, and merged file list,
-// topological-first (newest first).
+// topological-first (newest first). `--no-renames` lists both sides of a move:
+// with rename detection a move out of (or into) docs/ristretto/ shows only its
+// new path and the commit is misclassified.
 function commitsInRange(range) {
-  const out = git(['log', '--format=%H|%s', '--name-only', range]);
+  const out = git(['log', '--format=%H|%s', '--name-only', '--no-renames', range]);
   if (out === null) return null; // git failed — caller must not read this as "empty range"
   const commits = [];
   let cur = null;
@@ -249,7 +251,9 @@ function hasIntentMarker(subj) {
 }
 
 function deriveRetitle(files, subj) {
-  const types = new Set(files.map(typeOfPath));
+  // Only the paths that survive the replay say what the commit is: a MIXED
+  // commit's docs/ristretto/ paths are stripped, so they never vote.
+  const types = new Set(files.filter((f) => !isDocsPath(f)).map(typeOfPath));
   let type;
   if (types.size === 1) type = [...types][0];
   else if (types.size === 0) type = hasIntentMarker(subj) ? 'fix' : 'chore';
@@ -373,11 +377,13 @@ function analyze(range, ticket) {
     console.log(`  ${r.hash.slice(0, 7)}  [${r.kind}]  ${r.subj}`);
   }
 
-  const type3 = relevant.filter((c) => c.kind === 'type-3 (docs(ristretto) scope, no docs path)');
-  if (type3.length) {
+  // Every docs(ristretto)-scoped commit that is replayed gets retitled: type-3,
+  // and a MIXED commit carrying the scope. Docs-only commits are absorbed.
+  const retitled = relevant.filter((c) => c.subjDocs && c.kind !== 'docs-only');
+  if (retitled.length) {
     console.log('');
-    console.log('== Type-3 retitle proposals ==');
-    for (const c of type3) {
+    console.log('== Retitle proposals ==');
+    for (const c of retitled) {
       const d = deriveRetitle(c.files, c.subj);
       const candidates = d.candidates.length ? d.candidates.join(', ') : '(none)';
       console.log(`  ${c.hash.slice(0, 7)}  derived_type: ${d.type}`);
@@ -432,7 +438,7 @@ function overlayDocsFrom(source, wt) {
 // A conflict on a real (non-docs) path still fails and stratify still refuses.
 // `spawnGit` routes through the test seam, so this works under the fake git too.
 function applyNonDocs(hash, wt) {
-  const diff = spawnGit(['diff', '--binary', `${hash}^`, hash, '--', '.', ':(exclude)docs/ristretto'], wt);
+  const diff = spawnGit(['diff', '--binary', '--no-renames', `${hash}^`, hash, '--', '.', ':(exclude)docs/ristretto'], wt);
   if (diff.status !== 0) return { ok: false, detail: null };
   const apply = spawnGit(['apply', '--index', '--3way', '-'], wt, diff.stdout || '');
   if (apply.status !== 0) {
@@ -471,6 +477,17 @@ function parseStratifyArgs(args) {
   return { ...out, range };
 }
 
+const firstLine = (s) => (s || '').trim().split('\n')[0] || '';
+
+// Every commit the replay makes skips the repo's hooks: these commits already
+// exist and are only being re-made, and a pre-commit hook in a fresh worktree
+// (no node_modules, no build) fails or rewrites files. `cherry-pick` runs no
+// commit hooks, so this brings `commit` in line with it.
+function commitIn(wt, args) {
+  const r = spawnGit(['commit', '--no-verify', ...args], wt);
+  return { ok: r.status === 0, err: firstLine(r.stderr || r.stdout) };
+}
+
 function stratify(opts) {
   const { range } = opts;
   if (!range) fail('stratify: no range given — usage: stratify <range> --pr-branch <name> [--subject S] [--retitle <hash>=<subject>]... [--fold] [--ticket T]');
@@ -479,16 +496,24 @@ function stratify(opts) {
   if (!opts.prBranch && opts.ticket) opts.prBranch = `${opts.ticket}-pr`;
   if (!opts.prBranch) fail('stratify: --pr-branch <name> (or --ticket T) is required');
 
-  const base = git(['rev-parse', '--verify', `${range.split('..')[0]}^{commit}`]);
-  const origTip = git(['rev-parse', '--verify', `${(range.split('..')[1] || 'HEAD')}^{commit}`]);
-  if (base === null || origTip === null) fail(`stratify: cannot read range '${range}' — not a valid hash or ref in this repository`);
+  const [startRef, endRef] = range.split('..');
+  const start = git(['rev-parse', '--verify', `${startRef}^{commit}`]);
+  const origTip = git(['rev-parse', '--verify', `${endRef || 'HEAD'}^{commit}`]);
+  if (start === null || origTip === null) fail(`stratify: cannot read range '${range}' — not a valid hash or ref in this repository`);
+  // Build on the merge-base, not on the range's start: once `main` has moved on,
+  // `main..HEAD` still names exactly the branch's own commits, but replaying them
+  // onto main's new tip can never reproduce the source tree.
+  const base = git(['merge-base', start, origTip]);
+  if (base === null) fail(`stratify: '${startRef}' and '${endRef || 'HEAD'}' share no history.`);
   const merged = hasMerge(range);
   if (merged === null) fail(`stratify: cannot read range '${range}'.`);
   if (merged) fail(`stratify: range '${range}' contains a merge commit — a linear replay cannot handle merges. Pick a linear range.`);
 
-  // Dirty tree refusal — before any branch or worktree exists.
-  const dirty = git(['status', '--porcelain']);
-  if (dirty) fail('stratify: working tree is dirty — commit or stash your changes first (the main checkout is never touched otherwise).');
+  // Dirty tree refusal — before any branch or worktree exists. Only tracked
+  // changes count: they would silently miss the PR branch. An untracked file
+  // (the uncommitted <TICKET>.md --mr leaves behind) is never part of a commit.
+  const dirty = git(['status', '--porcelain', '--untracked-files=no']);
+  if (dirty) fail('stratify: working tree has uncommitted changes — commit or stash them first (they would not be on the PR branch).');
   // Branch-exists refusal.
   if (gitQuiet(['show-ref', '--verify', '--quiet', `refs/heads/${opts.prBranch}`])) {
     fail(`stratify: branch '${opts.prBranch}' already exists — pick another name or delete it first.`);
@@ -503,11 +528,26 @@ function stratify(opts) {
   // analyze hint does) and replay each run's members as one folded commit. The
   // detected members are non-docs only — coalesceRuns flushes on any docs commit.
   const foldRunOf = new Map(); // oldest-member hash -> [members, oldest-first]
+  const folded = new Set();
   if (opts.fold) {
     for (const run of coalesceRuns(commits, { minLen: 2 })) {
       const oldestFirst = [...run].reverse();
       foldRunOf.set(oldestFirst[0].hash, oldestFirst);
+      for (const m of run) folded.add(m.hash);
     }
+  }
+
+  // --retitle keys may be short hashes (as analyze prints them). Each must name
+  // exactly one commit that is replayed on its own — resolved here, before
+  // anything is built, so a typo refuses instead of being silently ignored.
+  const retitle = new Map();
+  for (const [k, v] of opts.retitle) {
+    const hits = commits.filter((c) => c.hash.startsWith(k));
+    if (hits.length !== 1) fail(`stratify: --retitle ${k} ${hits.length ? 'is ambiguous' : 'matches no commit'} in '${range}'.`);
+    if (!v) fail(`stratify: --retitle ${k} has an empty subject.`);
+    if (hits[0].kind === 'docs-only') fail(`stratify: --retitle ${k} names a docs-only commit — it is absorbed into the docs commit, not replayed.`);
+    if (folded.has(hits[0].hash)) fail(`stratify: --retitle ${k} names a commit --fold folds — it is not replayed on its own.`);
+    retitle.set(hits[0].hash, v);
   }
 
   const tmpParent = fs.mkdtempSync(path.join(os.tmpdir(), 'strata-'));
@@ -526,27 +566,25 @@ function stratify(opts) {
     }
     branchCreated = true;
 
-    // --retitle keys may be short hashes (as analyze prints them); resolve each
-    // against the range's commits so a short-hash override is honoured.
-    if (opts.retitle.size) {
-      const full = new Map();
-      for (const [k, v] of opts.retitle) {
-        const hit = commits.find((c) => c.hash === k || c.hash.startsWith(k));
-        full.set(hit ? hit.hash : k, v);
-      }
-      opts.retitle = full;
-    }
     const subjectFor = (c) => {
-      if (opts.retitle.has(c.hash)) return opts.retitle.get(c.hash);
+      if (retitle.has(c.hash)) return retitle.get(c.hash);
       if (isDocsScoped(c.subj)) return retitleSubject(c.subj, deriveRetitle(c.files, c.subj));
       return null; // keep original
+    };
+    const commitOrThrow = (args, what) => {
+      const r = commitIn(wt, args);
+      if (!r.ok) throw { message: `could not ${what}${r.err ? ` — git: ${r.err}` : ''}` };
     };
     // Retitle a replayed commit, keeping its original body as a second paragraph.
     const amendTo = (hash, subject) => {
       const body = bodyOf(hash, wt);
-      const args = ['commit', '--amend', '-m', subject];
+      const args = ['--amend', '-m', subject];
       if (body) args.push('-m', body);
-      if (!gitQuiet(args, wt)) throw { message: `could not retitle ${hash}` };
+      commitOrThrow(args, `retitle ${hash}`);
+    };
+    const cherryPick = (hash) => {
+      const r = spawnGit(['cherry-pick', hash], wt);
+      if (r.status !== 0) throw { conflict: hash, detail: firstLine(r.stderr || r.stdout) };
     };
 
     const replayed = new Set();
@@ -566,9 +604,16 @@ function stratify(opts) {
         const sharedType = new Set(members.map((m) => m.type)).size === 1;
         const type = sharedType ? members[0].type : 'chore';
         const summary = stripConventional(members[members.length - 1].subj);
-        if (!gitQuiet(['commit', '-m', `${type}(${members[0].scope}): ${summary}`], wt)) {
-          throw { message: 'fold commit failed' };
-        }
+        // The fold keeps its members' authorship: the oldest member's author
+        // authors it, every other distinct author is credited as a co-author,
+        // and the folded subjects stay readable in the body.
+        const authorsInRun = [...new Set(members.map((m) => git(['log', '-1', '--format=%an <%ae>', m.hash], wt)))].filter(Boolean);
+        const args = authorsInRun.length ? ['--author', authorsInRun[0]] : [];
+        args.push('-m', `${type}(${members[0].scope}): ${summary}`,
+          '-m', ['Folds:', ...members.map((m) => `- ${m.subj}`)].join('\n'));
+        const coAuthors = authorsInRun.slice(1).map((a) => `Co-authored-by: ${a}`);
+        if (coAuthors.length) args.push('-m', coAuthors.join('\n'));
+        commitOrThrow(args, `commit the fold of ${members.length} commits`);
         continue;
       }
 
@@ -578,23 +623,19 @@ function stratify(opts) {
         // wholesale by overlayDocsFrom(origTip, wt) after the loop.
         const a = applyNonDocs(c.hash, wt);
         if (!a.ok) { throw { conflict: c.hash, path: a.detail }; }
-        if (!gitQuiet(['commit', '-C', c.hash], wt)) { throw { conflict: c.hash }; }
-        const s = subjectFor(c);
-        if (s) amendTo(c.hash, s);
-      } else if (c.kind === 'type-3 (docs(ristretto) scope, no docs path)') {
-        if (!gitQuiet(['cherry-pick', c.hash], wt)) { throw { conflict: c.hash }; }
-        const s = subjectFor(c);
-        if (s) amendTo(c.hash, s);
+        commitOrThrow(['-C', c.hash], `commit the replay of ${c.hash}`);
       } else {
-        if (!gitQuiet(['cherry-pick', c.hash], wt)) { throw { conflict: c.hash }; }
+        cherryPick(c.hash); // type-3 and pure non-docs commits
       }
+      const s = subjectFor(c);
+      if (s) amendTo(c.hash, s);
     }
 
     // Base docs may be stale and tip deletions must propagate — clear, then overlay the tip.
     overlayDocsFrom(origTip, wt);
     if (!gitQuiet(['diff', '--cached', '--quiet'], wt)) {
-      const subj = opts.subject || 'docs(ristretto): stratify the planning history';
-      if (!gitQuiet(['commit', '-m', subj], wt)) throw { message: 'could not create the docs commit' };
+      const subj = opts.subject || 'docs(ristretto): update the planning docs';
+      commitOrThrow(['-m', subj], 'create the docs commit');
     }
 
     const prTip = git(['rev-parse', 'HEAD'], wt);
@@ -612,7 +653,8 @@ function stratify(opts) {
       gitQuiet(['cherry-pick', '--abort'], wt); // no-op when the conflict came from `git apply`
       cleanup(true);
       const where = e.path ? ` (non-docs path '${e.path}')` : '';
-      fail(`stratify: cherry-pick conflict on ${e.conflict}${where} — aborted, no PR branch left behind.`);
+      const why = e.detail ? ` — git: ${e.detail}` : '';
+      fail(`stratify: cherry-pick conflict on ${e.conflict}${where}${why} — aborted, no PR branch left behind.`);
     }
     cleanup(true);
     fail(`stratify: ${(e && e.message) || 'failed to build the PR branch'}.`);

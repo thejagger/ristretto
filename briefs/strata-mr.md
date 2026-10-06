@@ -9,15 +9,19 @@ The skill itself generates the MR description; it does not delegate to another s
 - `<TICKET>` — defaults to the ticket key parsed from the current branch name (e.g. `feature/ABC-123-...` → `ABC-123`) or from a ticket in commit subjects. If neither yields a confident match, ask the user.
 - `<BASE_BRANCH>` — the repo's actual default branch, as the helper's `check-branch` resolution reports it (`origin/HEAD`, then `main`, then `master`). Use whichever it printed; ask if it reports none.
 
-## Attribution — ask when the range has multiple authors
+## Attribution — report it, don't ask
 
-The squashed/retitled commits need one author identity, and that is the **user's** call, not the script's:
+`stratify` has already run by now, so authorship is settled; there is nothing for the user to choose. Report it as it is:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/strata.mjs" authors <range>
 ```
 
-If `distinct_authors` is greater than 1, run `authors`, list the distinct authors, and **ask the user whose identity should appear on the squashed/retitled commits**. Do not pick one yourself. With a single author, attribute to that author and say so.
+- Every replayed commit — pure code, MIXED, retitled — keeps its **original author**.
+- A `--fold` commit is authored by its run's oldest member's author and credits the run's other authors as `Co-authored-by:`.
+- The appended `docs(ristretto)` commit carries the **configured identity** (the `Default configured identity` line).
+
+If `distinct_authors` is greater than 1, name the authors in the MR description so reviewers know whose work the branch carries. If `configured_is_in_range` is `false`, say so: the docs commit will carry an identity that authored none of the range.
 
 ## Summarize the committed range
 

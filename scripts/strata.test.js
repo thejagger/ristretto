@@ -275,14 +275,16 @@ function baseFixture() {
 // criterion: refusals (dirty, branch-exists, merge) exit 2, no temp worktree
 {
   const { r } = baseFixture();
-  fs.writeFileSync(path.join(r.dir, 'dirty.txt'), 'x\n');
+  fs.writeFileSync(path.join(r.dir, 'app.js'), 'uncommitted\n');
   let res = r.stratify(['main..HEAD', '--pr-branch', 'clean-dirty']);
-  assert.strictEqual(res.status, 2, 'dirty tree refuses');
-  assert.ok(/dirty/.test(res.stderr), 'dirty refusal names it');
-  fs.unlinkSync(path.join(r.dir, 'dirty.txt'));
+  assert.strictEqual(res.status, 2, 'a tracked change refuses');
+  assert.ok(/uncommitted changes/.test(res.stderr), 'dirty refusal names it');
+  r.run(['checkout', '--', 'app.js']);
 
+  // An untracked file (e.g. the <TICKET>.md --mr leaves behind) is not a refusal.
+  fs.writeFileSync(path.join(r.dir, 'ABC-1.md'), 'mr\n');
   res = r.stratify(['main..HEAD', '--pr-branch', 'cleaned']);
-  assert.strictEqual(res.status, 0, res.stderr);
+  assert.strictEqual(res.status, 0, `untracked file must not refuse: ${res.stderr}`);
   res = r.stratify(['main..HEAD', '--pr-branch', 'cleaned']);
   assert.strictEqual(res.status, 2, 'existing branch refuses');
   assert.ok(/already exists/.test(res.stderr), 'branch-exists refusal names it');
@@ -304,20 +306,24 @@ function baseFixture() {
   ok('dirty / branch-exists / merge refusals exit 2, no temp worktree left');
 }
 
-// criterion: cherry-pick conflict aborts, removes worktree, names the hash
+// criterion: once main has moved on, `main..feature` replays onto the
+// merge-base, not main's new tip — the README's own `main..HEAD` invocation
 {
   const r = repo();
-  r.commit({ 'f.txt': 'a\n' }, 'chore: init');
+  r.commit({ 'f.txt': 'a\n', 'docs/ristretto/plans/a.md': 'p\n' }, 'chore: init');
+  const mergeBase = r.head();
   r.run(['checkout', '-qb', 'feature/x']);
-  const conflict = r.commit({ 'f.txt': 'b\n' }, 'feat: a to b');
+  r.commit({ 'f.txt': 'b\n', 'docs/ristretto/plans/a.md': 'p\nq\n' }, 'feat: a to b');
   r.run(['checkout', '-q', 'main']);
-  r.commit({ 'f.txt': 'z\n' }, 'chore: diverge');
-  const res = r.stratify(['main..feature/x', '--pr-branch', 'conf']);
-  assert.strictEqual(res.status, 2, 'conflict refuses');
-  assert.ok(res.stderr.includes(conflict), 'conflict names the hash');
-  assert.strictEqual(r.out(['worktree', 'list']).split('\n').filter(Boolean).length, 1, 'no temp worktree after conflict');
-  assert.ok(!r.out(['branch']).includes('conf'), 'no half-built PR branch left');
-  ok('cherry-pick conflict aborts cleanly, names hash, no worktree/branch left');
+  r.commit({ 'f.txt': 'z\n', 'm.txt': 'main\n' }, 'chore: main moves on');
+  r.run(['checkout', '-q', 'feature/x']);
+  const res = r.stratify(['main..HEAD', '--pr-branch', 'moved']);
+  assert.strictEqual(res.status, 0, `moved base must succeed: ${res.stderr}`);
+  const json = JSON.parse(res.stdout);
+  assert.strictEqual(json.base, mergeBase, 'built on the merge-base');
+  assert.strictEqual(json.verified, true, 'verified true');
+  assert.ok(r.run(['diff', '--quiet', 'feature/x', 'moved']).status === 0, 'tip tree byte-identical');
+  ok('main..HEAD after main moved on: built on the merge-base, verified');
 }
 
 // criterion: main checkout undisturbed by a successful stratify
@@ -424,6 +430,96 @@ function baseFixture() {
   assert.ok(r.run(['diff', '--quiet', 'feature/x', 'cleaned']).status === 0, 'tip tree byte-identical');
   ok('two MIXED roadmap edits replay without conflict (content flavor)');
 }
+// criterion: a move across the docs boundary is MIXED, both directions
+// (rename detection would list only the new path and misclassify it)
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/plans/x.md': 'plan\n', 'src/a.js': 'code\n' }, 'chore: init');
+  r.run(['checkout', '-qb', 'feature/x']);
+  r.run(['mv', 'src/a.js', 'docs/ristretto/a.js']);
+  r.run(['commit', '-qm', 'chore: move code into docs']);
+  r.run(['mv', 'docs/ristretto/plans/x.md', 'notes.md']);
+  r.run(['commit', '-qm', 'chore: move plan out of docs']);
+  const res = r.stratify(['main..HEAD', '--pr-branch', 'moved']);
+  assert.strictEqual(res.status, 0, `moves across docs/ristretto must succeed: ${res.stderr}`);
+  assert.strictEqual(JSON.parse(res.stdout).verified, true, 'verified true');
+  const filesOf = (subj) => {
+    const h = r.out(['rev-list', 'main..moved']).split('\n').find((x) => r.out(['log', '-1', '--format=%s', x]) === subj);
+    assert.ok(h, `${subj} replayed`);
+    return r.out(['show', '--name-only', '--format=', h]).split('\n').filter(Boolean);
+  };
+  assert.deepStrictEqual(filesOf('chore: move code into docs'), ['src/a.js'], 'code side of the move replays');
+  assert.deepStrictEqual(filesOf('chore: move plan out of docs'), ['notes.md'], 'non-docs side of the move replays');
+  ok('moves into and out of docs/ristretto replay their non-docs side, verified');
+}
+
+// criterion: a MIXED commit carrying the docs(ristretto) scope is retitled from
+// its non-docs paths only (its docs paths never vote)
+{
+  const r = repo();
+  r.commit({ 'placeholder.txt': 'x\n' }, 'chore: init');
+  r.run(['checkout', '-qb', 'feature/x']);
+  r.commit({ 'docs/ristretto/plans/a.md': 'p\n', 'tests/foo.test.js': 't\n' }, 'docs(ristretto): plan + test');
+  const res = r.stratify(['main..HEAD', '--pr-branch', 'cleaned']);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const subjects = r.out(['log', '--format=%s', 'main..cleaned']).split('\n').filter(Boolean);
+  assert.ok(subjects.includes('test: plan + test'), `MIXED docs-scoped → test, got ${JSON.stringify(subjects)}`);
+  ok('MIXED docs(ristretto) commit retitled from its non-docs paths');
+}
+
+// criterion: --retitle applies to a plain commit; a key naming no replayed
+// commit refuses before anything is built
+{
+  const r = repo();
+  r.commit({ 'placeholder.txt': 'x\n' }, 'chore: init');
+  r.run(['checkout', '-qb', 'feature/x']);
+  const plain = r.commit({ 'app.js': 'a\n' }, 'feat: add app');
+  const docsOnly = r.commit({ 'docs/ristretto/plans/a.md': 'p\n' }, 'docs(ristretto): add plan');
+  let res = r.stratify(['main..HEAD', '--pr-branch', 'cleaned', '--retitle', `${plain.slice(0, 7)}=feat(app): add the app`]);
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.ok(r.out(['log', '--format=%s', 'main..cleaned']).split('\n').includes('feat(app): add the app'), 'plain commit retitled');
+
+  for (const [key, why] of [['deadbeef', /matches no commit/], [docsOnly.slice(0, 7), /docs-only/]]) {
+    res = r.stratify(['main..HEAD', '--pr-branch', 'never', '--retitle', `${key}=x: y`]);
+    assert.strictEqual(res.status, 2, `bad --retitle ${key} refuses`);
+    assert.ok(why.test(res.stderr), `refusal says why: ${res.stderr}`);
+    assert.ok(!r.out(['branch']).includes('never'), 'no branch left behind');
+    assert.strictEqual(r.out(['worktree', 'list']).split('\n').filter(Boolean).length, 1, 'no temp worktree');
+  }
+  ok('--retitle honoured on a plain commit; unknown / docs-only keys refuse up front');
+}
+
+// criterion: the repo's commit hooks don't run on the replay
+{
+  const { r } = baseFixture();
+  const hook = path.join(r.dir, '.git', 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, '#!/bin/sh\necho "hook ran" >&2\nexit 1\n');
+  fs.chmodSync(hook, 0o755);
+  const res = r.stratify(['main..HEAD', '--pr-branch', 'cleaned', '--subject', 'docs(ristretto): plan b and c']);
+  assert.strictEqual(res.status, 0, `a failing pre-commit hook must not block the replay: ${res.stderr}`);
+  assert.strictEqual(JSON.parse(res.stdout).verified, true, 'verified true');
+  ok('a failing pre-commit hook does not block the replay');
+}
+
+// criterion: a fold keeps its members' authorship and lists their subjects
+{
+  const r = repo();
+  r.commit({ 'README.md': 'base\n' }, 'chore: init');
+  r.run(['checkout', '-qb', 'feature/x']);
+  r.commit({ 'f.js': '1\n' }, 'fix(gate): tighten lock');
+  fs.writeFileSync(path.join(r.dir, 'f.js'), '1\n2\n');
+  r.run(['commit', '-qam', 'refactor(gate): extract ratchet', '--author', 'Bob <bob@example.com>']);
+  r.commit({ 'docs/ristretto/plans/b.md': 'q\n' }, 'docs(ristretto): add plan');
+  const res = r.stratify(['main..HEAD', '--pr-branch', 'folded', '--fold']);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const fold = r.out(['rev-list', 'main..folded']).split('\n').find((h) => r.out(['log', '-1', '--format=%s', h]).includes('(gate)'));
+  assert.strictEqual(r.out(['log', '-1', '--format=%an <%ae>', fold]), 'Tester <t@example.com>', 'oldest member authors the fold');
+  const body = r.out(['log', '-1', '--format=%b', fold]);
+  assert.ok(body.includes('- fix(gate): tighten lock') && body.includes('- refactor(gate): extract ratchet'), 'body lists the folded subjects');
+  assert.ok(body.includes('Co-authored-by: Bob <bob@example.com>'), 'other author credited');
+  ok('--fold keeps authorship (author + Co-authored-by) and lists folded subjects');
+}
+
 console.log('== fake-git fails loud on dead call shapes ==');
 {
   const r = spawnSync(process.execPath, [FAKE_GIT, 'log', '--remotes=origin', '--format=%H', 'main..HEAD'], {
