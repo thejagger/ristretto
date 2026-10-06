@@ -46,7 +46,6 @@ declare module 'claude-code' {
       showDone: boolean
       tick: number
       open: string | null
-      graph: 'open' | 'all'
       run: BoardRun | null
       runs: BoardRecord[]
     }

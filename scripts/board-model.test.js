@@ -403,13 +403,6 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.parseRoadmap(['| Feature | Status | Plan |', '|---|---|---|', '| x | planned | [plan](docs/ristretto/plans/x.md) |'].join('\n')).rows[0].plan, 'plans/x.md');
     assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
 
-    // The dependency map: what is left and the done features it rests on, toggled to the whole
-    // roadmap; ghost is not on the roadmap and is left out.
-    const map = v.graph;
-    assert.deepStrictEqual([map.scope, map.layout.edges.map((e) => `${e.from}>${e.to}`)], ['open', ['core>a', 'a>b']]);
-    assert.deepStrictEqual(map.toggle, null, 'the whole roadmap draws nothing more here');
-    assert.strictEqual(m.view({ ...board, rows: board.rows.filter((r) => r.id !== 'a' && r.id !== 'b') }, null, 0, false, { plans, runs }).graph, null, 'no edge, no map');
-
     // No action from an open row while a run is active.
     const busy = m.view(board, null, 0, true, { plans, runs, open: 'k' });
     assert.strictEqual(busy.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)).find((x) => x.id === 'k').details.action, undefined);

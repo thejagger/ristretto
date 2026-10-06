@@ -3,7 +3,6 @@
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
 import { trend } from './board-runs.mjs';
-import { layoutGraph } from './board-graph.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
@@ -322,23 +321,6 @@ function nowOf(rows, live, now, elsewhere) {
   };
 }
 
-// The dependency map, when the plans give it any edge: what is left and what it rests on,
-// or, toggled, every feature. `other` says whether the other scope draws something different.
-function graphOf(rows, plans, scope, running) {
-  const depends = Object.fromEntries(Object.entries(plans).map(([id, plan]) => [id, plan.depends]));
-  const open = layoutGraph(rows, depends, { scope: 'open', running });
-  const all = layoutGraph(rows, depends, { scope: 'all', running });
-  const layout = scope === 'all' ? all || open : open || all;
-  if (!layout) return null;
-  const showing = layout === all ? 'all' : 'open';
-  const other = showing === 'all' ? open : all;
-  return {
-    layout,
-    scope: showing,
-    toggle: other && other.nodes.length !== layout.nodes.length ? { label: showing === 'all' ? 'what is left' : 'whole roadmap', scope: showing === 'all' ? 'open' : 'all' } : null,
-  };
-}
-
 // The pane as a view: a summary card, the run card, what needs a person, what is next, and
 // what happened, newest first. One row (`opts.open`) opens to its details. No action anywhere
 // while a run is active — this session's, or `elsewhere`, another's — so the pane can never
@@ -404,7 +386,6 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     notices,
     now: nowOf(rows, live, now, elsewhere),
     sections,
-    graph: graphOf(rows, ctx.plans, opts.graph ?? 'open', running || null),
     done: finished.length === 0 ? null : {
       count: finished.length,
       rows: shown.map((r) => ({ ...rowOf(r, ctx), run: runOf.get(r.id) ?? null })),

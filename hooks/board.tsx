@@ -28,7 +28,6 @@ const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false
 const showDone = atom({ plugin: 'ristretto', key: 'showDone' } as const, false)
 const tick = atom({ plugin: 'ristretto', key: 'tick' } as const, 0)
 const openRow = atom({ plugin: 'ristretto', key: 'open' } as const, null as string | null)
-const graphScope = atom({ plugin: 'ristretto', key: 'graph' } as const, 'open' as 'open' | 'all')
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
@@ -59,12 +58,13 @@ async function refreshBoard($: EngineInterface) {
     }
     const mtime = (await $.fs.stat(await repo($, ROADMAP))).mtimeMs
     const parsed = parseRoadmap(String(await $.fs.read(await repo($, ROADMAP))))
-    // What every plan says — a done one too, since the dependency map is drawn from them —
-    // and the manual checks. A plan that cannot be read is simply absent. A blocked row with
-    // no reason in the roadmap says why from its plan's Blockers.
+    // What each open plan says, plus the opened row's plan whatever its status; and the
+    // manual checks. A plan that cannot be read is simply absent. A blocked row with no
+    // reason in the roadmap says why from its plan's Blockers.
+    const opened = await read($, openRow)
     const plans: Record<string, BoardPlan> = {}
     for (const row of parsed.rows) {
-      if (!row.plan) continue
+      if (!row.plan || (row.status === 'done' && row.id !== opened)) continue
       try {
         plans[row.id] = parsePlan(String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`))))
       } catch {
@@ -279,31 +279,6 @@ function lineSvg(done: boolean) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="18" viewBox="0 0 1000 18" preserveAspectRatio="none">${trackLine(done, 0, 1000)}</svg>`
 }
 
-// The dependency map: each feature a pill in its status's hue, hanging below what it depends
-// on. A built dependency's line is solid green, an unbuilt one's dashed grey; a planned
-// feature still waiting is framed dashed, the running one ringed in Claude's accent.
-const FONT = `font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"`
-function graphSvg(g: any) {
-  const edges = g.edges.map((e: any) => {
-    const mid = (e.y1 + e.y2) / 2
-    const hue = e.built ? HUE.success : HUE.inactive
-    return `<path d="M${e.x1} ${e.y1}C${e.x1} ${mid} ${e.x2} ${mid} ${e.x2} ${e.y2 - 4}" fill="none" stroke="${hue}" stroke-opacity="${e.built ? 0.55 : 0.7}" stroke-width="1.3"${e.built ? '' : ' stroke-dasharray="3 3"'}/><path d="M${e.x2 - 3} ${e.y2 - 5}l3 4 3-4z" fill="${hue}" fill-opacity="${e.built ? 0.7 : 0.8}"/>`
-  })
-  const tone: Record<string, string> = { done: 'success', 'in-progress': 'claude', blocked: 'error', 'needs-human': 'permission', 'needs-review': 'warning' }
-  const nodes = g.nodes.map((n: any) => {
-    const hue = HUE[tone[n.status] ?? 'inactive']
-    const done = n.status === 'done'
-    const ring = n.running ? `<rect x="${n.x - 3}" y="${n.y - 3}" width="${n.w + 6}" height="${n.h + 6}" rx="${(n.h + 6) / 2}" fill="none" stroke="${HUE.claude}" stroke-opacity="0.35" stroke-width="3"/>` : ''
-    const safe = n.label.replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    return `${ring}<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${n.h / 2}" fill="${hue}" fill-opacity="${done ? 0.1 : 0.16}" stroke="${hue}" stroke-opacity="${done ? 0.45 : 0.9}" stroke-width="1.2"${n.waiting ? ' stroke-dasharray="3 2"' : ''}/><circle cx="${n.x + 11}" cy="${n.y + n.h / 2}" r="3.5" fill="${hue}"${n.status === 'planned' ? ` fill-opacity="0.5"` : ''}/><text x="${n.x + 19}" y="${n.y + 15}" ${FONT} font-size="11.5" font-weight="${done ? 400 : 600}" fill="${hue}">${safe}</text>`
-  })
-  // The pane's background is unknown to an image, so lines are masked out under every pill
-  // rather than painted over: a line passing a pill it does not belong to goes behind it.
-  const holes = g.nodes.map((n: any) => `<rect x="${n.x - 2}" y="${n.y - 1}" width="${n.w + 4}" height="${n.h + 2}" rx="${n.h / 2}" fill="#000"/>`)
-  const mask = `<mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="${g.width}" height="${g.height}"><rect width="${g.width}" height="${g.height}" fill="#fff"/>${holes.join('')}</mask>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">${mask}<g mask="url(#m)">${edges.join('')}</g>${nodes.join('')}</svg>`
-}
-
 function isRoadmap(path: unknown) {
   return typeof path === 'string' && path.replace(/\\/g, '/').endsWith(ROADMAP)
 }
@@ -425,10 +400,12 @@ export const register: Register = on => {
       plans: boardValue.plans,
       checks: boardValue.checks,
       runs: await read($, runs),
-      graph: await read($, graphScope),
     })
-    // One row open at a time.
-    const toggleRow = (id: string) => update($, openRow, (o: string | null) => (o === id ? null : id))
+    // One row open at a time; opening a done row reads its archived plan.
+    const toggleRow = async (id: string) => {
+      await update($, openRow, (o: string | null) => (o === id ? null : id))
+      await refreshBoard($)
+    }
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
     const rich = Svg !== undefined
     // On desktop a button carries a sign rather than a word; the terminal keeps the word.
@@ -699,27 +676,6 @@ export const register: Register = on => {
             ))}
           </Box>
         ))}
-
-        {rich && v.graph && (
-          <Box key="graph" flexDirection="column" gap={rows}>
-            <Box flexDirection="row" gap={2} alignItems="center">
-              {heading('h-graph', 'dependencies')}
-              {canPress && v.graph.toggle && (
-                <Button
-                  key="toggle-graph"
-                  label={v.graph.toggle.label}
-                  plain
-                  dimColor
-                  onPress={() => update($, graphScope, () => v.graph.toggle.scope)}
-                />
-              )}
-            </Box>
-            <Svg
-              alt={v.graph.layout.edges.map((x: any) => `${x.to} depends on ${x.from}`).join('; ')}
-              source={graphSvg(v.graph.layout)}
-            />
-          </Box>
-        )}
 
         {v.done && (
           <Box key="done" flexDirection="column">
