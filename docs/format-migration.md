@@ -125,6 +125,17 @@ meaning, and worse than leaving the feature off.
      planned row. It opens by itself where the layout docks a pane; a filter still prints text.
    ```
 
+### → 0.19 — strata: one docs commit per branch
+
+1. Nothing on disk changes shape. `/ristretto:strata` reads the branch's history and builds a new branch; it writes nothing under `docs/ristretto/` and touches no plan, roadmap row or config key.
+2. **Say this, once:**
+
+   ```
+   ☕ ristretto 0.19: /ristretto:strata <range> collapses a branch's docs/ristretto planning
+     commits into one docs(ristretto) commit on a fresh PR branch, keeping every code commit.
+     Your branch is never rewritten, and the new tip is proven identical to it.
+   ```
+
 ## 3. Stamp, report, and carry on
 
 ```
