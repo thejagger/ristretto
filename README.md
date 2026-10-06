@@ -195,6 +195,8 @@ To share with the team, push this folder to a Git repo and `/plugin marketplace 
 /ristretto:tamp                               # review the changes I just made
 /ristretto:tamp src/auth                      # green-up pass on existing code
 /ristretto:tamp BREW-224 fix                  # review a feature's diff and apply the top fixes
+/ristretto:strata main..HEAD                  # collapse a branch's docs/ristretto trail into one commit
+/ristretto:strata main..HEAD --mr             # …and draft the PR description
 /ristretto:help                              # the menu — commands, workflow, house rules
 ```
 

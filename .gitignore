@@ -26,5 +26,12 @@ cmake-build-*/
 out/
 .playwright-mcp
 
+# Node / build artifacts
+node_modules/
+dist/
+
+# ristretto transient state — marker, lock, green cache, build plans (see README)
+.ristretto/
+
 # Local working notes (superpowers specs/plans) — not part of the plugin
 docs/
