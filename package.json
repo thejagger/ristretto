@@ -1,0 +1,41 @@
+{
+  "name": "ristretto",
+  "version": "0.17.0",
+  "main": "./.opencode/plugins/ristretto.mjs",
+  "bin": {
+    "ristretto": "bin/install.mjs"
+  },
+  "exports": {
+    ".": "./.opencode/plugins/ristretto.mjs",
+    "./plugin": "./.opencode/plugins/ristretto.mjs"
+  },
+  "files": [
+    ".claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json",
+    ".opencode/lib/rewrite-namespace.mjs",
+    ".opencode/plugins/ristretto.mjs",
+    ".opencode/scripts/gate-lsp.mjs",
+    "bin/install.mjs",
+    "briefs",
+    "commands",
+    "docs/decisions.md",
+    "docs/format-migration.md",
+    "reference",
+    "scripts/gate.js",
+    "scripts/testreport.js",
+    "scripts/junit.js",
+    "scripts/baseline.js",
+    "scripts/version.js"
+  ],
+  "scripts": {
+    "build": "bun build .opencode/src/index.ts --outfile .opencode/plugins/ristretto.mjs --target node --tree-shaking",
+    "prepack": "bun run build",
+    "test": "node scripts/gate.test.js && bun run build && bun test ./.opencode/src/adapter.test.ts ./.opencode/src/package.test.ts ./.opencode/src/README.opencode.test.ts bin/install.test.ts"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
+  },
+  "patchedDependencies": {
+    "jsonc-parser@3.3.1": "patches/jsonc-parser@3.3.1.patch"
+  }
+}

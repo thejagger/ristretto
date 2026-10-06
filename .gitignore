@@ -35,3 +35,12 @@ dist/
 
 # Local working notes (superpowers specs/plans) — not part of the plugin
 docs/
+
+# Dev-only — @opencode-ai/plugin types + @types/node via local symlinks
+node_modules/
+
+# ristretto gate transient state
+.ristretto/
+
+# npm pack output (dist/ristretto-<version>.tgz) — repackable, never committed
+/dist/
