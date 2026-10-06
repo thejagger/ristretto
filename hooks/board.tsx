@@ -15,6 +15,13 @@ const ROADMAP = 'docs/ristretto/roadmap.md'
 const CHECKS = 'docs/ristretto/manual-checks.md'
 const MARKER = '.ristretto/pulling'
 
+// A repo file by its absolute path. A relative path would resolve against the working
+// directory, which a shell `cd` in the session moves: one `cd docs/ristretto/plans` and the
+// board said there was no roadmap. The project root does not move with it.
+async function repo($: EngineInterface, path: string) {
+  return `${await $.session.root()}/${path}`
+}
+
 const board = atom({ plugin: 'ristretto', key: 'board' } as const, EMPTY_BOARD as Board)
 const live = atom({ plugin: 'ristretto', key: 'live' } as const, null as BoardLive | null)
 const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false)
@@ -44,14 +51,14 @@ function maybeAutoOpen($: EngineInterface) {
 
 async function refreshBoard($: EngineInterface) {
   try {
-    hasRoadmap = await $.fs.exists(ROADMAP)
+    hasRoadmap = await $.fs.exists(await repo($, ROADMAP))
     if (!hasRoadmap) {
       roadmapMtime = -1
       await update($, board, () => ({ ...EMPTY_BOARD, error: 'no-roadmap' }))
       return
     }
-    const mtime = (await $.fs.stat(ROADMAP)).mtimeMs
-    const parsed = parseRoadmap(String(await $.fs.read(ROADMAP)))
+    const mtime = (await $.fs.stat(await repo($, ROADMAP))).mtimeMs
+    const parsed = parseRoadmap(String(await $.fs.read(await repo($, ROADMAP))))
     // What every plan says — a done one too, since the dependency map is drawn from them —
     // and the manual checks. A plan that cannot be read is simply absent. A blocked row with
     // no reason in the roadmap says why from its plan's Blockers.
@@ -59,7 +66,7 @@ async function refreshBoard($: EngineInterface) {
     for (const row of parsed.rows) {
       if (!row.plan) continue
       try {
-        plans[row.id] = parsePlan(String(await $.fs.read(`docs/ristretto/${row.plan}`)))
+        plans[row.id] = parsePlan(String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`))))
       } catch {
         // The opened row says its plan was not found.
       }
@@ -67,7 +74,7 @@ async function refreshBoard($: EngineInterface) {
     }
     let checks: Record<string, { done: boolean; text: string }[]> = {}
     try {
-      if (await $.fs.exists(CHECKS)) checks = parseChecks(String(await $.fs.read(CHECKS)))
+      if (await $.fs.exists(await repo($, CHECKS))) checks = parseChecks(String(await $.fs.read(await repo($, CHECKS))))
     } catch {
       // No checks to show.
     }
@@ -77,7 +84,7 @@ async function refreshBoard($: EngineInterface) {
     } catch {
       // Without the plugin's version the format line is skipped; the board itself still draws.
     }
-    const name = (await $.session.cwd()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
+    const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
     await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))
     roadmapMtime = mtime
     maybeAutoOpen($)
@@ -131,9 +138,9 @@ async function observeMarker($: EngineInterface) {
   try {
     let owner: string | null = null
     let idleMs: number | null = null
-    if (await $.fs.exists(MARKER)) {
-      owner = String(await $.fs.read(MARKER)).trim()
-      idleMs = (await $.clock.now()) - (await $.fs.stat(MARKER)).mtimeMs
+    if (await $.fs.exists(await repo($, MARKER))) {
+      owner = String(await $.fs.read(await repo($, MARKER))).trim()
+      idleMs = (await $.clock.now()) - (await $.fs.stat(await repo($, MARKER))).mtimeMs
     }
     const state = markerState(owner, idleMs, await $.session.id())
     await update($, elsewhere, () => state === 'other')
@@ -146,7 +153,7 @@ async function observeMarker($: EngineInterface) {
 async function poll($: EngineInterface) {
   try {
     await observeMarker($)
-    const mtime = (await $.fs.exists(ROADMAP)) ? (await $.fs.stat(ROADMAP)).mtimeMs : -1
+    const mtime = (await $.fs.exists(await repo($, ROADMAP))) ? (await $.fs.stat(await repo($, ROADMAP))).mtimeMs : -1
     if (mtime !== roadmapMtime) await refreshBoard($)
   } catch {
     // The next tick tries again.
@@ -325,7 +332,7 @@ export const register: Register = on => {
     // A bare /ristretto:status opens the board where it docks beside the transcript, at once
     // and with no model turn; a filter, or a layout that would put it inline, gets the text
     // roadmap from commands/status.md as before.
-    if (e.command === 'ristretto:status' && e.args.trim() === '' && e.presentation.isFullscreen && (await $.fs.exists(ROADMAP))) {
+    if (e.command === 'ristretto:status' && e.args.trim() === '' && e.presentation.isFullscreen && (await $.fs.exists(await repo($, ROADMAP)))) {
       await refreshBoard($)
       await $.ui.open({ id: PANE, title: 'ristretto' })
       return { text: 'Roadmap opened in the side pane — /ristretto:status <filter> prints it as text.' }
