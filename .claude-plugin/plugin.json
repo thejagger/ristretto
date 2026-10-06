@@ -1,6 +1,6 @@
 {
   "name": "ristretto",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Lean feature implementation. Prep a stack of intent-level plans, pull them into clean code in auto mode. Drift-resistant, low-ceremony.",
   "author": { "name": "Jakob" },
   "types": "./types/index.d.ts"
