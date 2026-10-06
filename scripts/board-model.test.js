@@ -198,6 +198,11 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(m.bar(1, 3, 10), { filled: 3, empty: 7 }, 'proportional, rounded to the nearest cell');
     assert.deepStrictEqual(m.bar(10, 10, 10), { filled: 10, empty: 0 });
     assert.deepStrictEqual([m.elapsed(45000), m.elapsed(362000), m.elapsed(3780000)], ['45s', '6m02s', '1h03m']);
+    // A finished span drops the seconds the running clock keeps.
+    assert.deepStrictEqual([m.duration(45000), m.duration(2160000), m.duration(3900000)], ['45s', '36m', '1h05m']);
+    // Plan Markdown becomes styled segments; a row's one line drops the markers.
+    assert.deepStrictEqual(m.inline('**Intake:** opens `x.ts` and **stays'), [{ text: 'Intake:', bold: true }, { text: ' opens ' }, { text: 'x.ts', code: true }, { text: ' and **stays' }]);
+    assert.strictEqual(m.plain('waits on `modifiedSince` and **docs**'), 'waits on modifiedSince and docs');
 
     const row = (id, tier, status, reason = '') => ({ flight: '', id, title: id, tier, status, reason });
     const board = { name: 'demo', rows: [row('a', 'easy', 'planned'), row('b', 'normal', 'planned'), row('c', 'normal', 'done'), row('k', 'normal', 'blocked', 'no source')], format: { project: '0.17', plugin: '0.17.0' }, error: null };
@@ -354,8 +359,8 @@ const shown = (v) => JSON.stringify(v);
       core: { acceptance: [{ auto: true, text: 'boots' }, { auto: false, text: 'cert trusted' }], depends: [], blockers: [], evidence: [{ criteria: [1], proof: 'test_boot' }], review: 'review: clean · rounds: 1', gate: 'exit 0', findings: [] },
     };
     const runs = [
-      { id: 'mid', startedAt: 0, endedAt: 100, ms: 100, usd: 1, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 1, ms: 60000, red: 0 }, status: 'done' },
-      { id: 'core', startedAt: 200, endedAt: 900, ms: 700, usd: 2, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 2, ms: 120000, red: 1 }, status: 'done' },
+      { id: 'mid', startedAt: 0, endedAt: 100, ms: 100, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 1, ms: 60000, red: 0 }, status: 'done' },
+      { id: 'core', startedAt: 200, endedAt: 900, ms: 700, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 2, ms: 120000, red: 1 }, status: 'done' },
     ];
     const v = m.view(board, null, 0, false, { plans, runs });
 
@@ -372,7 +377,7 @@ const shown = (v) => JSON.stringify(v);
 
     // What happened: newest run first, rows without a record after, in reverse roadmap order.
     assert.deepStrictEqual(v.done.rows.map((x) => x.id), ['core', 'mid', 'old']);
-    assert.deepStrictEqual([v.done.rows[0].run.usd, v.done.rows[2].run], [2, null]);
+    assert.deepStrictEqual([v.done.rows[0].run.ms, v.done.rows[2].run], [700, null]);
     assert.deepStrictEqual(v.done.trend, [1, 2]);
 
     // One row open at a time, each saying what its status needs said.
@@ -397,6 +402,13 @@ const shown = (v) => JSON.stringify(v);
     // immo-wert writes Plan cells repo-relative.
     assert.strictEqual(m.parseRoadmap(['| Feature | Status | Plan |', '|---|---|---|', '| x | planned | [plan](docs/ristretto/plans/x.md) |'].join('\n')).rows[0].plan, 'plans/x.md');
     assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
+
+    // The dependency map: what is left and the done features it rests on, toggled to the whole
+    // roadmap; ghost is not on the roadmap and is left out.
+    const map = v.graph;
+    assert.deepStrictEqual([map.scope, map.layout.edges.map((e) => `${e.from}>${e.to}`)], ['open', ['core>a', 'a>b']]);
+    assert.deepStrictEqual(map.toggle, null, 'the whole roadmap draws nothing more here');
+    assert.strictEqual(m.view({ ...board, rows: board.rows.filter((r) => r.id !== 'a' && r.id !== 'b') }, null, 0, false, { plans, runs }).graph, null, 'no edge, no map');
 
     // No action from an open row while a run is active.
     const busy = m.view(board, null, 0, true, { plans, runs, open: 'k' });

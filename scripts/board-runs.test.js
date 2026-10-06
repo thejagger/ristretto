@@ -10,27 +10,21 @@ const { pathToFileURL } = require('url');
   const live = (id, command = 'brew') => ({ command, id, phase: 'coding', round: 0, since: 0, gate: null, armed: true });
 
   // A run follows the feature the fold says is running.
-  let t = r.track(null, live('f-1'), 100, 2.5);
+  let t = r.track(null, live('f-1'), 100);
   assert.deepStrictEqual([t.run.id, t.run.startedAt, t.ended], ['f-1', 100, null]);
   let run = r.addTokens(t.run, { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 5000, cache_creation_input_tokens: 300 });
   run = r.addGate(r.addGate(run, 60000, true), 90000, false);
   assert.deepStrictEqual([run.tokens, run.gates], [{ in: 1300, out: 200, cache: 5000 }, { runs: 2, ms: 150000, red: 1 }]);
-  assert.strictEqual(r.track(run, live('f-1'), 200, 3).run, run, 'the same feature keeps its run');
+  assert.strictEqual(r.track(run, live('f-1'), 200).run, run, 'the same feature keeps its run');
 
   // The next feature's brief closes the previous run; the end of the run closes it too.
-  t = r.track(run, live('f-2'), 400, 4);
+  t = r.track(run, live('f-2'), 400);
   assert.deepStrictEqual([t.ended.id, t.run.id], ['f-1', 'f-2']);
-  const rec = r.endRun(t.ended, 400, 4, 'done');
-  assert.deepStrictEqual([rec.ms, rec.usd, rec.status, rec.gates.ms], [300, 1.5, 'done', 150000]);
-  assert.deepStrictEqual(r.track(t.run, null, 500, 5).ended.id, 'f-2');
-  assert.deepStrictEqual(r.track(null, null, 1, 1), { run: null, ended: null });
-  assert.strictEqual(r.track(null, { ...live(null), id: null }, 1, 1).run, null, 'no feature known yet: nothing to measure');
-
-  // Cost unknown at either end is unknown, never NaN.
-  assert.strictEqual(r.endRun(r.track(null, live('x'), 0, null).run, 10, 3, 'done').usd, null);
-  assert.strictEqual(r.endRun(r.track(null, live('x'), 0, 1).run, 10, undefined, 'done').usd, null);
-  assert.strictEqual(r.money(null), '—');
-  assert.strictEqual(r.money(6.8), '$6.80');
+  const rec = r.endRun(t.ended, 400, 'done');
+  assert.deepStrictEqual([rec.ms, rec.status, rec.gates.ms, 'usd' in rec], [300, 'done', 150000, false]);
+  assert.deepStrictEqual(r.track(t.run, null, 500).ended.id, 'f-2');
+  assert.deepStrictEqual(r.track(null, null, 1), { run: null, ended: null });
+  assert.strictEqual(r.track(null, { ...live(null), id: null }, 1).run, null, 'no feature known yet: nothing to measure');
   assert.deepStrictEqual([r.count(845), r.count(12400), r.count(1250000)], ['845', '12k', '1.3M']);
 
   // Records are kept to the last 200; the trend is gate minutes per run, oldest first.

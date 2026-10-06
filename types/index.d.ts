@@ -22,11 +22,10 @@ export type BoardRun = {
   id: string
   command: string | null
   startedAt: number
-  usd0: number | null
   tokens: { in: number; out: number; cache: number }
   gates: { runs: number; ms: number; red: number }
 }
-export type BoardRecord = Omit<BoardRun, 'usd0'> & { endedAt: number; ms: number; usd: number | null; status: string }
+export type BoardRecord = BoardRun & { endedAt: number; ms: number; status: string }
 export type BoardPhase = 'starting' | 'planning' | 'coding' | 'fixing' | 'review' | 'closing' | 'interrupted'
 export type BoardLive = {
   command: 'pull' | 'shot' | 'brew' | null
@@ -47,6 +46,7 @@ declare module 'claude-code' {
       showDone: boolean
       tick: number
       open: string | null
+      graph: 'open' | 'all'
       run: BoardRun | null
       runs: BoardRecord[]
     }

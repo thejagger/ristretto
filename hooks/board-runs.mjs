@@ -1,15 +1,15 @@
-// The cost of building a feature: a run starts when the board first sees which feature is
-// running and ends when another one starts or nothing does. Its time, tokens, dollars and gate
-// time are measured from events the board already observes. Pure: no $, no Node.
+// What building a feature took: a run starts when the board first sees which feature is
+// running and ends when another one starts or nothing does. Its time, tokens and gate time are
+// measured from events the board already observes; no dollars, since a subscription pays no
+// per-token price. Pure: no $, no Node.
 
-export function track(run, live, now, usd) {
+export function track(run, live, now) {
   const id = live ? live.id : null;
   if (run && run.id === id) return { run, ended: null };
   const next = id ? {
     id,
     command: live.command,
     startedAt: now,
-    usd0: typeof usd === 'number' ? usd : null,
     tokens: { in: 0, out: 0, cache: 0 },
     gates: { runs: 0, ms: 0, red: 0 },
   } : null;
@@ -33,14 +33,13 @@ export function addGate(run, ms, red) {
   return { ...run, gates: { runs: run.gates.runs + 1, ms: run.gates.ms + ms, red: run.gates.red + (red ? 1 : 0) } };
 }
 
-export function endRun(run, now, usd, status) {
+export function endRun(run, now, status) {
   return {
     id: run.id,
     command: run.command,
     startedAt: run.startedAt,
     endedAt: now,
     ms: now - run.startedAt,
-    usd: run.usd0 === null || typeof usd !== 'number' ? null : Math.max(0, usd - run.usd0),
     tokens: run.tokens,
     gates: run.gates,
     status,
@@ -53,10 +52,6 @@ export function keep(records, record, max = 200) {
 
 export function trend(records, n = 12) {
   return records.slice(-n).map((rec) => Math.round(rec.gates.ms / 60000));
-}
-
-export function money(usd) {
-  return typeof usd === 'number' ? `$${usd.toFixed(2)}` : '—';
 }
 
 export function count(tokens) {

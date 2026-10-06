@@ -3,6 +3,7 @@
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
 import { trend } from './board-runs.mjs';
+import { layoutGraph } from './board-graph.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
@@ -203,6 +204,34 @@ export function elapsed(ms) {
   return `${Math.floor(s / 3600)}h${pad(Math.floor((s % 3600) / 60))}m`;
 }
 
+// How long something finished took, to the unit that matters: `45s`, `36m`, `1h05m`. The
+// running clock keeps its seconds (elapsed); a finished span does not need them.
+export function duration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
+}
+
+// Plan text carries Markdown the pane cannot draw: `**bold**` and `code` become styled
+// segments, the markers dropped. An unclosed marker is kept as written.
+export function inline(text) {
+  const out = [];
+  const re = /\*\*(.+?)\*\*|`([^`]+)`/g;
+  let last = 0;
+  for (let m; (m = re.exec(text));) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index) });
+    out.push(m[1] !== undefined ? { text: m[1], bold: true } : { text: m[2], code: true });
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+// The same text as one plain line, for a row's single truncated line.
+export const plain = (text) => inline(text).map((seg) => seg.text).join('');
+
 // One glyph and one tone per status. Tones are Claude theme keys, so the pane follows the
 // person's light/dark theme on every surface; single-width glyphs, because emoji draw unevenly.
 const LOOK = {
@@ -228,7 +257,7 @@ function rowOf(row, ctx) {
     mark: look.mark,
     tone: look.tone,
     tag: waiting.length > 0 ? 'waits on' : row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
-    detail: row.reason || row.title,
+    detail: plain(row.reason || row.title),
     waiting,
     toggle: { open: ctx.open === row.id },
   };
@@ -290,6 +319,23 @@ function nowOf(rows, live, now, elsewhere) {
     gate: live.gate
       ? live.gate.red ? { text: 'gate red', tone: 'error' } : { text: `gate running ${elapsed(now - live.gate.since)}`, tone: 'inactive' }
       : null,
+  };
+}
+
+// The dependency map, when the plans give it any edge: what is left and what it rests on,
+// or, toggled, every feature. `other` says whether the other scope draws something different.
+function graphOf(rows, plans, scope, running) {
+  const depends = Object.fromEntries(Object.entries(plans).map(([id, plan]) => [id, plan.depends]));
+  const open = layoutGraph(rows, depends, { scope: 'open', running });
+  const all = layoutGraph(rows, depends, { scope: 'all', running });
+  const layout = scope === 'all' ? all || open : open || all;
+  if (!layout) return null;
+  const showing = layout === all ? 'all' : 'open';
+  const other = showing === 'all' ? open : all;
+  return {
+    layout,
+    scope: showing,
+    toggle: other && other.nodes.length !== layout.nodes.length ? { label: showing === 'all' ? 'what is left' : 'whole roadmap', scope: showing === 'all' ? 'open' : 'all' } : null,
   };
 }
 
@@ -358,6 +404,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     notices,
     now: nowOf(rows, live, now, elsewhere),
     sections,
+    graph: graphOf(rows, ctx.plans, opts.graph ?? 'open', running || null),
     done: finished.length === 0 ? null : {
       count: finished.length,
       rows: shown.map((r) => ({ ...rowOf(r, ctx), run: runOf.get(r.id) ?? null })),

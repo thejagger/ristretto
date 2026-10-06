@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardLive, BoardPlan, BoardRecord, BoardRun } from '../types'
-import { EMPTY_BOARD, bar, docks, elapsed, fold, markerState, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_BOARD, bar, docks, duration, fold, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
-import { addGate, addTokens, count, endRun, keep, money, track } from './board-runs.mjs'
+import { addGate, addTokens, count, endRun, keep, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md and of the run this session
 // is doing, plus buttons that start pull/shot/brew the way typing them would. It observes and
@@ -21,6 +21,7 @@ const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false
 const showDone = atom({ plugin: 'ristretto', key: 'showDone' } as const, false)
 const tick = atom({ plugin: 'ristretto', key: 'tick' } as const, 0)
 const openRow = atom({ plugin: 'ristretto', key: 'open' } as const, null as string | null)
+const graphScope = atom({ plugin: 'ristretto', key: 'graph' } as const, 'open' as 'open' | 'all')
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
@@ -51,13 +52,12 @@ async function refreshBoard($: EngineInterface) {
     }
     const mtime = (await $.fs.stat(ROADMAP)).mtimeMs
     const parsed = parseRoadmap(String(await $.fs.read(ROADMAP)))
-    // What each open plan says, plus the opened row's plan whatever its status; and the
-    // manual checks. A plan that cannot be read is simply absent. A blocked row with no
-    // reason in the roadmap says why from its plan's Blockers.
-    const opened = await read($, openRow)
+    // What every plan says — a done one too, since the dependency map is drawn from them —
+    // and the manual checks. A plan that cannot be read is simply absent. A blocked row with
+    // no reason in the roadmap says why from its plan's Blockers.
     const plans: Record<string, BoardPlan> = {}
     for (const row of parsed.rows) {
-      if (!row.plan || (row.status === 'done' && row.id !== opened)) continue
+      if (!row.plan) continue
       try {
         plans[row.id] = parsePlan(String(await $.fs.read(`docs/ristretto/${row.plan}`)))
       } catch {
@@ -101,9 +101,8 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
 // closed with the status the roadmap now shows and kept across sessions.
 async function account($: EngineInterface) {
   const now = await $.clock.now()
-  const usd = (await $.session.usage()).cost?.usd ?? null
   const before = await read($, run)
-  const step = track(before, await read($, live), now, usd)
+  const step = track(before, await read($, live), now)
   if (step.run === before) return
   // Tokens and gate time keep arriving while this ran: only the call that still finds the run
   // it read moves it on, and it closes the run as it stands then, counts included.
@@ -122,7 +121,7 @@ async function account($: EngineInterface) {
   // Another session in this repo may have kept runs since this one loaded them: add to what
   // the store holds now, not to this session's copy.
   const stored = storeKey ? await $.store.get(storeKey) : null
-  const next = keep(Array.isArray(stored) ? (stored as BoardRecord[]) : await read($, runs), endRun(ended, now, usd, status))
+  const next = keep(Array.isArray(stored) ? (stored as BoardRecord[]) : await read($, runs), endRun(ended, now, status))
   await update($, runs, () => next)
   if (storeKey) await $.store.set(storeKey, next)
 }
@@ -169,35 +168,41 @@ async function advanceClock($: EngineInterface) {
 
 // Where the surface draws SVG (the desktop app), status reads as shape and color instead of
 // glyphs. SVG cannot read the theme, so these are mid-tone hues that hold on light and dark.
+// Error is a true red: next to Claude's orange, a redder orange read as the same thing.
 const HUE: Record<string, string> = {
   claude: '#D97757',
   success: '#3FA66B',
   warning: '#D49A3A',
-  error: '#D9614C',
+  error: '#E5484D',
   permission: '#5B8DEF',
   inactive: '#8A8A8A',
 }
 
 // The summary's progress as one stacked pill, a segment per status in the view's order, where
 // the surface draws SVG: box-drawing glyphs are wider than a cell there, so a text bar wraps.
-// What is still planned is the faint track the rest fills.
+// What is still planned is the faint track the rest fills; a thin gap parts two segments, so
+// neighbours of close hues still read as two.
 function statusBarSvg(segments: { status: string; n: number; tone: string }[]) {
   const total = segments.reduce((sum, s) => sum + s.n, 0) || 1
+  const gap = 5
+  const span = 1000 - gap * (segments.length - 1)
   let x = 0
   const parts = segments.map(s => {
-    const w = (1000 * s.n) / total
+    const w = (span * s.n) / total
     const rect = `<rect x="${x.toFixed(1)}" width="${w.toFixed(1)}" height="8" fill="${HUE[s.tone] ?? HUE.inactive}"${s.status === 'planned' || s.status === 'unknown' ? ' fill-opacity="0.25"' : ''}/>`
-    x += w
+    x += w + gap
     return rect
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="8" viewBox="0 0 1000 8" preserveAspectRatio="none"><clipPath id="pill"><rect width="1000" height="8" rx="4"/></clipPath><g clip-path="url(#pill)">${parts.join('')}</g></svg>`
 }
 
-// A run's length against the longest one shown, its gate time drawn solid from the start.
+// A run's length against the longest one shown, its gate time drawn solid from the start, on
+// a faint full-width track so the bar's end is not mistaken for space before the text.
+const RUN_BAR = 96
 function runBarSvg(ms: number, gateMs: number, maxMs: number) {
-  const w = Math.max(6, Math.round((160 * ms) / (maxMs || 1)))
-  const g = Math.min(w, Math.round((160 * gateMs) / (maxMs || 1)))
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="6" viewBox="0 0 160 6"><rect width="${w}" height="6" rx="3" fill="${HUE.claude}" fill-opacity="0.3"/><rect width="${g}" height="6" rx="3" fill="${HUE.claude}"/></svg>`
+  const w = Math.max(6, Math.round((RUN_BAR * ms) / (maxMs || 1)))
+  const g = Math.min(w, Math.round((RUN_BAR * gateMs) / (maxMs || 1)))
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RUN_BAR}" height="6" viewBox="0 0 ${RUN_BAR} 6"><rect width="${RUN_BAR}" height="6" rx="3" fill="${HUE.inactive}" fill-opacity="0.15"/><rect width="${w}" height="6" rx="3" fill="${HUE.claude}" fill-opacity="0.35"/><rect width="${g}" height="6" rx="3" fill="${HUE.claude}"/></svg>`
 }
 
 // Gate minutes per run as a small line, oldest left, the latest run a dot.
@@ -265,6 +270,31 @@ function stepSvg(st: { label: string; state: string }, into: boolean | null, out
 // The stretch of line between two steps: as wide as the pane leaves it, never taller.
 function lineSvg(done: boolean) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="18" viewBox="0 0 1000 18" preserveAspectRatio="none">${trackLine(done, 0, 1000)}</svg>`
+}
+
+// The dependency map: each feature a pill in its status's hue, hanging below what it depends
+// on. A built dependency's line is solid green, an unbuilt one's dashed grey; a planned
+// feature still waiting is framed dashed, the running one ringed in Claude's accent.
+const FONT = `font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"`
+function graphSvg(g: any) {
+  const edges = g.edges.map((e: any) => {
+    const mid = (e.y1 + e.y2) / 2
+    const hue = e.built ? HUE.success : HUE.inactive
+    return `<path d="M${e.x1} ${e.y1}C${e.x1} ${mid} ${e.x2} ${mid} ${e.x2} ${e.y2 - 4}" fill="none" stroke="${hue}" stroke-opacity="${e.built ? 0.55 : 0.7}" stroke-width="1.3"${e.built ? '' : ' stroke-dasharray="3 3"'}/><path d="M${e.x2 - 3} ${e.y2 - 5}l3 4 3-4z" fill="${hue}" fill-opacity="${e.built ? 0.7 : 0.8}"/>`
+  })
+  const tone: Record<string, string> = { done: 'success', 'in-progress': 'claude', blocked: 'error', 'needs-human': 'permission', 'needs-review': 'warning' }
+  const nodes = g.nodes.map((n: any) => {
+    const hue = HUE[tone[n.status] ?? 'inactive']
+    const done = n.status === 'done'
+    const ring = n.running ? `<rect x="${n.x - 3}" y="${n.y - 3}" width="${n.w + 6}" height="${n.h + 6}" rx="${(n.h + 6) / 2}" fill="none" stroke="${HUE.claude}" stroke-opacity="0.35" stroke-width="3"/>` : ''
+    const safe = n.label.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    return `${ring}<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${n.h / 2}" fill="${hue}" fill-opacity="${done ? 0.1 : 0.16}" stroke="${hue}" stroke-opacity="${done ? 0.45 : 0.9}" stroke-width="1.2"${n.waiting ? ' stroke-dasharray="3 2"' : ''}/><circle cx="${n.x + 11}" cy="${n.y + n.h / 2}" r="3.5" fill="${hue}"${n.status === 'planned' ? ` fill-opacity="0.5"` : ''}/><text x="${n.x + 19}" y="${n.y + 15}" ${FONT} font-size="11.5" font-weight="${done ? 400 : 600}" fill="${hue}">${safe}</text>`
+  })
+  // The pane's background is unknown to an image, so lines are masked out under every pill
+  // rather than painted over: a line passing a pill it does not belong to goes behind it.
+  const holes = g.nodes.map((n: any) => `<rect x="${n.x - 2}" y="${n.y - 1}" width="${n.w + 4}" height="${n.h + 2}" rx="${n.h / 2}" fill="#000"/>`)
+  const mask = `<mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="${g.width}" height="${g.height}"><rect width="${g.width}" height="${g.height}" fill="#fff"/>${holes.join('')}</mask>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">${mask}<g mask="url(#m)">${edges.join('')}</g>${nodes.join('')}</svg>`
 }
 
 function isRoadmap(path: unknown) {
@@ -388,12 +418,10 @@ export const register: Register = on => {
       plans: boardValue.plans,
       checks: boardValue.checks,
       runs: await read($, runs),
+      graph: await read($, graphScope),
     })
-    // One row open at a time; opening a done row reads its archived plan.
-    const toggleRow = async (id: string) => {
-      await update($, openRow, (o: string | null) => (o === id ? null : id))
-      await refreshBoard($)
-    }
+    // One row open at a time.
+    const toggleRow = (id: string) => update($, openRow, (o: string | null) => (o === id ? null : id))
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
     const rich = Svg !== undefined
     // On desktop a button carries a sign rather than a word; the terminal keeps the word.
@@ -430,14 +458,18 @@ export const register: Register = on => {
       )
     // Run bars share one scale: the longest run shown is full width.
     const longest = Math.max(1, ...((v as any).done?.rows ?? []).map((r: any) => r.run?.ms ?? 0))
-    // A run in one line: how long, what it cost, how many tokens, how long the gates took.
-    const runLine = (rec: any) =>
-      [elapsed(rec.ms), money(rec.usd), `${count(rec.tokens.in + rec.tokens.out)} tok`, `gate ${elapsed(rec.gates.ms)}${rec.gates.red ? ` · ${rec.gates.red} red` : ''}`].join(' · ')
+    // What a run took besides its time, which the row already shows on its right.
+    const runFacts = (rec: any) => `${count(rec.tokens.in + rec.tokens.out)} tok · gate ${duration(rec.gates.ms)}${rec.gates.red ? ` · ${rec.gates.red} red` : ''}`
+    // Plan text with its Markdown drawn: bold as bold, code in the accent, markers gone.
+    const md = (text: string, key: string) =>
+      inline(text).map((seg: any, i: number) =>
+        seg.bold ? <Text key={`${key}-${i}`} bold>{seg.text}</Text> : seg.code ? <Text key={`${key}-${i}`} color="claude">{seg.text}</Text> : seg.text,
+      )
     // An opened row's card, in the row's color and indented under it: what it waits on, what
-    // done means for it (with the proof once done), what stops it, and what its run cost.
+    // done means for it (with the proof once done), what stops it, and how it was closed.
     const detailsCard = (r: any) => {
       const d = r.details
-      const facts = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`, d.run && runLine(d.run)].filter(Boolean)
+      const facts = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`].filter(Boolean)
       return (
         <Box key={`details-${r.key}`} flexDirection="column" marginLeft={2} borderStyle="round" borderColor={r.tone} paddingX={1} paddingY={rich ? 1 : 0} gap={rich ? 1 : 0}>
           {d.missing && <Text dimColor>plan not found</Text>}
@@ -464,12 +496,12 @@ export const register: Register = on => {
                         ? <Text dimColor>{i + 1}.</Text>
                         : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
                     <Box flexShrink={1}>
-                      <Text wrap="wrap">{a.text}</Text>
+                      <Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text>
                     </Box>
                   </Box>
                   {a.proof && (
                     <Box marginLeft={rich ? 3 : 2}>
-                      <Text dimColor wrap="truncate-end">{a.proof}</Text>
+                      <Text dimColor wrap="truncate-end">{plain(a.proof)}</Text>
                     </Box>
                   )}
                 </Box>
@@ -480,19 +512,19 @@ export const register: Register = on => {
           {d.blockers.map((b: string, i: number) => (
             <Box key={`blk-${i}`} flexDirection="row" gap={1}>
               {mark({ status: 'blocked', tone: 'error', mark: '✕', tag: 'blocker' })}
-              <Box flexShrink={1}><Text color="error" wrap="wrap">{b}</Text></Box>
+              <Box flexShrink={1}><Text color="error" wrap="wrap">{md(b, `blk-${i}`)}</Text></Box>
             </Box>
           ))}
           {d.findings.map((f: string, i: number) => (
             <Box key={`fnd-${i}`} flexDirection="row" gap={1}>
               {mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}
-              <Box flexShrink={1}><Text wrap="wrap">{f}</Text></Box>
+              <Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box>
             </Box>
           ))}
           {d.checks.map((c: any, i: number) => (
             <Box key={`chk-${i}`} flexDirection="row" gap={1}>
               {c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}
-              <Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{c.text}</Text></Box>
+              <Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{md(c.text, `chk-${i}`)}</Text></Box>
             </Box>
           ))}
           {facts.length > 0 && <Text dimColor wrap="wrap">{facts.join('  ·  ')}</Text>}
@@ -507,20 +539,33 @@ export const register: Register = on => {
             <Button key={`open-${r.key}`} label={r.toggle.open ? '▾' : '▸'} plain dimColor onPress={() => void toggleRow(r.id)} />
           )}
           {mark(r)}
-          <Text bold={!dim} dimColor={dim}>{r.id}</Text>
+          {/* The name never gives way: the detail beside it is what truncates. */}
+          <Box flexShrink={0}>
+            <Text bold={!dim} dimColor={dim}>{r.id}</Text>
+          </Box>
           {r.waiting.length > 0
-            ? chip(`tag-${r.key}`, `waits on ${r.waiting.map((w: any) => w.id).join(', ')}`, 'inactive')
+            ? chip(`tag-${r.key}`, `waits on ${r.waiting[0].id}${r.waiting.length > 1 ? ` +${r.waiting.length - 1}` : ''}`, 'inactive')
             : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
             <Text dimColor wrap="truncate-end">{r.detail}</Text>
           </Box>
-          {r.run !== undefined && <Text dimColor>{r.run ? `${elapsed(r.run.ms)} · ${money(r.run.usd)}` : '—'}</Text>}
+          {r.run !== undefined && (
+            <Box flexShrink={0}>
+              <Text dimColor>{r.run ? duration(r.run.ms) : '—'}</Text>
+            </Box>
+          )}
           {r.action && press(r.action)}
         </Box>
         {r.run && (
           <Box flexDirection="row" gap={1} alignItems="center" marginLeft={canPress ? 4 : 2}>
-            {rich && <Svg alt={`${elapsed(r.run.ms)}, gates ${elapsed(r.run.gates.ms)}`} width={160} height={6} source={runBarSvg(r.run.ms, r.run.gates.ms, longest)} />}
-            <Text dimColor>{`${count(r.run.tokens.in + r.run.tokens.out)} tok · gate ${elapsed(r.run.gates.ms)}${r.run.gates.red ? ` · ${r.run.gates.red} red` : ''}`}</Text>
+            {rich && (
+              <Box flexShrink={0}>
+                <Svg alt={`${duration(r.run.ms)}, gates ${duration(r.run.gates.ms)}`} width={RUN_BAR} height={6} source={runBarSvg(r.run.ms, r.run.gates.ms, longest)} />
+              </Box>
+            )}
+            <Box flexShrink={1} overflow="hidden">
+              <Text dimColor wrap="truncate-end">{runFacts(r.run)}</Text>
+            </Box>
           </Box>
         )}
         {r.details && detailsCard(r)}
@@ -647,6 +692,27 @@ export const register: Register = on => {
             ))}
           </Box>
         ))}
+
+        {rich && v.graph && (
+          <Box key="graph" flexDirection="column" gap={rows}>
+            <Box flexDirection="row" gap={2} alignItems="center">
+              {heading('h-graph', 'dependencies')}
+              {canPress && v.graph.toggle && (
+                <Button
+                  key="toggle-graph"
+                  label={v.graph.toggle.label}
+                  plain
+                  dimColor
+                  onPress={() => update($, graphScope, () => v.graph.toggle.scope)}
+                />
+              )}
+            </Box>
+            <Svg
+              alt={v.graph.layout.edges.map((x: any) => `${x.to} depends on ${x.from}`).join('; ')}
+              source={graphSvg(v.graph.layout)}
+            />
+          </Box>
+        )}
 
         {v.done && (
           <Box key="done" flexDirection="column">
