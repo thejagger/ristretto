@@ -136,6 +136,17 @@ meaning, and worse than leaving the feature off.
      Your branch is never rewritten, and the new tip is proven identical to it.
    ```
 
+### → 0.20 — the board opens each row
+
+1. Nothing on disk changes shape. The board reads the plans' `Acceptance:`, `Depends:`, `Evidence` and `## Open findings` and `manual-checks.md` as they already are, and writes none of them; the runs it measures are kept in Claude Code's own store, per machine, never in the repo.
+2. **Say this, once:**
+
+   ```
+   ☕ ristretto 0.20: in the /ristretto:status pane any row opens (▸) to its criteria, what it
+     depends on, its blockers, findings or manual checks, and once done each criterion's proof.
+     Done rows show what their run took — time, tokens, gate time — with a gate-time trend.
+   ```
+
 ## 3. Stamp, report, and carry on
 
 ```
