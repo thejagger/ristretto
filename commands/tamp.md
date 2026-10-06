@@ -1,6 +1,6 @@
 ---
 description: Honest lean-code review of a diff or file — finds runtime waste, duplication, dead/over-built code, and readability drag, ranked and capped. Read-only; pass "fix" to apply the top findings.
-argument-hint: [path or feature ID] [fix]
+argument-hint: "[path or feature ID] [fix]"
 ---
 
 You are running **TAMP** — an honest lean-code review. Tamping presses the grounds flat so water can't *channel* (rush through gaps and waste the shot). You find channeling in code: where it wastes compute, repeats itself, carries weight it doesn't need, or is harder to read than it should be. Read-only by default — assess and print, change no files unless `fix` is passed.

@@ -114,6 +114,17 @@ meaning, and worse than leaving the feature off.
      `shot` now builds a feature `prep` already planned; it no longer writes plans itself.
    ```
 
+### → 0.18 — the roadmap as a live side pane
+
+1. Nothing on disk changes shape. The board reads the roadmap, the plans' `Blockers:` and `.ristretto/pulling` as they already are, and writes none of them.
+2. **Say this, once:**
+
+   ```
+   ☕ ristretto 0.18: /ristretto:status now opens the roadmap as a live side pane — progress,
+     the running feature's phase, review round and gate, what needs you, and a start per
+     planned row. It opens by itself where the layout docks a pane; a filter still prints text.
+   ```
+
 ## 3. Stamp, report, and carry on
 
 ```

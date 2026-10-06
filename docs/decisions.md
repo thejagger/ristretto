@@ -88,3 +88,66 @@ its verbatim-open-findings requirement) and `commands/brew.md`'s verdict step ("
 open after round 3 → commit it as `needs-review`. Never `git restore`.").
 
 Source: `commands/brew.md:175`.
+
+## The nine deleted table tests
+
+A ticket whose acceptance list described a table — nine columns in this order, twenty rows
+a page, the filter label in its own row above it, a header prefix per column, the link
+frozen to the right edge, no sort control — produced a test per line. Every one passed,
+none could ever catch a defect, and adding a tenth column would turn four of them red.
+Reviewed afterwards by hand, thirteen tests came out as nine deletions and four merges;
+what survived was the data (values found by label), the request the paging control sends,
+the status variants, and the link's href. What died was order, position, styling, static
+labels, a fixture asserted against another fixture, and a one-time migration check.
+
+The rule already in place — *a `Decisions:` ruling is never an assertion* — did not catch
+any of it, because these lines were not rulings smuggled into `Acceptance:`. They were
+ordinary acceptance criteria, checkable, and visible to a user, which is what the old test
+("who can see it") asked. A user can see the column order. That is why the question had to
+change.
+
+**Rule produced:** ask what a red run would mean before writing the test. If the only
+answer is *someone changed the design on purpose*, it is a change detector, not a test —
+it binds the code and is checked by reading, like a ruling. Find a value by its label or
+key, never by its position; leave a shared component's rendering to that component's own
+tests; and anything that can only be false until the diff lands (a migration that ran, a
+fixture matching a fixture) is proven by the diff, not by a permanent test.
+
+**Where it lives now:** `briefs/common.md`'s Tests section, `commands/prep.md`'s criterion
+rules (where such a line is written into `Decisions:` instead of `Acceptance:`), and the
+reviewer's `lean` bucket.
+
+## The copies that came after
+
+Two weeks after the change-detector rule, the column-order tests were gone and the suite was
+growing anyway. In one repo, one ticket wrote the same fourteen save-and-lock tests into three
+sibling detail screens, and four list screens each carried their own copy of the client-switch
+reload with its own 160–330-line spec — two of them identical but for twelve lines. The spec
+copies came from code copies: every list component had its own `reloadOnClientSwitch` effect.
+And the code copies came from prep, whose contract said "the two screens stay separate
+siblings" and "same guarantees as DGS-162, re-asserted on this screen" — never separating a
+shared component from shared logic.
+
+The reviewer had seen it. DGS-151's review filed "the same fail path tested six times across
+three suites" as a `lean`, and a `lean` never costs a round, so it went into `## Open findings`
+and shipped with the rest.
+
+**Rules produced:** test code where it lives, once — shared code in its own test, one wiring
+test per consumer, and prep rules on where repeated logic lives before it orders a test (one
+function both screens call is the default; re-point only the sibling being copied). And test
+waste is removed rather than recorded: the reviewer tags it `test` only when the fix is a
+deletion or a merge into a test it names, and a trim pass applies those on the green tree
+before the commit, with no review round after it. The closer records `trimmed: <t>`.
+
+**Where they live now:** `briefs/common.md` (test code where it lives), `commands/prep.md`
+(the sibling decision), `briefs/reviewer.md` (the tag), `briefs/implementer.md` (the trim
+pass), the three flows (routing tagged findings to it), `briefs/closer.md` (the count).
+
+**Replayed against ui-angs before landing:** a prep replay of DGS-163 under the new rules lifted
+the client-switch and failed-load logic into one shared helper, cited the sibling's existing
+tests, and ordered one component spec with five new tests where the original had four spec
+files. A reviewer replay of DGS-151 tagged four findings `test`, covering 22 test blocks, each
+naming the test that still proves the case, and left the one fix that needs new test code
+untagged. A trim pass on a cheap model, given only those four findings, applied all of them:
+22 test blocks removed or merged and 278 spec lines deleted. The user specs went from 95 tests to 71, and
+`prove` passed on the full suite with only the four failures the repo baseline already tolerated.

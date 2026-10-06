@@ -1,6 +1,6 @@
 ---
 description: Honest refinement review of a feature — plain-language summary, story-point estimate, the problems it actually has, and a Ready / Not-Ready verdict. Read-only.
-argument-hint: <feature: paste text/ACs, or an ID + description>
+argument-hint: "<feature: paste text/ACs, or an ID + description>"
 ---
 
 You are running **GRIND** — an honest refinement review of one feature, for use in a refinement session. Read-only: assess and print, change no files.

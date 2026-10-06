@@ -28,6 +28,11 @@ const FINGERPRINTS = [
   'plain ASCII',             // commit subject safety
   'per criterion',           // test proportionality
   'cheapest level',          // prove it at the cheapest honest level
+  'a user is worse off',     // what red has to mean before a test is written
+  'label or key',            // find the value by meaning, never by position
+  'Test code where it lives', // shared code is proven once, where it lives
+  'Tag test waste',          // the reviewer tags removable test waste
+  'one legal deletion',      // the trim pass, the only place a test is deleted
   'tick a box',              // manual checks
   'about production',        // never a check about production
   'weaken, skip, or delete', // gates are infrastructure
@@ -72,10 +77,14 @@ for (const c of COMMANDS) {
 // 7. common.md carries what more than one role needs, and stays a reference not an essay.
 const common = read('briefs/common.md');
 for (const fp of ['tick a box', 'about production', 'cheapest level', 'per criterion',
-                  'weaken, skip, or delete']) {
+                  'weaken, skip, or delete', 'a user is worse off', 'change detector',
+                  'never by position']) {
   assert.ok(common.includes(fp), `common.md must carry "${fp}"`);
 }
-assert.ok(words(common) < 450, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// 566 words after the change-detector rule landed (was 441), ~565 again after the test-where-it-lives rule: a test that can only go red when someone
+// deliberately changes the design proves nothing and blocks the change. That rule kept being
+// re-derived wrong, so it is spelled out rather than hinted at — raise this only for another like it.
+assert.ok(words(common) < 590, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
 const impl = read('briefs/implementer.md');
@@ -91,7 +100,9 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1300,
   'an implementer dispatch must cost well under 1901 words — 1300 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
-const CAPS = { 'briefs/planner.md': [450, 820], 'briefs/reviewer.md': [450, 750], 'briefs/closer.md': [400, 850] };
+// Totals moved with common.md's +125; each role's own file is still capped where it was.
+// The reviewer total moved again when it gained the `test` tag — a duty, not prose.
+const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 970], 'briefs/closer.md': [400, 850] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);

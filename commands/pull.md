@@ -87,7 +87,7 @@ Dispatch a **reviewer** subagent — fresh context, capable model:
 > Diff: <files touched / branch vs merge-base>
 > Read `${CLAUDE_PLUGIN_ROOT}/briefs/reviewer.md` and follow it.
 
-- `review: clean` or `review: notes-only` → proceed to close (step 11). The notes and leans get copied verbatim into `## Open findings` there — do not fix them, do not round for them.
+- `review: clean` or `review: notes-only` → proceed to close (step 11). The notes and leans get copied verbatim into `## Open findings` there — do not fix them, do not round for them. The one exception: `test`-tagged findings get a **trim pass** first — follow `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` as the fixer with only those findings; no review round follows, and the closer records them as trimmed, not open.
 - `review: blocking (n)` → fix every block (read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself as the fixer, findings in hand instead of a build plan; clear notes and leans in the same pass unless a fix is riskier than the win, and say which you left). Then dispatch a **second, fresh** reviewer — round 2 only — to verify the round-1 blocks and any new block the fixes introduced in files the fixer touched; a block elsewhere is reported, not a new round.
 - Blocks still open after round 2 → hard stop: do **not** commit. Surface the findings to the user and leave the work in the tree — never `git restore` it, the gates are green and only an opinion is unresolved. Disarm (step 12) and stop.
 

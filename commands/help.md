@@ -43,7 +43,8 @@ THE REST OF THE MENU
                                     wrote — builds it fast, no planner. no
                                     plan yet → prep first; can't finish on
                                     the spot → escalates to pull.
-  /ristretto:status [filter]        roadmap view: gauge + rows.
+  /ristretto:status [filter]        roadmap view. bare: the live side pane
+                                    where it docks; a filter prints text.
                                     filters: open | done | blocked | checks | ID | flight
   /ristretto:tamp [target] [fix]    lean-code review of a diff/file: waste,
                                     duplication, over-build. "fix" applies.
@@ -70,9 +71,16 @@ HOUSE RULES
   • tests first — the build plan's test cases become failing tests before any
     implementation. red proves the test tests something; then code to green.
     one test per criterion, at the cheapest level that still proves it; a
-    criterion an existing test already covers is cited, not re-tested; and a
-    ruling in Decisions: binds the code, never an assertion. the suite is
-    charged to every later feature at every stop.
+    criterion an existing test already covers is cited, not re-tested. red has
+    to mean a user is worse off: an assertion only a deliberate design change
+    could turn red — a column order, a label, a style, a ruling — detects a
+    change, not a defect, and binds the code by being read instead. a test
+    belongs to the code that can break: shared logic is proven once where it
+    lives, and a sibling screen gets one wiring test, not a renamed copy. the
+    suite is charged to every later feature at every stop.
+  • test waste is removed, not recorded — the reviewer tags it "test", and a
+    trim pass deletes or merges exactly what it names before the commit, on a
+    green tree, with no extra review round. the closer counts it "trimmed".
   • deterministic gates — while implementing, a Stop hook runs your repo's
     lint + typecheck + test (.ristretto.json) and blocks until green.
     enforced, not self-reported. evidence is recorded, not claimed.
