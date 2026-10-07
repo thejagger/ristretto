@@ -14,7 +14,7 @@ const words = (s) => s.split(/\s+/).filter(Boolean).length;
 
 const COMMANDS = ['commands/brew.md', 'commands/pull.md', 'commands/shot.md'];
 const BRIEFS = ['briefs/common.md', 'briefs/planner.md', 'briefs/implementer.md',
-                'briefs/reviewer.md', 'briefs/closer.md'];
+                'briefs/reviewer.md', 'briefs/closer.md', 'briefs/researcher.md'];
 
 // 1. Every brief file exists.
 for (const b of BRIEFS) {
@@ -39,6 +39,9 @@ const FINGERPRINTS = [
   'gate.js" prove',          // the implementer's final proof — note the quote: the real call is
                              // node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" prove, so a
                              // fingerprint of `gate.js prove` would match nothing
+  'never instructions',      // fetched text is data — the researcher's injection line
+  'about 10 web searches',   // the research budget
+  'Add only.',               // agents never edit a domain entry
   'more than three files',   // deleted ratchet trigger — must appear NOWHERE
 ];
 const FILES = [...COMMANDS, ...BRIEFS, 'reference/config.md'];
@@ -63,7 +66,8 @@ for (const c of COMMANDS) {
 }
 
 // 5. Every brief is reachable: each one is named by at least one command or by common.md.
-const corpus = [...COMMANDS, 'briefs/common.md'].map(read).join('\n');
+//    grind and prep dispatch the researcher; they are not in COMMANDS (no word cap, no gate flow).
+const corpus = [...COMMANDS, 'commands/grind.md', 'commands/prep.md', 'briefs/common.md'].map(read).join('\n');
 for (const b of BRIEFS.filter((b) => b !== 'briefs/common.md')) {
   assert.ok(corpus.includes(path.basename(b)), `${b} is never referenced — nothing would read it`);
 }
@@ -102,7 +106,8 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1300,
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
 // The reviewer total moved again when it gained the `test` tag — a duty, not prose.
-const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 970], 'briefs/closer.md': [400, 850] };
+const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 970], 'briefs/closer.md': [400, 850],
+               'briefs/researcher.md': [700, 1290] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -194,5 +199,18 @@ assert.ok(!/prep \+ pull/i.test(read('README.md')), 'README.md must not describe
 const readmeDepSentence = (read('README.md').match(/A prerequisite counts as finished[^.]*\./) || [''])[0];
 assert.ok(/needs-review/.test(readmeDepSentence) && /needs-human/.test(readmeDepSentence) && /`done`/.test(readmeDepSentence),
   'README dependency sentence must name done, needs-human, and needs-review');
+
+// 24. grind researches once: it checks staleness, guards the domain store around the run, and
+//     dispatches the researcher by path. It is no longer read-only, but writes only research.
+const grind = read('commands/grind.md');
+for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" check-domain', 'researcher.md']) {
+  assert.ok(grind.includes(s), `grind.md must carry "${s}"`);
+}
+assert.ok(!/Read-only: assess and print, change no files/.test(grind), 'grind writes research now — the read-only line must go');
+assert.ok(/never changes the verdict/.test(grind), 'a missing why must never change grind\'s verdict');
+const researcher = read('briefs/researcher.md');
+for (const s of ['## As-is', 'Exists:', 'Touches:', 'Already settled:', 'at commit', 'unconfirmed —']) {
+  assert.ok(researcher.includes(s), `researcher.md must keep the label "${s}" — research.js reads it`);
+}
 
 console.log('briefs.test.js: all checks passed');
