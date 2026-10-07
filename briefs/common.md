@@ -4,7 +4,7 @@ Rules more than one role applies. Every role reads this file — it is a referen
 
 ## House rules
 
-Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the files you touch, before you start — they bind you even where the surrounding code doesn't demonstrate them yet. Never write to those files.
+Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the files you touch, before you start — they bind you even where the surrounding code doesn't demonstrate them yet. Never write to those files. Confirmed entries in `docs/ristretto/domain/` bind the same way — a person signed them; unconfirmed ones are context, never binding.
 
 ## Manual checks — the reach test
 

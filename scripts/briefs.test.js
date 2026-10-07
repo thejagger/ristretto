@@ -88,7 +88,9 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
 // 566 words after the change-detector rule landed (was 441), ~565 again after the test-where-it-lives rule: a test that can only go red when someone
 // deliberately changes the design proves nothing and blocks the change. That rule kept being
 // re-derived wrong, so it is spelled out rather than hinted at — raise this only for another like it.
-assert.ok(words(common) < 590, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// ~590 after the domain rule: a confirmed domain entry binds like a house rule, and every role
+// has to know it — raise this only for another rule every role needs.
+assert.ok(words(common) < 615, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
 const impl = read('briefs/implementer.md');
@@ -220,5 +222,10 @@ for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" ch
   assert.ok(prep.includes(s), `prep.md must carry "${s}"`);
 }
 assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why must not trigger roast mode on its own');
+
+// 26. A confirmed domain entry binds every role like CLAUDE.md; an unconfirmed one never does.
+assert.ok(/docs\/ristretto\/domain\//.test(common) && /unconfirmed ones are context, never binding/.test(common),
+  'common.md must make confirmed domain entries binding and unconfirmed ones context only');
+assert.ok(/confirmed domain entry/.test(rev), 'reviewer.md must block on a violated confirmed domain entry');
 
 console.log('briefs.test.js: all checks passed');
