@@ -4,7 +4,7 @@ Lean feature implementation for Claude Code. A restricted shot: less ceremony, m
 
 A small set of commands following the lifecycle **review → plan → build**, plus `tamp` to keep the built code lean. The two core ones split the way you actually work — plan a stack of features in one sitting, implement them later as the code shifts underneath:
 
-- **`/ristretto:grind <feature>`** — honest refinement review: plain-language summary, story-point estimate, the problems it actually has, and a Ready / Not-Ready verdict. Read-only.
+- **`/ristretto:grind <feature> [fresh]`** — honest refinement review: researches the feature once (domain facts with sources, what the code already does, the why), then a plain-language summary, story-point estimate, the problems it actually has, and a Ready / Not-Ready verdict. Writes only `docs/ristretto/research/<ID>.md` and proposed domain entries; commits nothing.
 - **`/ristretto:prep <features | ideas> [deep]`** — turns features *or* raw ideas into plans and adds them to the project roadmap. Each plan carries a deep, durable **`## Contract`** (checkable acceptance criteria, `Provides:` / `Consumes:` at type level, resolved decisions, the units of work) and a one-screen **`## Approach`**. Splits an input into sub-features only when there's a real seam (independent deliverables, separate "done", or too big for one sprint) — otherwise keeps it whole. Features that belong together get a shared `Flight` slug, and a real prerequisite is recorded as `Depends:` so ordering is explicit. Fast by default; **escalates into roast mode** — one question at a time, each with a recommended answer, checkpointed to the plan file after every answer — the moment a criterion can't be made checkable or `Provides:` can't be filled. `deep` forces it. Planning only, no code.
 - **`/ristretto:pull <feature | next>`** — implements one feature against the *current* code, in auto mode, then closes it by archiving the plan and updating the roadmap. A **planner** subagent first expands the Contract into a throwaway build plan against HEAD — real paths, real signatures, real test code — so the implementer transcribes rather than re-plans. Tests come first (the build plan's cases become failing tests, then code to green), and before any commit the diff passes an **independent review** by a fresh subagent — bugs must be fixed, two rounds max.
 - **`/ristretto:brew`** — brew the whole pot: autonomously pulls every eligible planned feature in sequence — same gates, evidence, review, and close as `pull`, one commit per feature on a single `feature/brew-<date>` session branch. **Each feature runs through fresh subagents** — planner, implementer, independent reviewer, closer: the main conversation stays a small orchestrator no matter how big the batch, every implementation sees exactly one spec, and nothing is committed unreviewed. A planner that can't satisfy the Contract blocks the feature before an implementer ever runs. Anything needing a **decision** gets status `blocked` with a one-line reason instead of a guess; anything needing a **human to run something** gets `needs-human`, a line in `manual-checks.md`, and still gets built; anything still carrying review findings after three rounds gets `needs-review` — committed green, findings recorded verbatim, never deleted. None of the three stalls the features behind it. You walk through `status blocked`, `status checks` and `status review` afterward, refine or run or judge, and re-brew. It never stops to ask you anything: `planned` means every decision was already made in `prep`, so a question at 3am is a prep bug, not a pause. Tests are scoped to each feature during the loop and the full suite is proven once at the end, so a slow suite doesn't make a batch impossible. For when you've prepped a batch and don't want to babysit the roadmap.
@@ -38,6 +38,14 @@ State lives in files, not the conversation — clearing the chat never loses it.
 - **Flight grouping + `Depends:` give honest ordering without a scheduler** — `/ristretto:pull next` skips any feature still waiting on an unfinished prerequisite, so you can't pull work whose foundation isn't built yet. A prerequisite counts as finished when it's `done`, `needs-human`, **or** `needs-review`; only `blocked` holds dependents back. ristretto stays one-feature-at-a-time; the graph is recorded, not run as parallel waves.
 - **Closing is `pull`'s job, every time** — it archives the plan and flips the roadmap row automatically. You never close by hand, so "forgot to close" can't happen.
 - The roadmap is trusted as written. Keeping it honest is yours — but since closing is automatic, it stays honest with almost no effort, and it doubles as a plain-language view of what's done and what's next.
+
+## Research once, and domain knowledge that stays
+
+Refinement used to start from the ticket alone, and every plan re-learned the domain: the same ruling restated in seven plans of one repo. Now `grind` researches a feature once — what the repo already knows, what the code does, the domain facts it is missing (primary sources, about ten searches) — and writes it to `docs/ristretto/research/<ID>.md`. `prep` reuses that file; `scripts/research.js stale` decides whether it is still current, from git, not from a guess.
+
+**The why comes from a person.** Research copies a stated why or proposes candidates; it never picks one, and a missing why is reported, not held against the verdict.
+
+**Domain facts accumulate in `docs/ristretto/domain/`.** Research may only add `unconfirmed` entries, each with its source. A person confirms one by signing its marker, or deletes it. Confirmed entries then bind every builder role like `CLAUDE.md`, and the reviewer blocks a diff that violates one. That an agent never changes a confirmed entry is checked in code (`research.js check-domain` restores it, and removes any confirmation an agent wrote itself), not asked for. Git is the channel: everything is a file you commit. A Jira or Notion page is read when the session has a connector for it; nothing depends on one.
 
 ## Deterministic gates, not vibes
 
@@ -157,9 +165,14 @@ The coffee metaphor carries real signal, not just decoration — and nothing ani
                         #   measured silence/run budgets, resolved toolchain (gitignored)
   build/
     BREW-224.md         # throwaway build plan, written at pull time, deleted at close
+  domain-snapshot/      # lives only during one research run — guards confirmed domain entries
 docs/ristretto/
   roadmap.md            # always-current index of every feature
   manual-checks.md      # the SQL, migrations & secrets only you can run — tick a box when done
+  research/
+    BREW-224.md         # grind's research — domain facts, as-is code, the why; prep reuses it
+  domain/
+    glossary.md         # domain knowledge — agents propose (unconfirmed), people confirm
   plans/
     BREW-224.md         # active plans — durable ## Contract + one-screen ## Approach
     archived/

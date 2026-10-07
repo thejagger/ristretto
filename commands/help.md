@@ -9,8 +9,10 @@ You are running **HELP**. Do **no** work — no file reads, no git, no roadmap, 
 ═══════════════════════════════════════════════════
 
 THE WORKFLOW
-  1. /ristretto:grind <feature>     honest refinement review — story points,
-                                    problems, Ready / Not-Ready. read-only.
+  1. /ristretto:grind <feature>     honest refinement review — researches once
+     …or /ristretto:grind <f> fresh (domain, code, the why), then story points,
+                                    problems, Ready / Not-Ready. writes only
+                                    research + proposed domain entries.
   2. /ristretto:prep <features>     batch-plan into a durable ## Contract
      …or /ristretto:prep <f> deep   (checkable criteria, Provides/Consumes,
                                     decisions, units) + a one-screen ## Approach.
