@@ -102,13 +102,17 @@ assert.ok(!/exactly as `?\.ristretto\.json`? spells them/.test(impl), 'the hand-
 assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baseline was 1443`);
 
 // 9. Together with common.md, a dispatch is well under the 1901-word baseline.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1300,
-  'an implementer dispatch must cost well under 1901 words — 1300 is the target, not the baseline');
+//    It sat at 1299 when the domain rule landed; that rule binds the implementer too, so the
+//    target moved by its 14 words and no more.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1315,
+  'an implementer dispatch must cost well under 1901 words — 1315 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
 // The reviewer total moved again when it gained the `test` tag — a duty, not prose.
-const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 970], 'briefs/closer.md': [400, 850],
+// Reviewer and closer moved once more with the confirmed-domain rule: +12 in common.md for both,
+// +7 in the reviewer's own `block` bucket — a rule every role must know, not prose.
+const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 985], 'briefs/closer.md': [400, 860],
                'briefs/researcher.md': [700, 1290] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
