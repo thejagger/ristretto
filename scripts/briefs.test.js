@@ -213,4 +213,12 @@ for (const s of ['## As-is', 'Exists:', 'Touches:', 'Already settled:', 'at comm
   assert.ok(researcher.includes(s), `researcher.md must keep the label "${s}" — research.js reads it`);
 }
 
+// 25. prep reuses grind's research instead of paying for it again, and records the why.
+const prep = read('commands/prep.md');
+for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" check-domain', 'researcher.md',
+                 '- Why: <outcome> · noticed by: <signal>', 'rests on unconfirmed']) {
+  assert.ok(prep.includes(s), `prep.md must carry "${s}"`);
+}
+assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why must not trigger roast mode on its own');
+
 console.log('briefs.test.js: all checks passed');

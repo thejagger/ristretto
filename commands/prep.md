@@ -75,6 +75,18 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
 ## For each resulting feature
 
+**First, its research — grind usually wrote it already.** Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" stale <ID>`. Exit 0 → read `docs/ristretto/research/<ID>.md`. Exit 1 or 2 → `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" snapshot`, then dispatch a **researcher** subagent — fresh context, capable model:
+
+> Feature: <the feature text>. ID: <ID>. Write `docs/ristretto/research/<ID>.md`.
+> Read `${CLAUDE_PLUGIN_ROOT}/briefs/researcher.md` and follow it.
+
+then `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain` (exit 1 → name what it undid in your report), and read the file. Use it like this:
+
+- **Why** — the plan's `Why:` line is the research's stated why, or `—`. A missing why never escalates to roast mode by itself; when roast runs anyway, ask the why first, with the research's candidates as your recommended answer.
+- **Domain** — a confirmed entry in `docs/ristretto/domain/` is given: never ask it again. A `Decisions:` line that rests on an unconfirmed entry says so: `(rests on unconfirmed domain/<file>: <entry>)`.
+- **Already settled** — cite it in `Decisions:` instead of asking.
+- **Open** — the roast agenda, before anything else you would ask.
+
 1. **Fast by default; deep on demand or on failure.**
 
    - **Fast (default):** scope clear → write the plan. Push back once on a vague criterion with a sharpened version to confirm.
@@ -138,6 +150,7 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    - Source: <tracked ID, parent ID, or "idea">
    - Flight: <slug, or —>
    - Goal: one line.
+   - Why: <outcome> · noticed by: <signal> — or —
 
    ## Contract
    - Acceptance:
