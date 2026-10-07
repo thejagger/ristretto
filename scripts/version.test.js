@@ -9,7 +9,10 @@ const { spawnSync } = require('child_process');
 
 const VERSION = path.join(__dirname, 'version.js');
 const PLUGIN = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
-const CURRENT = /^(\d+)\.(\d+)/.exec(PLUGIN.version).slice(1, 3).join('.');
+const FORMAT_DECL = /const FORMAT = '(\d+\.\d+)';/.exec(fs.readFileSync(VERSION, 'utf8'));
+assert.ok(FORMAT_DECL, "version.js must declare the format as `const FORMAT = 'x.y';`");
+const CURRENT = FORMAT_DECL[1];
+const PLUGIN_MINOR = /^(\d+)\.(\d+)/.exec(PLUGIN.version).slice(1, 3).join('.');
 
 function run(dir, mode) {
   return spawnSync(process.execPath, [VERSION, mode], {
@@ -130,6 +133,21 @@ assert.ok(/^\d+\.\d+$/.test(CURRENT), 'the format version must be MAJOR.MINOR, w
   assert.strictEqual(r.status, 1, 'an older format must still exit 1');
   assert.ok(/format-migration\.md/.test(r.stdout + r.stderr),
     'the older-format branch must also name the migration doc');
+}
+
+// 12. The format has its own version. It used to be the plugin's MAJOR.MINOR, and three
+//     releases in a row (0.18, 0.19, 0.20) changed nothing on disk yet still stamped — a dirty
+//     tree that stops brew's pre-flight. A release that changes no file shape must not migrate.
+{
+  const [fMaj, fMin] = CURRENT.split('.').map(Number);
+  const [pMaj, pMin] = PLUGIN_MINOR.split('.').map(Number);
+  assert.ok(fMaj < pMaj || (fMaj === pMaj && fMin <= pMin),
+    `FORMAT ${CURRENT} is newer than the plugin ${PLUGIN.version} — a format ships with a release, never ahead of it`);
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'docs', 'format-migration.md'), 'utf8');
+  assert.ok(migration.includes(`### → ${CURRENT} `),
+    `docs/format-migration.md must carry a "### → ${CURRENT} " block — a format bump without its migration is a project misread`);
+  assert.ok(!/plugin\.json/.test(fs.readFileSync(VERSION, 'utf8')),
+    'version.js must not derive the format from plugin.json any more');
 }
 
 console.log('version.test.js: all checks passed');

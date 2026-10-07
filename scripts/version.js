@@ -16,8 +16,10 @@
 //           3 = project is newer than the plugin (do not migrate — update the plugin instead).
 //   stamp   Write the current format version into the roadmap, after a migration.
 //
-// The format version is the plugin's MAJOR.MINOR. Patch releases fix behaviour; they never
-// change what is written to disk, so they must not trigger a migration.
+// The format has its own version, bumped only when a file under docs/ristretto/ changes shape —
+// in the same commit as its `### → x.y` block in docs/format-migration.md. It used to be the
+// plugin's MAJOR.MINOR, so every minor release migrated: 0.18, 0.19 and 0.20 changed nothing on
+// disk and each still stamped, leaving a dirty tree that stops brew's pre-flight.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -27,14 +29,7 @@ const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const roadmapPath = path.join(projectDir, 'docs', 'ristretto', 'roadmap.md');
 const STAMP_RE = /<!--\s*ristretto-format:\s*(\d+\.\d+)\s*-->/;
 
-// Where the plugin lives, not where the project does — this file ships with the plugin.
-function pluginFormatVersion() {
-  const manifest = path.join(__dirname, '..', '.claude-plugin', 'plugin.json');
-  const version = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
-  const m = /^(\d+)\.(\d+)/.exec(String(version));
-  if (!m) throw new Error(`plugin.json version "${version}" is not MAJOR.MINOR[.PATCH]`);
-  return `${m[1]}.${m[2]}`;
-}
+const FORMAT = '0.20';
 
 // -1 / 0 / 1, comparing MAJOR.MINOR numerically. "0.9" is older than "0.13", which is exactly
 // the comparison a string compare gets wrong.
@@ -46,13 +41,7 @@ function compare(a, b) {
   return 0;
 }
 
-let current;
-try {
-  current = pluginFormatVersion();
-} catch (e) {
-  console.error(`ristretto: cannot read the plugin version (${e.message}).`);
-  process.exit(2);
-}
+const current = FORMAT;
 
 if (MODE === 'stamp') {
   let text;
