@@ -113,4 +113,106 @@ console.log('== stale ==');
   ok('no paths recorded → exit 0');
 }
 
+console.log('== snapshot / check-domain ==');
+const CONFIRMED = '- **Hauptobjekt** is the unit a contract is about\n  source: § 2 WEG · confirmed — Jakob, 2026-10-09\n';
+const PROPOSED = '- **Stellplatz** is a full Wohnungseigentumsobjekt\n  source: § 2 Abs 2 WEG · unconfirmed — proposed by grind ECO-1, 2026-10-07\n';
+{
+  const r = repo();
+  r.commit({ 'src/a.js': '1' }, 'init');
+  const res = r.run('check-domain');
+  assert.strictEqual(res.status, 2, 'no snapshot → exit 2, nothing touched');
+  ok('check-domain without a snapshot → exit 2');
+}
+{
+  const r = repo();
+  r.commit({ 'src/a.js': '1' }, 'init');
+  assert.strictEqual(r.run('snapshot').status, 0, 'snapshot with no domain dir yet must succeed');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${PROPOSED}`);
+  assert.strictEqual(r.run('check-domain').status, 0, 'a new unconfirmed entry is the legal change');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('Stellplatz'), 'and it is kept');
+  assert.ok(!r.exists('.ristretto/domain-snapshot'), 'the snapshot is removed when done');
+  ok('added unconfirmed entry → exit 0, kept, snapshot removed');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED.replace('the unit', 'any unit')}${PROPOSED}`);
+  const res = r.run('check-domain');
+  assert.strictEqual(res.status, 1, 'an edited confirmed entry must be restored');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(now.includes(CONFIRMED.trimEnd()), 'the confirmed wording is back');
+  assert.ok(!now.includes('any unit'), 'and the edit is gone');
+  assert.ok(now.includes('Stellplatz'), 'while the run\'s addition survives');
+  assert.ok(res.stdout.includes('Hauptobjekt'), `the restore is named\n${res.stdout}`);
+  ok('confirmed entry edited → restored, addition kept, exit 1');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}` }, 'init');
+  r.run('snapshot');
+  fs.rmSync(path.join(r.dir, 'docs/ristretto/domain/weg.md'));
+  assert.strictEqual(r.run('check-domain').status, 1, 'a deleted file holding a confirmed entry must come back');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('Hauptobjekt'), 'with the entry in it');
+  ok('file with confirmed entry deleted → restored, exit 1');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}` }, 'init');
+  // A person confirms before the run, and has not committed yet. HEAD still says unconfirmed.
+  const confirmedByPerson = PROPOSED.replace('unconfirmed — proposed by grind ECO-1, 2026-10-07', 'confirmed - Jakob, 2026-10-09');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${confirmedByPerson}`);
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${PROPOSED}`);
+  assert.strictEqual(r.run('check-domain').status, 1, 'an uncommitted confirmation (ASCII hyphen) is protected');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(now.includes('confirmed - Jakob'), 'the person\'s confirmation is back');
+  assert.strictEqual(now.split('**Stellplatz**').length - 1, 1, 'and the reverted copy is not appended next to it');
+  ok('confirmation made before the snapshot, "confirmed -" → protected, no duplicate');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': '# WEG\n' }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED}${PROPOSED}`);
+  r.write('docs/ristretto/domain/new.md', `# New\n\n${CONFIRMED}`);
+  const res = r.run('check-domain');
+  assert.strictEqual(res.status, 1, 'an agent may not add an entry that claims to be confirmed');
+  assert.ok(!r.read('docs/ristretto/domain/weg.md').includes('Hauptobjekt'), 'the forged confirmation is removed');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('Stellplatz'), 'the honest proposal stays');
+  assert.ok(!r.read('docs/ristretto/domain/new.md').includes('Hauptobjekt'), 'also in a file the snapshot never had');
+  ok('forged confirmed entry added by the run → removed, exit 1');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', '# WEG\n');
+  assert.strictEqual(r.run('check-domain').status, 0, '"unconfirmed —" is not "confirmed —"');
+  ok('unconfirmed entry is not mistaken for a confirmed one');
+}
+{
+  const r = repo();
+  const crlf = `# WEG\r\n\r\n${CONFIRMED.replace(/\n/g, '\r\n')}`;
+  r.commit({ 'docs/ristretto/domain/weg.md': crlf }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `${crlf}${PROPOSED.replace(/\n/g, '\r\n')}`);
+  assert.strictEqual(r.run('check-domain').status, 0, 'CRLF alone must not count as a change');
+  assert.strictEqual(r.read('docs/ristretto/domain/weg.md').includes('\r\n'), true, 'and the file is left as it is');
+  ok('CRLF file, confirmed entry untouched → exit 0, file untouched');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}` }, 'init');
+  r.run('snapshot');
+  fs.writeFileSync(path.join(r.dir, '.ristretto/domain-snapshot/weg.md'), '# stale leftover\n');
+  r.run('snapshot');
+  assert.ok(fs.readFileSync(path.join(r.dir, '.ristretto/domain-snapshot/weg.md'), 'utf8').includes('Hauptobjekt'),
+    'a second snapshot replaces a leftover one');
+  ok('leftover snapshot is replaced');
+  const gate = fs.readFileSync(path.join(__dirname, 'gate.js'), 'utf8');
+  assert.ok(gate.includes("known.add('domain-snapshot')"), 'gate.js state must know the snapshot directory');
+  ok('gate.js state knows domain-snapshot');
+}
+
 console.log(`research.test.js: ${pass} checks passed`);
