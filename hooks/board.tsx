@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardLive, BoardPlan, BoardRecord, BoardRun } from '../types'
-import { EMPTY_BOARD, bar, docks, duration, fold, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_BOARD, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, track } from './board-runs.mjs'
 
@@ -80,9 +80,9 @@ async function refreshBoard($: EngineInterface) {
     }
     let plugin = ''
     try {
-      plugin = JSON.parse(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`))).version || ''
+      plugin = formatOf(await $.fs.read(`${$.plugin.root}/scripts/version.js`))
     } catch {
-      // Without the plugin's version the format line is skipped; the board itself still draws.
+      // Without the plugin's format the format line is skipped; the board itself still draws.
     }
     const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
     await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))

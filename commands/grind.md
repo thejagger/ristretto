@@ -25,7 +25,7 @@ The ID is the tracked ID, verbatim. A raw idea has none: mint the slug `prep` wo
   > Feature: <the feature text>. ID: <ID>. Write `docs/ristretto/research/<ID>.md`.
   > Read `${CLAUDE_PLUGIN_ROOT}/briefs/researcher.md` and follow it.
 
-  When it returns, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain`. Exit 1 → it undid domain changes the run was not allowed to make; name them under *Problems & risks*. Then read the research file.
+  When it returns, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain`. Exit 1 → it undid domain changes the run was not allowed to make; name them under *Problems & risks*. Exit 2 → the domain store was not checked (no snapshot — another research run took it); say so there too. Then read the research file.
 
 ## Don't guess at what you can't see
 

@@ -113,6 +113,41 @@ console.log('== stale ==');
   ok('no paths recorded → exit 0');
 }
 
+console.log('== stale: paths that match nothing never read as fresh ==');
+{
+  const r = repo();
+  const c = r.commit({ 'src/a.js': '1' }, 'init');
+  const text = research(c, ['- Exists: src/a.js — logic']).replace('## As-is', '## Ist-Zustand');
+  r.write('docs/ristretto/research/ECO-1.md', text);
+  assert.strictEqual(r.run('stale', 'ECO-1').status, 1, 'a translated As-is heading must not read as "no paths — current"');
+  ok('translated As-is heading → exit 1');
+}
+{
+  const r = repo();
+  const c = r.commit({ 'src/a.js': '1' }, 'init');
+  r.write('docs/ristretto/research/ECO-1.md', research(c, ['- Besteht: src/a.js — Logik', '- Already settled: x — ECO-0']));
+  assert.strictEqual(r.run('stale', 'ECO-1').status, 1, 'one translated label among English ones still means unreadable');
+  ok('mixed labels → exit 1');
+}
+{
+  const r = repo();
+  const c = r.commit({ 'src/a.js': '1' }, 'init');
+  r.write('docs/ristretto/research/ECO-1.md', research(c, ['- Exists: src/a.js - Logik', '- Touches: `src/a.js` – Risiko']));
+  assert.strictEqual(r.run('stale', 'ECO-1').status, 0, 'ASCII hyphen and en dash separate the path too');
+  r.commit({ 'src/a.js': '2' }, 'touch a');
+  assert.strictEqual(r.run('stale', 'ECO-1').status, 1, 'and the path they separate is still watched');
+  ok('hyphen / en-dash separators → path parsed and watched');
+}
+{
+  const r = repo();
+  const c = r.commit({ 'src/a.js': '1' }, 'init');
+  r.write('docs/ristretto/research/ECO-1.md', research(c, ['- Touches: billing area — invoices']));
+  const res = r.run('stale', 'ECO-1');
+  assert.strictEqual(res.status, 1, 'a path that resolves to nothing can never go stale, so it is not a path');
+  assert.ok(res.stdout.includes('billing area'), `and it is named\n${res.stdout}`);
+  ok('unresolvable path → exit 1, named');
+}
+
 console.log('== snapshot / check-domain ==');
 const CONFIRMED = '- **Hauptobjekt** is the unit a contract is about\n  source: § 2 WEG · confirmed — Jakob, 2026-10-09\n';
 const PROPOSED = '- **Stellplatz** is a full Wohnungseigentumsobjekt\n  source: § 2 Abs 2 WEG · unconfirmed — proposed by grind ECO-1, 2026-10-07\n';
@@ -211,8 +246,45 @@ const PROPOSED = '- **Stellplatz** is a full Wohnungseigentumsobjekt\n  source: 
     'a second snapshot replaces a leftover one');
   ok('leftover snapshot is replaced');
   const gate = fs.readFileSync(path.join(__dirname, 'gate.js'), 'utf8');
-  assert.ok(gate.includes("known.add('domain-snapshot')"), 'gate.js state must know the snapshot directory');
-  ok('gate.js state knows domain-snapshot');
+  assert.ok(!gate.includes("known.add('domain-snapshot')"), 'gate.js state must not hide a leftover snapshot — one only survives a crash');
+  ok('gate.js state reports a leftover snapshot');
+}
+{
+  // A run that crashed after editing a confirmed entry, before check-domain. The next snapshot
+  // must not adopt the edit as its baseline.
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED.replace('the unit', 'any unit')}`);
+  const res = r.run('snapshot');
+  assert.strictEqual(res.status, 0, 'the new snapshot is still taken');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('the unit'), 'after the crashed run\'s edit is undone');
+  assert.ok(/leftover/.test(res.stdout), `and the leftover is reported\n${res.stdout}`);
+  assert.ok(fs.readFileSync(path.join(r.dir, '.ristretto/domain-snapshot/.gitignore'), 'utf8').trim() === '*',
+    'a snapshot ignores itself, so it is never committed even where .ristretto/ is not ignored yet');
+  ok('leftover snapshot is checked before it is replaced; snapshot ignores itself');
+}
+{
+  const r = repo();
+  const variants = ['Confirmed — Jakob, 2026-10-09', 'confirmed: Jakob', 'confirmed by Jakob', 'confirmed—Jakob'];
+  const body = variants.map((v, i) => `- **T${i}** rule ${i}\n  source: § ${i} · ${v}\n`).join('');
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${body}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', '# WEG\n');
+  assert.strictEqual(r.run('check-domain').status, 1, 'every way a person writes the marker is protected');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  for (let i = 0; i < variants.length; i++) assert.ok(now.includes(`**T${i}**`), `"${variants[i]}" must be restored`);
+  ok('marker variants (capital, colon, "by", no space) → protected');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/b.md': '# B\n' }, 'init');
+  r.run('snapshot');
+  const honest = '- **Buchung** a booking is confirmed - then invoiced\n  source: § 1 · unconfirmed — proposed by grind ECO-1, 2026-10-07\n';
+  r.write('docs/ristretto/domain/b.md', `# B\n\n${honest}`);
+  assert.strictEqual(r.run('check-domain').status, 0, 'the word "confirmed" in the statement is not a marker');
+  assert.ok(r.read('docs/ristretto/domain/b.md').includes('Buchung'), 'and the honest proposal stays');
+  ok('"confirmed -" inside a statement is not a forged marker');
 }
 
 console.log(`research.test.js: ${pass} checks passed`);

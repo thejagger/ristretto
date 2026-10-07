@@ -29,14 +29,24 @@ const git = (args) => spawnSync('git', args, { cwd: projectDir, encoding: 'utf8'
 // The labels are English on purpose: the content is in the feature's language, the labels are
 // what this file reads. A German "Besteht:" would leave no paths and read as fresh forever.
 const COMMIT_RE = /^Researched:.*\bat commit\s+([0-9a-f]{4,40})\b/m;
-const PATH_LINE_RE = /^\s*-\s*(?:Exists|Touches):\s*(.+?)\s*(?:—.*)?$/gm;
+const LABEL_RE = /^\s*-\s*(Exists|Touches|Already settled):\s*(.*)$/;
 
-function asIsSection(text) {
+// null when there is no `## As-is` heading at all — a translated heading, not an empty section.
+function asIsLines(text) {
   const start = text.search(/^## As-is\s*$/m);
-  if (start < 0) return '';
+  if (start < 0) return null;
   const rest = text.slice(start).split('\n').slice(1);
   const end = rest.findIndex((l) => /^## /.test(l));
-  return (end < 0 ? rest : rest.slice(0, end)).join('\n');
+  return (end < 0 ? rest : rest.slice(0, end)).filter((l) => /^\s*-\s*\S/.test(l));
+}
+
+// `<path> — <note>`, with any dash a person or a model types as the separator.
+const pathOf = (rest) => rest.split(/\s[—–-]\s/)[0].replace(/`/g, '').trim().replace(/\/+$/, '');
+
+// A path that resolves to nothing — not at the commit, not in the tree — can never show a change,
+// so it would read as current forever.
+function resolves(commit, p) {
+  return fs.existsSync(path.join(projectDir, p)) || git(['cat-file', '-e', `${commit}:${p}`]).status === 0;
 }
 
 function stale(id) {
@@ -55,14 +65,28 @@ function stale(id) {
     console.log(`research: ${id} was read at ${commit}, which this repo does not know — research it again`);
     return 1;
   }
-  const asIs = asIsSection(text);
-  const paths = [...new Set([...asIs.matchAll(PATH_LINE_RE)].map((m) => m[1].replace(/`/g, '').trim()))]
-    .filter(Boolean);
-  if (!paths.length) {
-    if (/^\s*-\s*\S/m.test(asIs) && !/^\s*-\s*Already settled:/m.test(asIs)) {
-      console.log(`research: ${id} has as-is lines but no Exists:/Touches: labels — the labels stay English; research it again`);
+  const lines = asIsLines(text);
+  if (lines === null) {
+    console.log(`research: ${id} has no "## As-is" section — the labels stay English; research it again`);
+    return 1;
+  }
+  const paths = new Set();
+  for (const line of lines) {
+    const m = LABEL_RE.exec(line);
+    if (!m) {
+      console.log(`research: ${id} has an as-is line that is not an Exists:/Touches:/Already settled: line — the labels stay English; research it again`);
+      console.log(`  ${line.trim()}`);
       return 1;
     }
+    if (m[1] !== 'Already settled') paths.add(pathOf(m[2]));
+  }
+  paths.delete('');
+  const unresolved = [...paths].filter((p) => !resolves(commit, p));
+  if (unresolved.length) {
+    console.log(`research: ${id} names what is not a path in this repo: ${unresolved.join(', ')} — research it again`);
+    return 1;
+  }
+  if (!paths.size) {
     console.log(`research: ${id} names no paths — current`);
     return 0;
   }
@@ -95,20 +119,31 @@ function blocks(text) {
   return out;
 }
 
-// `\b` keeps "unconfirmed —" out: there is no word boundary between the n and the c.
-const CONFIRMED_RE = /\bconfirmed\s+[—–-]\s/;
-const isConfirmed = (b) => b.startsWith('- ') && CONFIRMED_RE.test(b);
+// The marker is a `·`-separated field that starts with "confirmed", however a person types the
+// rest: "Confirmed — Jakob", "confirmed: Jakob", "confirmed by Jakob". Matching the field's start
+// keeps "unconfirmed —" out, and keeps the word "confirmed" inside a statement from reading as one.
+const isConfirmed = (b) => b.startsWith('- ')
+  && b.split('\n').some((line) => line.split('·').some((field) => /^confirmed\b/i.test(field.trim())));
 
 function snapshot() {
-  fs.rmSync(snapshotDir, { recursive: true, force: true });
+  // A snapshot only outlives its run when the run died before check-domain. Replacing it unchecked
+  // would adopt whatever that run did as the new baseline — so check it first.
+  if (fs.existsSync(snapshotDir)) {
+    // Restore only: a confirmation added since then may be a person's, which a leftover cannot
+    // tell apart from the dead run's.
+    console.log('research: leftover snapshot from an unfinished research run — checking it first');
+    checkDomain({ removeForged: false });
+  }
   fs.mkdirSync(snapshotDir, { recursive: true });
+  // Ignores itself, so it is never committed even where .ristretto/ is not in .gitignore yet.
+  fs.writeFileSync(path.join(snapshotDir, '.gitignore'), '*\n');
   const files = mdFiles(domainDir);
   for (const f of files) fs.copyFileSync(path.join(domainDir, f), path.join(snapshotDir, f));
   console.log(`research: domain snapshot taken (${files.length} file(s))`);
   return 0;
 }
 
-function checkDomain() {
+function checkDomain({ removeForged = true } = {}) {
   if (!fs.existsSync(snapshotDir)) {
     console.error('research: no domain snapshot — run `research.js snapshot` before the research run');
     return 2;
@@ -122,12 +157,12 @@ function checkDomain() {
     const now = fs.existsSync(current) ? blocks(fs.readFileSync(current, 'utf8')) : [];
     const missing = before.filter(isConfirmed).filter((b) => !now.includes(b));
     // A confirmation is a person's signature. One the run wrote itself is a forgery.
-    const forged = now.filter((b) => isConfirmed(b) && !before.includes(b));
+    const forged = removeForged ? now.filter((b) => isConfirmed(b) && !before.includes(b)) : [];
     if (!missing.length && !forged.length) continue;
     // Rebuild from the snapshot plus what the run legally added: new unconfirmed entries, minus a
     // reverted copy of an entry being restored (same first line), so nothing appears twice.
     const restoredHeads = new Set(missing.map(head));
-    const added = now.filter((b) => b.trim() && !before.includes(b) && !isConfirmed(b) && !restoredHeads.has(head(b)));
+    const added = now.filter((b) => b.trim() && !before.includes(b) && !forged.includes(b) && !restoredHeads.has(head(b)));
     const kept = [...before];
     while (kept.length && kept[kept.length - 1] === '') kept.pop();
     fs.mkdirSync(domainDir, { recursive: true });

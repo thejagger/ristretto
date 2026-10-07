@@ -44,6 +44,22 @@ Tier values: `easy` · `normal`. `normal` is the default and is what every featu
 `needs-review` is the third kind: the code is built, committed and gated **green**, but review findings are still open after three rounds. Nothing is wrong with the spec and nothing is unreachable — a reviewer simply still objects, and a person should judge it. Also a closing status. Only `brew` writes it; `pull` runs with you present, so it surfaces the findings to you instead.
 Flight: a short kebab slug grouping related features, or `—` for a standalone feature.
 
+## Research — once per input, never per child
+
+**Once per input, before anything is split — grind usually wrote it already.** Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" stale <ID>`. Exit 0 → read `docs/ristretto/research/<ID>.md`. Exit 1 or 2 → `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" snapshot`, then dispatch a **researcher** subagent — fresh context, capable model:
+
+> Feature: <the feature text>. ID: <ID>. Write `docs/ristretto/research/<ID>.md`.
+> Read `${CLAUDE_PLUGIN_ROOT}/briefs/researcher.md` and follow it.
+
+then `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain` (exit 1 → name what it undid in your report; exit 2 → the domain store was not checked, say so), and read the file. Research one input at a time — every run shares one domain snapshot. Use it like this:
+
+- **Why** — the plan's `Why:` line is the research's stated why, or `—`. A missing why never escalates to roast mode by itself; when roast runs anyway, ask the why first, with the research's candidates as your recommended answer.
+- **Domain** — a confirmed entry in `docs/ristretto/domain/` is given: never ask it again. A `Decisions:` line that rests on an unconfirmed entry says so: `(rests on unconfirmed domain/<file>: <entry>)`.
+- **Already settled** — cite it in `Decisions:` instead of asking.
+- **Open** — the roast agenda, before anything else you would ask.
+
+A split happens after this, and every feature it produces plans from this one file: research is once per input, never per child. Each child's `Decisions:` cite it as `research/<input ID>.md`.
+
 ## Decompose only when there's a real seam
 
 Default to **one** plan per input. The ID is the git-tracking key, so don't multiply keys without cause — over-splitting is the failure mode and the opposite of what ristretto is for.
@@ -74,18 +90,6 @@ A `Depends:` is satisfied by a prerequisite that is `done`, `needs-human` **or**
 Keep it light: only add `Depends:` where a real prerequisite exists. Most features depend on nothing.
 
 ## For each resulting feature
-
-**First, its research — grind usually wrote it already.** Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" stale <ID>`. Exit 0 → read `docs/ristretto/research/<ID>.md`. Exit 1 or 2 → `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" snapshot`, then dispatch a **researcher** subagent — fresh context, capable model:
-
-> Feature: <the feature text>. ID: <ID>. Write `docs/ristretto/research/<ID>.md`.
-> Read `${CLAUDE_PLUGIN_ROOT}/briefs/researcher.md` and follow it.
-
-then `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain` (exit 1 → name what it undid in your report), and read the file. Use it like this:
-
-- **Why** — the plan's `Why:` line is the research's stated why, or `—`. A missing why never escalates to roast mode by itself; when roast runs anyway, ask the why first, with the research's candidates as your recommended answer.
-- **Domain** — a confirmed entry in `docs/ristretto/domain/` is given: never ask it again. A `Decisions:` line that rests on an unconfirmed entry says so: `(rests on unconfirmed domain/<file>: <entry>)`.
-- **Already settled** — cite it in `Decisions:` instead of asking.
-- **Open** — the roast agenda, before anything else you would ask.
 
 1. **Fast by default; deep on demand or on failure.**
 

@@ -45,7 +45,7 @@ Refinement used to start from the ticket alone, and every plan re-learned the do
 
 **The why comes from a person.** Research copies a stated why or proposes candidates; it never picks one, and a missing why is reported, not held against the verdict.
 
-**Domain facts accumulate in `docs/ristretto/domain/`.** Research may only add `unconfirmed` entries, each with its source. A person confirms one by signing its marker, or deletes it. Confirmed entries then bind every builder role like `CLAUDE.md`, and the reviewer blocks a diff that violates one. That an agent never changes a confirmed entry is checked in code (`research.js check-domain` restores it, and removes any confirmation an agent wrote itself), not asked for. Git is the channel: everything is a file you commit. A Jira or Notion page is read when the session has a connector for it; nothing depends on one.
+**Domain facts accumulate in `docs/ristretto/domain/`.** Research may only add `unconfirmed` entries, each with its source. A person confirms one by signing its marker, or deletes it. Confirmed entries then bind every builder role like `CLAUDE.md`, and the reviewer blocks a diff that violates one. Around every research run that is checked in code, not asked for: `research.js check-domain` restores a confirmed entry the run changed and removes any confirmation it wrote itself. Every other role is told never to edit one, and the reviewer blocks a diff that does. Git is the channel: everything is a file you commit. A Jira or Notion page is read when the session has a connector for it; nothing depends on one.
 
 ## Deterministic gates, not vibes
 

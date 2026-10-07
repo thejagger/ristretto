@@ -1369,7 +1369,6 @@ async function main() {
       toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath,
     ].map((p) => path.basename(p)));
     known.add('build');
-    known.add('domain-snapshot'); // research.js — lives only for the length of one research run
     for (const rel of allReportPaths()) known.add(path.basename(rel));
     let entries = [];
     try { entries = fs.readdirSync(path.join(projectDir, '.ristretto')); } catch { /* not armed yet */ }

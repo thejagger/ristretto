@@ -43,6 +43,12 @@ function statusOf(cell) {
   return { status, reason };
 }
 
+// The on-disk format has its own version, declared in scripts/version.js — not the plugin's
+// MAJOR.MINOR. Reading it from the same place version.js does keeps the board and `check` agreeing.
+export function formatOf(versionSource) {
+  return (/const FORMAT = '(\d+\.\d+)';/.exec(String(versionSource)) || [])[1] || '';
+}
+
 export function parseRoadmap(text) {
   const lines = text.split(/\r?\n/);
   const format = (/<!--\s*ristretto-format:\s*([\d.]+)\s*-->/.exec(text) || [null, null])[1];

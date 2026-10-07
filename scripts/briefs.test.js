@@ -103,16 +103,16 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 
 // 9. Together with common.md, a dispatch is well under the 1901-word baseline.
 //    It sat at 1299 when the domain rule landed; that rule binds the implementer too, so the
-//    target moved by its 14 words and no more.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1315,
-  'an implementer dispatch must cost well under 1901 words — 1315 is the target, not the baseline');
+//    target moved by its 16 words (it also forbids editing a confirmed entry) and no more.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1320,
+  'an implementer dispatch must cost well under 1901 words — 1320 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
 // The reviewer total moved again when it gained the `test` tag — a duty, not prose.
-// Reviewer and closer moved once more with the confirmed-domain rule: +12 in common.md for both,
-// +7 in the reviewer's own `block` bucket — a rule every role must know, not prose.
-const CAPS = { 'briefs/planner.md': [450, 960], 'briefs/reviewer.md': [450, 985], 'briefs/closer.md': [400, 860],
+// All three moved once more with the confirmed-domain rule: +16 in common.md for every role,
+// +9 in the reviewer's own `block` bucket — a rule every role must know, not prose.
+const CAPS = { 'briefs/planner.md': [450, 965], 'briefs/reviewer.md': [450, 990], 'briefs/closer.md': [400, 865],
                'briefs/researcher.md': [700, 1290] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
@@ -231,5 +231,25 @@ assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why m
 assert.ok(/docs\/ristretto\/domain\//.test(common) && /unconfirmed ones are context, never binding/.test(common),
   'common.md must make confirmed domain entries binding and unconfirmed ones context only');
 assert.ok(/confirmed domain entry/.test(rev), 'reviewer.md must block on a violated confirmed domain entry');
+
+// 27. Outside a research run nothing checks domain/ in code, so the builder roles are told: a
+//     fixer must never "resolve" a domain block by rewording the entry, and the reviewer blocks it.
+assert.ok(/no agent edits them/.test(common), 'common.md must forbid every role from editing a confirmed domain entry');
+assert.ok(/violated or edited/.test(rev), 'reviewer.md must block a diff that edits a confirmed domain entry');
+assert.ok(!/never changes a confirmed entry is checked in code/.test(read('README.md')),
+  'README must not claim code guards domain/ everywhere — it guards research runs');
+
+// 28. Research is per input, decided before the split — a split child reuses its parent's file
+//     instead of paying for a researcher run of its own.
+assert.ok(/never per child/.test(prep), 'prep must research once per input, never per split child');
+assert.ok(prep.indexOf('research.js" stale') < prep.indexOf('## Decompose only when'),
+  'prep must read the research before it decides a split');
+
+// 29. Research runs share one domain snapshot: prep researches inputs one at a time, and both
+//     commands say what an unchecked run (check-domain exit 2) means instead of passing it silently.
+for (const [f, t] of [['grind.md', grind], ['prep.md', prep]]) {
+  assert.ok(/exit 2 → the domain store was not checked/i.test(t), `${f} must say what check-domain exit 2 means`);
+}
+assert.ok(/one input at a time/.test(prep), 'prep must research one input at a time — the runs share one snapshot');
 
 console.log('briefs.test.js: all checks passed');

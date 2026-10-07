@@ -408,5 +408,20 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(busy.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)).find((x) => x.id === 'k').details.action, undefined);
   }
 
+  // Format notice. The format has its own version now; the board must compare against it, not
+  // against plugin.json — on 0.21.0 with format 0.20 a current project would carry a notice
+  // nothing could ever clear.
+  {
+    const versionSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'version.js'), 'utf8');
+    const declared = /const FORMAT = '(\d+\.\d+)';/.exec(versionSrc)[1];
+    assert.strictEqual(m.formatOf(versionSrc), declared, 'formatOf reads the FORMAT version.js declares');
+    assert.strictEqual(m.formatOf('no declaration here'), '', 'and nothing when there is none');
+    const board = { name: 't', rows: [], format: { project: declared, plugin: m.formatOf(versionSrc) }, error: null };
+    assert.ok(!shown(m.view(board, null, 0)).includes('another ristretto format'), 'a project on the current format carries no notice');
+    const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
+    assert.ok(!tsx.includes('plugin.json'), 'board.tsx must not take the format from plugin.json');
+    assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/version.js'), 'board.tsx reads the format from version.js');
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
