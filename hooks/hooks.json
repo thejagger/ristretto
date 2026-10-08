@@ -1,7 +1,18 @@
 {
-  "description": "ristretto deterministic gates: guards the house-rule files while a run is armed, formats touched files, and runs lint+typecheck+test on Stop/SubagentStop until green — see scripts/gate.js.",
+  "description": "ristretto deterministic gates: guards the house-rule files while a run is armed, formats touched files, and runs lint+typecheck+test on Stop/SubagentStop and on a subagent's hand-back until green — see scripts/gate.js.",
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/gate.js\" full subagent",
+            "timeout": 3600,
+            "statusMessage": "ristretto: running gates before the subagent hands back..."
+          }
+        ]
+      },
       {
         "matcher": "Write|Edit",
         "hooks": [

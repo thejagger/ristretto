@@ -1591,4 +1591,20 @@ assert.strictEqual(runs(dir), 1, 'a cache hit must not re-run the suite');
 assert.ok(r.stdout.includes('cached green'), 'a cache hit must still say it was cached');
 assert.ok(/formatPaths/.test(r.stderr), 'a cache hit must still name the missing formatPaths — got: ' + r.stderr.slice(0, 300));
 
+// 149. A subagent that finishes by calling SubagentHandback ends its turn on a tool result, and
+//      Claude Code discards a SubagentStop block on such a turn (2.1.294: "Stop hook block
+//      discarded (turn ended by tool result, no model re-invoke)"). The hand-back itself must be
+//      gated: hooks.json routes PreToolUse on SubagentHandback through the subagent gate, and a red
+//      gate on that payload exits 2, which refuses the hand-back and sends the agent back to work.
+const hooksJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'hooks', 'hooks.json'), 'utf8'));
+const handback = (hooksJson.hooks.PreToolUse || []).find((h) => new RegExp(`^(?:${h.matcher})$`).test('SubagentHandback'));
+assert.ok(handback, 'hooks.json must run a PreToolUse hook on SubagentHandback');
+assert.ok(handback.hooks.some((x) => /gate\.js" full subagent$/.test(x.command)), 'the SubagentHandback hook must run the subagent gate — got: ' + JSON.stringify(handback.hooks));
+assert.ok(!(hooksJson.hooks.PreToolUse || []).some((h) => h !== handback && new RegExp(`^(?:${h.matcher})$`).test('SubagentHandback')), 'only one PreToolUse entry may match SubagentHandback');
+dir = tmpRepo(JSON.stringify({ gates: { lint: FAIL } }));
+arm(dir);
+r = gate(dir, 'full', JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_id: 'a1' }), {}, 'subagent');
+assert.strictEqual(r.status, 2, 'a red gate on a hand-back must exit 2 — got exit ' + r.status + ': ' + r.stderr.slice(0, 300));
+assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the refusal must name the failing gate — got: ' + r.stderr.slice(0, 300));
+
 console.log('gate.test.js: all checks passed');
