@@ -80,15 +80,34 @@ const { pathToFileURL } = require('url');
   const p = d.pendingOf(head, tree);
   assert.deepStrictEqual(p.map((x) => [x.file, x.title, x.change]), [['mail.md', 'Automatic reply: headers', 'confirmed'], ['nodes.md', 'Nodes keys', 'removed']]);
   assert.deepStrictEqual(d.pendingOf(head, head), [], 'nothing changed');
-  // A fact research added and nobody committed yet is not a pending change of the owner's.
-  const added = d.entriesOf('mail.md', mail + '- **New** fact.\n  source: x · unconfirmed — proposed by grind y, 2026-10-12\n');
-  assert.deepStrictEqual(d.pendingOf(d.entriesOf('mail.md', mail), added), []);
 
   // 5. Commit: message and argv; only the changed domain files (review focus 4).
   assert.strictEqual(d.commitMessage(p), 'docs(ristretto): confirm 1, remove 1 domain facts');
   assert.strictEqual(d.commitMessage(p.slice(0, 1)), 'docs(ristretto): confirm 1 domain fact');
   assert.deepStrictEqual(d.commitArgs(p), ['commit', '-m', 'docs(ristretto): confirm 1, remove 1 domain facts', '--', 'docs/ristretto/domain/mail.md', 'docs/ristretto/domain/nodes.md']);
   assert.strictEqual(d.signatureOf('Jakob Auer', new Date(2026, 9, 12, 23, 30).getTime()), 'Jakob Auer, 2026-10-12');
+
+  // Final review I1: research commits nothing, so right after a grind its proposals are not in
+  // HEAD. They are pending "added" (the button commits them); a confirmation of one is pending
+  // "confirmed" and undo puts its proposal marker back; it is not removable until committed.
+  const base = d.entriesOf('mail.md', mail);
+  const grown = mail + '- **New** fact.\n  source: x · unconfirmed — proposed by grind y, 2026-10-12\n';
+  assert.deepStrictEqual(d.pendingOf(base, d.entriesOf('mail.md', grown)).map((x) => [x.title, x.change]), [['New', 'added']]);
+  const signed = d.confirmIn(grown, 'New', sig);
+  assert.deepStrictEqual(d.pendingOf(base, d.entriesOf('mail.md', signed)).map((x) => [x.title, x.change]), [['New', 'confirmed']]);
+  assert.strictEqual(d.restoreIn(signed, mail, 'New'), grown, 'undo of a confirmation HEAD has never seen');
+  assert.strictEqual(d.restoreIn(grown, mail, 'New'), null, 'an unconfirmed new fact has nothing to undo');
+  assert.strictEqual(d.committed(base, 'mail.md', 'New'), false);
+  assert.strictEqual(d.committed(base, 'mail.md', 'Reply threading'), true);
+  assert.strictEqual(d.commitMessage([{ change: 'added' }, { change: 'added' }, { change: 'confirmed' }]), 'docs(ristretto): add 2, confirm 1 domain facts');
+  assert.deepStrictEqual(d.addArgs([{ file: 'new.md' }, { file: 'mail.md' }, { file: 'new.md' }]), ['add', '--', 'docs/ristretto/domain/mail.md', 'docs/ristretto/domain/new.md']);
+
+  // Final review I3: a leftover marker does not lock the facts forever; a leftover snapshot says what it is.
+  const day = 24 * 60 * 60 * 1000;
+  assert.strictEqual(d.lockOf({ markerIdleMs: null, snapshot: false }), null);
+  assert.strictEqual(d.lockOf({ markerIdleMs: 5000, snapshot: false }), 'a run is active — after it');
+  assert.strictEqual(d.lockOf({ markerIdleMs: day + 1, snapshot: false }), null, 'a marker idle for a day is a leftover');
+  assert.strictEqual(d.lockOf({ markerIdleMs: null, snapshot: true }), 'a research run is in flight (or did not finish — the next research run checks it)');
 
   console.log('board-domain.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

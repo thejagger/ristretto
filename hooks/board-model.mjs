@@ -393,7 +393,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   const records = opts.runs ?? [];
   const runOf = new Map(records.map((rec) => [rec.id, rec])); // the latest run of each feature wins
   const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf };
-  const domain = opts.domain ?? { tree: [], head: [], pending: [], locked: false, notice: '' };
+  const domain = opts.domain ?? { tree: [], head: [], pending: [], locked: '', notice: '' };
   const page = opts.page?.kind === 'domain'
     ? domainPage(domain)
     : opts.page?.kind === 'feature' && rows.some((r) => r.id === opts.page.id)
@@ -402,7 +402,9 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   if (page) return { kind: 'page', page };
   const count = (status) => rows.filter((r) => r.status === status).length;
   const done = count('done');
-  if (rows.length > 0 && done === rows.length && !busy) return { kind: 'cup', total: rows.length };
+  // The cup only when nothing is left for a person either: facts to confirm keep the overview.
+  const factsLeft = domain.pending.length > 0 || domain.tree.some((f) => f.state === 'unconfirmed');
+  if (rows.length > 0 && done === rows.length && !busy && !factsLeft) return { kind: 'cup', total: rows.length };
 
   const counts = [
     ['needs-review', 'to review', 'warning'],

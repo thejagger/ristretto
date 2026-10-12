@@ -468,5 +468,15 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(tsx.includes('.ristretto/domain-snapshot'), 'locked while a research run is in flight');
   }
 
+  // Final review I2: facts still to confirm keep the overview, even when every feature is done.
+  {
+    const done = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'done', reason: '' }] };
+    assert.strictEqual(m.view(done, null, 0, false, {}).kind, 'cup');
+    const fact = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '' };
+    const v = m.view(done, null, 0, false, { domain: { tree: [fact], head: [fact], pending: [], locked: false, notice: '' } });
+    assert.strictEqual(v.kind, 'board');
+    assert.deepStrictEqual(v.sections.find((s) => s.key === 'needs-you').domain, { n: 1, pending: 0 });
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

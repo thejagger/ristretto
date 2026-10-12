@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
-import { EMPTY_DOMAIN, commitArgs, confirmIn, entriesOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
+import { EMPTY_DOMAIN, addArgs, commitArgs, committed, confirmIn, entriesOf, lockOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
 
@@ -105,15 +105,20 @@ let domainSig = ''
 let domainAt = 0
 
 // Domain facts as the working tree has them and as HEAD has them; what differs is pending.
-// Re-read when a file changes, and every 30 s for a commit made elsewhere.
+// Re-read when a file changes, and every 30 s for a commit made elsewhere. Whether the facts
+// may change now is read every time, so the buttons follow a run starting or ending at once.
 async function refreshDomain($: EngineInterface, force = false) {
   try {
     const root = await $.session.root()
     const dir = `${root}/${DOMAIN}`
+    const locked = (await lockReason($)) ?? ''
     const listed = (await $.fs.exists(dir)) ? (await $.fs.list(dir)).filter(e => e.kind === 'file' && e.name.endsWith('.md')) : []
     const now = await $.clock.now()
     const sig = listed.map(e => `${e.name}:${e.mtimeMs}`).sort().join('|')
-    if (!force && sig === domainSig && now - domainAt < 30000) return
+    if (!force && sig === domainSig && now - domainAt < 30000) {
+      if ((await read($, domain)).locked !== locked) await update($, domain, d => ({ ...d, locked }))
+      return
+    }
     domainSig = sig
     domainAt = now
     const tree = []
@@ -126,18 +131,20 @@ async function refreshDomain($: EngineInterface, force = false) {
       const shown = await git(['show', `HEAD:${DOMAIN}/${name}`])
       if (shown.exitCode === 0) head.push(...entriesOf(name, shown.stdout))
     }
-    const locked = await isLocked($)
     await update($, domain, d => ({ ...d, tree: markOlder(tree), head, pending: pendingOf(head, tree), locked }))
   } catch {
     // The next poll tries again.
   }
 }
 
-// A pull or brew is armed, or a research run is in flight: a dirty domain file would read as a
-// subagent that died mid-edit, and check-domain would undo a confirmation made now.
-async function isLocked($: EngineInterface) {
+// Why the facts cannot change now, or null: a pull or brew is armed (a dirty domain file would
+// read as a subagent that died mid-edit), or a research run is in flight (check-domain would undo
+// a confirmation made now). A marker idle for a day is a leftover, as the board reads it anyway.
+async function lockReason($: EngineInterface) {
   const root = await $.session.root()
-  return (await $.fs.exists(`${root}/.ristretto/pulling`)) || (await $.fs.exists(`${root}/.ristretto/domain-snapshot`))
+  const marker = `${root}/.ristretto/pulling`
+  const markerIdleMs = (await $.fs.exists(marker)) ? (await $.clock.now()) - (await $.fs.stat(marker)).mtimeMs : null
+  return lockOf({ markerIdleMs, snapshot: await $.fs.exists(`${root}/.ristretto/domain-snapshot`) })
 }
 
 async function tell($: EngineInterface, notice: string) {
@@ -148,8 +155,12 @@ async function tell($: EngineInterface, notice: string) {
 // edited as it stands or, when gone, left alone and said so.
 async function changeFact($: EngineInterface, file: string, title: string, how: 'confirm' | 'remove' | 'undo') {
   try {
-    if (await isLocked($)) {
-      await tell($, 'a run is active — after it')
+    const lock = await lockReason($)
+    if (lock) {
+      await tell($, lock)
+    } else if (how === 'remove' && !committed((await read($, domain)).head, file, title)) {
+      // Removing a fact git has never seen could not be undone: commit it first.
+      await tell($, `"${title}" is new from research — commit it first, then remove it`)
     } else {
       const root = await $.session.root()
       const path = `${root}/${DOMAIN}/${file}`
@@ -183,12 +194,16 @@ async function changeFact($: EngineInterface, file: string, title: string, how: 
 
 async function commitFacts($: EngineInterface) {
   try {
-    if (await isLocked($)) {
-      await tell($, 'a run is active — commit after it')
+    const lock = await lockReason($)
+    if (lock) {
+      await tell($, lock)
     } else {
       const pending = (await read($, domain)).pending
       if (pending.length > 0) {
-        const ran = await $.process.run(['git', ...commitArgs(pending)], { cwd: await $.session.root() })
+        const root = await $.session.root()
+        // A fact file research created is untracked; only the changed domain files are staged.
+        const added = await $.process.run(['git', ...addArgs(pending)], { cwd: root })
+        const ran = added.exitCode === 0 ? await $.process.run(['git', ...commitArgs(pending)], { cwd: root }) : added
         await tell($, ran.exitCode === 0
           ? 'committed — the repo’s own commit hooks do not run from the board'
           : `commit failed: ${(ran.stderr || ran.stdout).trim().slice(0, 120)}`)
@@ -655,7 +670,7 @@ export const register: Register = on => {
             <Text bold>Domain facts</Text>
             <Text dimColor wrap="wrap">{`${p.open} to confirm · confirmed facts bind the builder and the reviewer`}</Text>
           </Box>
-          {p.locked && <Text color="warning" wrap="wrap">a run is active — confirm after it</Text>}
+          {p.locked && <Text color="warning" wrap="wrap">{p.locked}</Text>}
           {p.notice !== '' && <Text dimColor wrap="wrap">{p.notice}</Text>}
           {p.groups.map((g: any) => (
             <Box key={`df-${g.file}`} flexDirection="column" gap={rows}>

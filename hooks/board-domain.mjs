@@ -4,7 +4,7 @@
 // is the bold run that opens it: `- **<title>** <text>`. A person confirms by the board's click;
 // the marker then reads `confirmed — <name>, <date> (<what the proposal said>)`.
 
-export const EMPTY_DOMAIN = { tree: [], head: [], pending: [], locked: false, notice: '' };
+export const EMPTY_DOMAIN = { tree: [], head: [], pending: [], locked: '', notice: '' };
 
 const TITLE = /^- \*\*(.+?)\*\*\s*(.*)$/;
 const CONFIRMED = /^confirmed\b/i;
@@ -70,14 +70,16 @@ export function markOlder(facts) {
 
 const key = (f) => `${f.file}\u0000${f.title}`;
 
-// What the working tree changed against HEAD: facts confirmed since, and facts removed since.
+// What the working tree changed against HEAD: facts added since (research commits nothing, so
+// its proposals arrive uncommitted), confirmed since, and removed since.
 export function pendingOf(head, tree) {
   const inHead = new Map(head.map((f) => [key(f), f]));
   const inTree = new Set(tree.map(key));
   const out = [];
   for (const f of tree) {
     const h = inHead.get(key(f));
-    if (h && h.state === 'unconfirmed' && f.state === 'confirmed') out.push({ file: f.file, title: f.title, change: 'confirmed', entry: f });
+    if (!h) out.push({ file: f.file, title: f.title, change: f.state === 'confirmed' ? 'confirmed' : 'added', entry: f });
+    else if (h.state === 'unconfirmed' && f.state === 'confirmed') out.push({ file: f.file, title: f.title, change: 'confirmed', entry: f });
   }
   for (const h of head) if (!inTree.has(key(h))) out.push({ file: h.file, title: h.title, change: 'removed', entry: h });
   return out;
@@ -116,7 +118,7 @@ export function restoreIn(treeText, headText, title) {
   const tree = split(treeText);
   const head = split(headText);
   const hb = locate(head.lines, title);
-  if (!hb) return null;
+  if (!hb) return unconfirmIn(tree, title);
   const entry = head.lines.slice(hb.start, hb.end);
   const tb = locate(tree.lines, title);
   if (tb) {
@@ -131,18 +133,54 @@ export function restoreIn(treeText, headText, title) {
   return tree.lines.join(tree.eol);
 }
 
+// Undo of a confirmation HEAD never saw: the board kept what the proposal said in brackets.
+function unconfirmIn(tree, title) {
+  const b = locate(tree.lines, title);
+  if (!b) return null;
+  for (let i = b.start; i < b.end; i++) {
+    const parts = tree.lines[i].split('·');
+    const at = parts.findIndex((p) => /^confirmed\b.*\((.+)\)\s*$/i.test(p.trim()));
+    if (at < 0) continue;
+    const lead = /^\s*/.exec(parts[at])[0];
+    parts[at] = `${lead}unconfirmed — ${/\((.+)\)\s*$/.exec(parts[at].trim())[1]}`;
+    tree.lines[i] = parts.join('·');
+    return tree.lines.join(tree.eol);
+  }
+  return null;
+}
+
+// Whether HEAD has this fact: only a committed fact can be removed, so a removal can be undone.
+export function committed(head, file, title) {
+  return head.some((f) => f.file === file && f.title === title);
+}
+
 export function commitMessage(pending) {
-  const confirmed = pending.filter((p) => p.change === 'confirmed').length;
-  const removed = pending.length - confirmed;
-  const parts = [confirmed > 0 && `confirm ${confirmed}`, removed > 0 && `remove ${removed}`].filter(Boolean);
+  const count = (change) => pending.filter((p) => p.change === change).length;
+  const [added, confirmed, removed] = [count('added'), count('confirmed'), count('removed')];
+  const parts = [added > 0 && `add ${added}`, confirmed > 0 && `confirm ${confirmed}`, removed > 0 && `remove ${removed}`].filter(Boolean);
   return `docs(ristretto): ${parts.join(', ')} domain fact${pending.length === 1 ? '' : 's'}`;
 }
 
 // Only the changed domain files, whatever else is staged: `git commit -- <paths>` commits those
 // paths alone.
 export function commitArgs(pending) {
-  const files = [...new Set(pending.map((p) => `docs/ristretto/domain/${p.file}`))].sort();
-  return ['commit', '-m', commitMessage(pending), '--', ...files];
+  return ['commit', '-m', commitMessage(pending), '--', ...files(pending)];
+}
+
+const files = (pending) => [...new Set(pending.map((p) => `docs/ristretto/domain/${p.file}`))].sort();
+
+// A fact file research created is untracked: `git add` it (and only it) before committing.
+export function addArgs(pending) {
+  return ['add', '--', ...files(pending)];
+}
+
+// Why the facts cannot change now, or null. A pull/brew marker idle for a day is a leftover, as
+// the board's own marker reading treats it; a domain snapshot lives only while research runs.
+const LEFTOVER_MS = 24 * 60 * 60 * 1000;
+export function lockOf({ markerIdleMs, snapshot }) {
+  if (markerIdleMs !== null && markerIdleMs <= LEFTOVER_MS) return 'a run is active — after it';
+  if (snapshot) return 'a research run is in flight (or did not finish — the next research run checks it)';
+  return null;
 }
 
 export function signatureOf(name, now) {

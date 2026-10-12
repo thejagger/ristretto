@@ -42,7 +42,7 @@ export type BoardLive = {
 export type BoardPage = { kind: 'feature'; id: string } | { kind: 'domain' }
 export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean }
 export type BoardPending = { file: string; title: string; change: 'confirmed' | 'removed'; entry: BoardFact }
-export type BoardDomain = { tree: BoardFact[]; head: BoardFact[]; pending: BoardPending[]; locked: boolean; notice: string }
+export type BoardDomain = { tree: BoardFact[]; head: BoardFact[]; pending: BoardPending[]; locked: string; notice: string }
 
 declare module 'claude-code' {
   interface PluginState {
