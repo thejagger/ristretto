@@ -17,6 +17,7 @@ export type BoardPlan = {
   gate: string | null
   findings: string[]
   itemised: boolean | null
+  goal: string | null
 }
 export type BoardRun = {
   id: string
@@ -24,6 +25,8 @@ export type BoardRun = {
   startedAt: number
   tokens: { in: number; out: number; cache: number }
   gates: { runs: number; ms: number; red: number }
+  phases?: { plan: number; code: number; review: number; close: number }
+  at?: { bucket: string; since: number } | null
 }
 export type BoardRecord = BoardRun & { endedAt: number; ms: number; status: string }
 export type BoardPhase = 'starting' | 'planning' | 'coding' | 'fixing' | 'review' | 'closing' | 'interrupted'
@@ -36,6 +39,10 @@ export type BoardLive = {
   gate: { since: number; red: boolean } | null
   armed: boolean
 }
+export type BoardPage = { kind: 'feature'; id: string } | { kind: 'domain' }
+export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean }
+export type BoardPending = { file: string; title: string; change: 'confirmed' | 'removed'; entry: BoardFact }
+export type BoardDomain = { tree: BoardFact[]; head: BoardFact[]; pending: BoardPending[]; locked: boolean; notice: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -45,9 +52,12 @@ declare module 'claude-code' {
       elsewhere: boolean
       showDone: boolean
       tick: number
-      open: string | null
+      page: BoardPage | null
       run: BoardRun | null
       runs: BoardRecord[]
+      domain: BoardDomain
+      showConfirmed: boolean
+      openFact: string | null
     }
   }
 }

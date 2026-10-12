@@ -461,6 +461,11 @@ const shown = (v) => JSON.stringify(v);
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
     assert.ok(!tsx.includes('plugin.json'), 'board.tsx must not take the format from plugin.json');
     assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/version.js'), 'board.tsx reads the format from version.js');
+    // The pane never draws an input field, and acts on domain files only through board-domain.
+    assert.ok(!/\bInput\b/.test(tsx), 'no input fields in the pane');
+    assert.ok(tsx.includes("from './board-domain.mjs'"), 'domain edits come from board-domain.mjs');
+    assert.ok(/commitArgs\(/.test(tsx) && !/'add'/.test(tsx), 'commits with commitArgs, never git add');
+    assert.ok(tsx.includes('.ristretto/domain-snapshot'), 'locked while a research run is in flight');
   }
 
   console.log('board-model.test.js: all checks passed');

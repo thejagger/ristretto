@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardLive, BoardPlan, BoardRecord, BoardRun } from '../types'
+import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_DOMAIN, commitArgs, confirmIn, entriesOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
-import { addGate, addTokens, count, endRun, keep, track } from './board-runs.mjs'
+import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md and of the run this session
 // is doing, plus buttons that start pull/shot/brew the way typing them would. It observes and
@@ -27,7 +28,11 @@ const live = atom({ plugin: 'ristretto', key: 'live' } as const, null as BoardLi
 const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false)
 const showDone = atom({ plugin: 'ristretto', key: 'showDone' } as const, false)
 const tick = atom({ plugin: 'ristretto', key: 'tick' } as const, 0)
-const openRow = atom({ plugin: 'ristretto', key: 'open' } as const, null as string | null)
+const page = atom({ plugin: 'ristretto', key: 'page' } as const, null as BoardPage | null)
+const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAIN as BoardDomain)
+const showConfirmed = atom({ plugin: 'ristretto', key: 'showConfirmed' } as const, false)
+// The one fact opened to its full text, as `<file>\u0000<title>`.
+const openFact = atom({ plugin: 'ristretto', key: 'openFact' } as const, null as string | null)
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
@@ -61,7 +66,8 @@ async function refreshBoard($: EngineInterface) {
     // What each open plan says, plus the opened row's plan whatever its status; and the
     // manual checks. A plan that cannot be read is simply absent. A blocked row with no
     // reason in the roadmap says why from its plan's Blockers.
-    const opened = await read($, openRow)
+    const shownPage = await read($, page)
+    const opened = shownPage?.kind === 'feature' ? shownPage.id : null
     const plans: Record<string, BoardPlan> = {}
     for (const row of parsed.rows) {
       if (!row.plan || (row.status === 'done' && row.id !== opened)) continue
@@ -94,6 +100,106 @@ async function refreshBoard($: EngineInterface) {
   }
 }
 
+const DOMAIN = 'docs/ristretto/domain'
+let domainSig = ''
+let domainAt = 0
+
+// Domain facts as the working tree has them and as HEAD has them; what differs is pending.
+// Re-read when a file changes, and every 30 s for a commit made elsewhere.
+async function refreshDomain($: EngineInterface, force = false) {
+  try {
+    const root = await $.session.root()
+    const dir = `${root}/${DOMAIN}`
+    const listed = (await $.fs.exists(dir)) ? (await $.fs.list(dir)).filter(e => e.kind === 'file' && e.name.endsWith('.md')) : []
+    const now = await $.clock.now()
+    const sig = listed.map(e => `${e.name}:${e.mtimeMs}`).sort().join('|')
+    if (!force && sig === domainSig && now - domainAt < 30000) return
+    domainSig = sig
+    domainAt = now
+    const tree = []
+    for (const e of listed) tree.push(...entriesOf(e.name, String(await $.fs.read(`${dir}/${e.name}`))))
+    const git = (args: string[]) => $.process.run(['git', ...args], { cwd: root })
+    const ls = await git(['ls-tree', '--name-only', 'HEAD', `${DOMAIN}/`])
+    const names = ls.exitCode === 0 ? ls.stdout.split(/\r?\n/).map(l => l.trim().split('/').pop() || '').filter(n => n.endsWith('.md')) : []
+    const head = []
+    for (const name of names) {
+      const shown = await git(['show', `HEAD:${DOMAIN}/${name}`])
+      if (shown.exitCode === 0) head.push(...entriesOf(name, shown.stdout))
+    }
+    const locked = await isLocked($)
+    await update($, domain, d => ({ ...d, tree: markOlder(tree), head, pending: pendingOf(head, tree), locked }))
+  } catch {
+    // The next poll tries again.
+  }
+}
+
+// A pull or brew is armed, or a research run is in flight: a dirty domain file would read as a
+// subagent that died mid-edit, and check-domain would undo a confirmation made now.
+async function isLocked($: EngineInterface) {
+  const root = await $.session.root()
+  return (await $.fs.exists(`${root}/.ristretto/pulling`)) || (await $.fs.exists(`${root}/.ristretto/domain-snapshot`))
+}
+
+async function tell($: EngineInterface, notice: string) {
+  await update($, domain, d => ({ ...d, notice }))
+}
+
+// One click on one fact. The file is re-read now, so an entry that changed underneath is
+// edited as it stands or, when gone, left alone and said so.
+async function changeFact($: EngineInterface, file: string, title: string, how: 'confirm' | 'remove' | 'undo') {
+  try {
+    if (await isLocked($)) {
+      await tell($, 'a run is active — after it')
+    } else {
+      const root = await $.session.root()
+      const path = `${root}/${DOMAIN}/${file}`
+      const text = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
+      let next: string | null = null
+      if (how === 'confirm') {
+        const who = await $.process.run(['git', 'config', 'user.name'], { cwd: root })
+        const name = who.exitCode === 0 ? who.stdout.trim() : ''
+        if (!name) {
+          await tell($, 'set git user.name first — it is the signature on a confirmed fact')
+          return
+        }
+        next = confirmIn(text, title, signatureOf(name, await $.clock.now()))
+      } else if (how === 'remove') {
+        next = removeIn(text, title)
+      } else {
+        const shown = await $.process.run(['git', 'show', `HEAD:${DOMAIN}/${file}`], { cwd: root })
+        next = restoreIn(text, shown.exitCode === 0 ? shown.stdout : '', title)
+      }
+      if (next === null) await tell($, `"${title}" changed underneath — shown as it is now`)
+      else {
+        await $.fs.write(path, next)
+        await tell($, '')
+      }
+    }
+  } catch (err) {
+    await tell($, String(err).slice(0, 120))
+  }
+  await refreshDomain($, true)
+}
+
+async function commitFacts($: EngineInterface) {
+  try {
+    if (await isLocked($)) {
+      await tell($, 'a run is active — commit after it')
+    } else {
+      const pending = (await read($, domain)).pending
+      if (pending.length > 0) {
+        const ran = await $.process.run(['git', ...commitArgs(pending)], { cwd: await $.session.root() })
+        await tell($, ran.exitCode === 0
+          ? 'committed — the repo’s own commit hooks do not run from the board'
+          : `commit failed: ${(ran.stderr || ran.stdout).trim().slice(0, 120)}`)
+      }
+    }
+  } catch (err) {
+    await tell($, String(err).slice(0, 120))
+  }
+  await refreshDomain($, true)
+}
+
 async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
   try {
     const now = await $.clock.now()
@@ -109,8 +215,12 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
 async function account($: EngineInterface) {
   const now = await $.clock.now()
   const before = await read($, run)
-  const step = track(before, await read($, live), now)
-  if (step.run === before) return
+  const current = await read($, live)
+  const step = track(before, current, now)
+  if (step.run === before) {
+    if (before) await update($, run, r => (r && r.id === before.id ? markPhase(r, current, now) : r))
+    return
+  }
   // Tokens and gate time keep arriving while this ran: only the call that still finds the run
   // it read moves it on, and it closes the run as it stands then, counts included.
   let moved = false
@@ -119,7 +229,7 @@ async function account($: EngineInterface) {
     if ((r?.id ?? null) !== (before?.id ?? null)) return r
     moved = true
     closing = r
-    return step.run
+    return step.run ? markPhase(step.run, current, now) : step.run
   })
   if (!moved || !closing) return
   await refreshBoard($)
@@ -155,6 +265,7 @@ async function poll($: EngineInterface) {
     await observeMarker($)
     const mtime = (await $.fs.exists(await repo($, ROADMAP))) ? (await $.fs.stat(await repo($, ROADMAP))).mtimeMs : -1
     if (mtime !== roadmapMtime) await refreshBoard($)
+    await refreshDomain($)
   } catch {
     // The next tick tries again.
   }
@@ -203,23 +314,21 @@ function statusBarSvg(segments: { status: string; n: number; tone: string }[]) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="8" viewBox="0 0 1000 8" preserveAspectRatio="none"><clipPath id="pill"><rect width="1000" height="8" rx="4"/></clipPath><g clip-path="url(#pill)">${parts.join('')}</g></svg>`
 }
 
-// A run's length against the longest one shown, its gate time drawn solid from the start, on
-// a faint full-width track so the bar's end is not mistaken for space before the text.
-const RUN_BAR = 96
-function runBarSvg(ms: number, gateMs: number, maxMs: number) {
-  const w = Math.max(6, Math.round((RUN_BAR * ms) / (maxMs || 1)))
-  const g = Math.min(w, Math.round((RUN_BAR * gateMs) / (maxMs || 1)))
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RUN_BAR}" height="6" viewBox="0 0 ${RUN_BAR} 6"><rect width="${RUN_BAR}" height="6" rx="3" fill="${HUE.inactive}" fill-opacity="0.15"/><rect width="${w}" height="6" rx="3" fill="${HUE.claude}" fill-opacity="0.35"/><rect width="${g}" height="6" rx="3" fill="${HUE.claude}"/></svg>`
-}
-
-// Gate minutes per run as a small line, oldest left, the latest run a dot.
-function sparkSvg(values: number[]) {
-  const max = Math.max(1, ...values)
-  const step = values.length > 1 ? 120 / (values.length - 1) : 0
-  const at = values.map((v, i) => [i * step + 3, 17 - (14 * v) / max])
-  const pts = at.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
-  const [lx, ly] = at[at.length - 1]
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="126" height="20" viewBox="0 0 126 20"><polyline points="${pts}" fill="none" stroke="${HUE.claude}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.4" fill="${HUE.claude}"/></svg>`
+// Where one finished feature's time went, as its own proportions — never against another
+// feature's, since every feature is different. Phase colors match the text labels' theme keys.
+const SPLIT_TONE: Record<string, string> = { plan: 'inactive', code: 'claude', review: 'permission', close: 'success' }
+function splitSvg(split: { phase: string; ms: number }[], width: number) {
+  const total = split.reduce((sum, s) => sum + s.ms, 0) || 1
+  const gap = split.length > 1 ? 2 : 0
+  const span = width - gap * (split.length - 1)
+  let x = 0
+  const parts = split.map(s => {
+    const w = Math.max(1.5, (span * s.ms) / total)
+    const rect = `<rect x="${x.toFixed(1)}" width="${w.toFixed(1)}" height="6" fill="${HUE[SPLIT_TONE[s.phase]] ?? HUE.inactive}"/>`
+    x += w + gap
+    return rect
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="6" viewBox="0 0 ${width} 6" preserveAspectRatio="none"><clipPath id="split"><rect width="${width}" height="6" rx="3"/></clipPath><g clip-path="url(#split)">${parts.join('')}</g></svg>`
 }
 
 // A chip as a rounded pill: tinted fill, text in the hue. The width is estimated from the
@@ -293,6 +402,7 @@ export const register: Register = on => {
     const kept = await $.store.get(storeKey)
     await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
     await refreshBoard($)
+    await refreshDomain($, true)
     await poll($)
     return started
   })
@@ -384,9 +494,9 @@ export const register: Register = on => {
     return done
   })
 
-  // deun's layout in Claude's colors: a summary card, a run card, what needs a person, what is
-  // next, what happened. A row opens (▸) to a card of its details. Text colors are theme keys,
-  // so light and dark both hold; shapes are SVG in HUE where the surface draws it.
+  // An overview of one-liners; a row's › opens its page — a feature, or the domain facts — and
+  // ← goes back. Text colors are theme keys, so light and dark both hold; shapes are SVG in HUE
+  // where the surface draws it. Mobile has no buttons: it shows the overview only.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
     const canPress = e.surface !== 'mobile' && Button !== undefined
@@ -394,71 +504,110 @@ export const register: Register = on => {
     const now = Math.max(await read($, tick), current?.since ?? 0)
     const showing = await read($, showDone)
     const boardValue = await read($, board)
+    const facts = await read($, domain)
     const v = view(boardValue, current, now, await read($, elsewhere), {
       showDone: showing,
-      open: await read($, openRow),
+      page: canPress ? await read($, page) : null,
       plans: boardValue.plans,
       checks: boardValue.checks,
       runs: await read($, runs),
+      domain: facts,
     })
-    // One row open at a time; opening a done row reads its archived plan.
-    const toggleRow = async (id: string) => {
-      await update($, openRow, (o: string | null) => (o === id ? null : id))
+    const goTo = async (to: BoardPage | null) => {
+      await update($, page, () => to)
       await refreshBoard($)
+      if (to?.kind === 'domain') await refreshDomain($, true)
     }
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
     const rich = Svg !== undefined
-    // On desktop a button carries a sign rather than a word; the terminal keeps the word.
-    const SIGN: Record<string, string> = { start: '▶', 'brew all': '☕ brew all' }
-    const press = (action: { label: string; command: string; args: string }, primary = false) =>
-      canPress && (
-        <Button
-          key={`press-${action.command}-${action.args}`}
-          label={rich ? SIGN[action.label] ?? action.label : action.label}
-          variant={primary ? 'primary' : undefined}
-          onPress={() => void $.command.run({ command: action.command, args: action.args })}
-        />
-      )
-    // A native button and a pill are taller than a text row on desktop: a line between rows
-    // keeps them from touching. The terminal's rows are one cell and stay tight.
     const rows = rich ? 1 : 0
+    const SIGN: Record<string, string> = { start: '▶', 'brew all': '☕ brew all' }
+    // A button never shrinks or wraps: its own box keeps its width.
+    const press = (action: { label: string; command: string; args: string }, primary = false, label?: string) =>
+      canPress && (
+        <Box key={`press-${action.command}-${action.args}-${label ?? ''}`} flexShrink={0}>
+          <Button
+            label={label ?? (rich ? SIGN[action.label] ?? action.label : action.label)}
+            variant={primary ? 'primary' : undefined}
+            onPress={() => void $.command.run({ command: action.command, args: action.args })}
+          />
+        </Box>
+      )
+    const act = (key: string, label: string, onPress: () => void, plain = false) =>
+      canPress && (
+        <Box key={key} flexShrink={0}>
+          <Button label={label} plain={plain} dimColor={plain} onPress={onPress} />
+        </Box>
+      )
+    const more = (to: BoardPage) => act(`more-${to.kind}-${(to as any).id ?? ''}`, '›', () => void goTo(to), true)
+    const back = (where: string) => (
+      <Box key="back" flexDirection="row">{act('back', `← ${where.charAt(0).toUpperCase()}${where.slice(1)}`, () => void goTo(null), true)}</Box>
+    )
     const mark = (r: any) =>
-      rich ? (
-        <Svg alt={r.tag || r.status} width={14} height={14} source={iconSvg(r.status)} />
-      ) : (
-        <Text color={r.tone}>{r.mark}</Text>
-      )
+      rich ? <Svg alt={r.tag || r.status} width={14} height={14} source={iconSvg(r.status)} /> : <Text color={r.tone}>{r.mark}</Text>
     const chip = (key: string, text: string, tone: string) =>
-      rich ? (
-        <Svg key={key} alt={text} source={chipSvg(text, tone)} />
-      ) : (
-        <Text key={key} color={tone}>{text}</Text>
-      )
+      rich ? <Svg key={key} alt={text} source={chipSvg(text, tone)} /> : <Text key={key} color={tone}>{text}</Text>
     const heading = (key: string, title: string) =>
-      rich ? (
-        <Text key={key} bold dimColor>{title.charAt(0).toUpperCase() + title.slice(1)}</Text>
-      ) : (
-        <Text key={key} dimColor bold>{title.toUpperCase()}</Text>
-      )
-    // Run bars share one scale: the longest run shown is full width.
-    const longest = Math.max(1, ...((v as any).done?.rows ?? []).map((r: any) => r.run?.ms ?? 0))
-    // What a run took besides its time, which the row already shows on its right.
-    const runFacts = (rec: any) => `${count(rec.tokens.in + rec.tokens.out)} tok · gate ${duration(rec.gates.ms)}${rec.gates.red ? ` · ${rec.gates.red} red` : ''}`
-    // Plan text with its Markdown drawn: bold as bold, code in the accent, markers gone.
+      rich ? <Text key={key} bold dimColor>{title.charAt(0).toUpperCase() + title.slice(1)}</Text> : <Text key={key} dimColor bold>{title.toUpperCase()}</Text>
     const md = (text: string, key: string) =>
       inline(text).map((seg: any, i: number) =>
         seg.bold ? <Text key={`${key}-${i}`} bold>{seg.text}</Text> : seg.code ? <Text key={`${key}-${i}`} color="claude">{seg.text}</Text> : seg.text,
       )
-    // An opened row's card, in the row's color and indented under it: what it waits on, what
-    // done means for it (with the proof once done), what stops it, and how it was closed.
-    const detailsCard = (r: any) => {
-      const d = r.details
-      const facts = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`].filter(Boolean)
+    const card = (key: string, tone: string, children: any) => (
+      <Box key={key} flexDirection="column" borderStyle="round" borderColor={tone} paddingX={1} paddingY={rich ? 1 : 0} gap={rich ? 1 : 0}>{children}</Box>
+    )
+
+    // One line per feature: mark, name, what it says, its numbers in a right-hand column, its
+    // action, and › to its page.
+    const row = (r: any, dim = false) => (
+      <Box key={r.key} flexDirection="row" gap={1} alignItems="center">
+        {mark(r)}
+        <Box flexShrink={0}><Text bold={!dim} dimColor={dim}>{r.id}</Text></Box>
+        {r.waiting.length > 0
+          ? chip(`tag-${r.key}`, `waits on ${r.waiting[0].id}${r.waiting.length > 1 ? ` +${r.waiting.length - 1}` : ''}`, 'inactive')
+          : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
+        <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{dim ? '' : r.detail}</Text></Box>
+        {r.run !== undefined && <Box flexShrink={0}><Text dimColor>{r.run ? duration(r.run.ms) : '—'}</Text></Box>}
+        {rich && r.split && <Box flexShrink={0}><Svg alt={r.split.map((s: any) => `${s.phase} ${duration(s.ms)}`).join(', ')} width={64} height={6} source={splitSvg(r.split, 64)} /></Box>}
+        {r.action && press(r.action)}
+        {more({ kind: 'feature', id: r.id })}
+      </Box>
+    )
+
+    if (v.kind === 'message') return <Text dimColor>{v.text}</Text>
+
+    if (v.kind === 'page' && v.page.kind === 'feature') {
+      const p = v.page
+      const d = p.details
+      const facts2 = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`].filter(Boolean)
       return (
-        <Box key={`details-${r.key}`} flexDirection="column" marginLeft={2} borderStyle="round" borderColor={r.tone} paddingX={1} paddingY={rich ? 1 : 0} gap={rich ? 1 : 0}>
+        <Box flexDirection="column" gap={1}>
+          {back(p.back)}
+          <Box flexDirection="column">
+            <Box flexDirection="row" gap={1} alignItems="center">{mark(p)}<Text bold>{p.id}</Text></Box>
+            {p.title !== '' && <Text dimColor wrap="wrap">{p.title}</Text>}
+          </Box>
+          {p.goal && <Text wrap="wrap">{md(p.goal, 'goal')}</Text>}
+          {p.split && card('split', 'inactive', <>
+            <Text bold dimColor>{`${rich ? 'Time' : 'TIME'} · ${duration(d.run.ms)}`}</Text>
+            {rich && <Svg alt="time split" height={6} source={splitSvg(p.split, 1000)} />}
+            <Box flexDirection="row" columnGap={2} flexWrap="wrap">
+              {p.split.map((s: any) => <Text key={`sp-${s.phase}`} color={SPLIT_TONE[s.phase]}>{`${s.phase} ${duration(s.ms)}`}</Text>)}
+            </Box>
+          </>)}
           {d.missing && <Text dimColor>plan not found</Text>}
+          {d.blockers.length > 0 && card('blockers', 'error', <>
+            <Text bold dimColor>{p.waitingOn ? `Waiting on ${p.waitingOn}` : 'Blocked'}</Text>
+            {d.blockers.map((b: string, i: number) => <Text key={`blk-${i}`} wrap="wrap">{`${i + 1}. `}{md(b, `blk-${i}`)}</Text>)}
+            {d.action?.chat && (
+              <Box flexDirection="column" gap={rich ? 1 : 0}>
+                <Box flexDirection="row">{press(d.action, true, 'solve in chat')}</Box>
+                <Text dimColor wrap="wrap">{`Opens /${d.action.command} ${d.action.args} in the chat. Once it's settled, the plan is updated and the feature is planned again.`}</Text>
+              </Box>
+            )}
+          </>)}
           {d.deps.length > 0 && (
-            <Box flexDirection="row" columnGap={2} rowGap={0} flexWrap="wrap" alignItems="center">
+            <Box flexDirection="row" columnGap={2} flexWrap="wrap" alignItems="center">
               <Text dimColor>depends on</Text>
               {d.deps.map((x: any) => (
                 <Box key={`dep-${x.id}`} flexDirection="row" gap={1} alignItems="center">
@@ -468,95 +617,94 @@ export const register: Register = on => {
               ))}
             </Box>
           )}
-          {d.acceptance.length > 0 && (
-            <Box flexDirection="column">
-              <Text bold dimColor>{rich ? 'Acceptance' : 'ACCEPTANCE'}</Text>
-              {d.acceptance.map((a: any, i: number) => (
-                <Box key={`acc-${i}`} flexDirection="column" marginTop={rich ? 1 : 0}>
-                  <Box flexDirection="row" gap={1}>
-                    {a.proof
-                      ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' })
-                      : a.auto
-                        ? <Text dimColor>{i + 1}.</Text>
-                        : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
-                    <Box flexShrink={1}>
-                      <Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text>
+          {d.acceptance.length > 0 && card('acceptance', 'inactive', <>
+            <Text bold dimColor>{rich ? 'Acceptance' : 'ACCEPTANCE'}</Text>
+            {d.acceptance.map((a: any, i: number) => (
+              <Box key={`acc-${i}`} flexDirection="column">
+                <Box flexDirection="row" gap={1}>
+                  {a.proof ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' }) : a.auto ? <Text dimColor>{i + 1}.</Text> : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
+                  <Box flexShrink={1}><Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text></Box>
+                </Box>
+                {a.proof && <Box marginLeft={rich ? 3 : 2}><Text dimColor wrap="truncate-end">{plain(a.proof)}</Text></Box>}
+              </Box>
+            ))}
+            {d.unitemised && <Text dimColor wrap="wrap">proof not itemised — the plan's Evidence covers these as prose</Text>}
+          </>)}
+          {d.findings.length > 0 && card('findings', 'warning', d.findings.map((f: string, i: number) => (
+            <Box key={`fnd-${i}`} flexDirection="row" gap={1}>{mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}<Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box></Box>
+          )))}
+          {d.checks.length > 0 && card('checks', 'permission', d.checks.map((c: any, i: number) => (
+            <Box key={`chk-${i}`} flexDirection="row" gap={1}>{c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}<Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{md(c.text, `chk-${i}`)}</Text></Box></Box>
+          )))}
+          {d.run && <Text dimColor wrap="wrap">{`${p.split ? '' : `${duration(d.run.ms)} · `}${count(d.run.tokens.in + d.run.tokens.out)} tok`}</Text>}
+          {facts2.length > 0 && <Text dimColor wrap="wrap">{facts2.join('  ·  ')}</Text>}
+          {d.action && !d.action.chat && <Box flexDirection="row">{press(d.action, true)}</Box>}
+        </Box>
+      )
+    }
+
+    if (v.kind === 'page' && v.page.kind === 'domain') {
+      const p = v.page
+      const showAll = await read($, showConfirmed)
+      const opened = await read($, openFact)
+      const open = !p.locked
+      return (
+        <Box flexDirection="column" gap={1}>
+          {back(p.back)}
+          <Box flexDirection="column">
+            <Text bold>Domain facts</Text>
+            <Text dimColor wrap="wrap">{`${p.open} to confirm · confirmed facts bind the builder and the reviewer`}</Text>
+          </Box>
+          {p.locked && <Text color="warning" wrap="wrap">a run is active — confirm after it</Text>}
+          {p.notice !== '' && <Text dimColor wrap="wrap">{p.notice}</Text>}
+          {p.groups.map((g: any) => (
+            <Box key={`df-${g.file}`} flexDirection="column" gap={rows}>
+              <Text dimColor>{`${g.name} · ${g.open}`}</Text>
+              {g.rows.map((f: any) => {
+                const id = `${g.file}\u0000${f.title}`
+                return (
+                  <Box key={`fact-${id}`} flexDirection="column">
+                    <Box flexDirection="row" gap={1} alignItems="center">
+                      {act(`open-${id}`, opened === id ? '▾' : '▸', () => void update($, openFact, (o: string | null) => (o === id ? null : id)), true)}
+                      {mark({ status: f.decided === 'confirmed' ? 'done' : f.decided === 'removed' ? 'blocked' : 'needs-human', tone: 'permission', mark: f.decided ? '✓' : '◐' })}
+                      <Box flexShrink={0}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Box>
+                      {f.older && !f.decided && chip(`old-${id}`, 'older version', 'warning')}
+                      <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{f.decided ?? plain(f.text)}</Text></Box>
+                      {open && !f.decided && act(`ok-${id}`, '✓', () => void changeFact($, g.file, f.title, 'confirm'))}
+                      {open && !f.decided && act(`rm-${id}`, '✕', () => void changeFact($, g.file, f.title, 'remove'))}
+                      {open && f.decided && act(`undo-${id}`, 'undo', () => void changeFact($, g.file, f.title, 'undo'), true)}
                     </Box>
+                    {opened === id && card(`full-${id}`, 'permission', <>
+                      <Text wrap="wrap">{md(f.text, `full-${id}`)}</Text>
+                      {f.source !== '' && <Text dimColor wrap="wrap">{f.source}</Text>}
+                      {f.by !== '' && <Text dimColor wrap="wrap">{f.by}</Text>}
+                    </>)}
                   </Box>
-                  {a.proof && (
-                    <Box marginLeft={rich ? 3 : 2}>
-                      <Text dimColor wrap="truncate-end">{plain(a.proof)}</Text>
-                    </Box>
-                  )}
+                )
+              })}
+            </Box>
+          ))}
+          {p.pending.confirmed + p.pending.removed > 0 && (
+            <Box flexDirection="row" gap={1} alignItems="center" borderStyle="round" borderColor="permission" paddingX={1} paddingY={rich ? 1 : 0}>
+              <Box flexGrow={1} flexShrink={1}><Text wrap="wrap">{`${p.pending.confirmed} confirmed, ${p.pending.removed} removed — not committed yet`}</Text></Box>
+              {open && act('commit-facts', 'commit', () => void commitFacts($))}
+            </Box>
+          )}
+          {p.confirmed.length > 0 && (
+            <Box flexDirection="column" gap={rows}>
+              {act('show-confirmed', `${showAll ? 'hide' : 'show'} ${p.confirmed.length} confirmed`, () => void update($, showConfirmed, (x: boolean) => !x), true)}
+              {showAll && p.confirmed.map((f: any) => (
+                <Box key={`cf-${f.file}-${f.title}`} flexDirection="row" gap={1}>
+                  {mark({ status: 'done', tone: 'success', mark: '✓' })}
+                  <Box flexShrink={1}><Text wrap="wrap"><Text bold>{f.title}</Text>{` ${f.text}`}</Text></Box>
                 </Box>
               ))}
             </Box>
           )}
-          {d.unitemised && <Text dimColor wrap="wrap">proof not itemised — the plan's Evidence covers these as prose</Text>}
-          {d.blockers.map((b: string, i: number) => (
-            <Box key={`blk-${i}`} flexDirection="row" gap={1}>
-              {mark({ status: 'blocked', tone: 'error', mark: '✕', tag: 'blocker' })}
-              <Box flexShrink={1}><Text color="error" wrap="wrap">{md(b, `blk-${i}`)}</Text></Box>
-            </Box>
-          ))}
-          {d.findings.map((f: string, i: number) => (
-            <Box key={`fnd-${i}`} flexDirection="row" gap={1}>
-              {mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}
-              <Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box>
-            </Box>
-          ))}
-          {d.checks.map((c: any, i: number) => (
-            <Box key={`chk-${i}`} flexDirection="row" gap={1}>
-              {c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}
-              <Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{md(c.text, `chk-${i}`)}</Text></Box>
-            </Box>
-          ))}
-          {facts.length > 0 && <Text dimColor wrap="wrap">{facts.join('  ·  ')}</Text>}
-          {d.action && <Box flexDirection="row">{press(d.action, true)}</Box>}
         </Box>
       )
     }
-    const row = (r: any, dim = false) => (
-      <Box key={r.key} flexDirection="column" gap={rows}>
-        <Box flexDirection="row" gap={1} alignItems="center">
-          {canPress && (
-            <Button key={`open-${r.key}`} label={r.toggle.open ? '▾' : '▸'} plain dimColor onPress={() => void toggleRow(r.id)} />
-          )}
-          {mark(r)}
-          {/* The name never gives way: the detail beside it is what truncates. */}
-          <Box flexShrink={0}>
-            <Text bold={!dim} dimColor={dim}>{r.id}</Text>
-          </Box>
-          {r.waiting.length > 0
-            ? chip(`tag-${r.key}`, `waits on ${r.waiting[0].id}${r.waiting.length > 1 ? ` +${r.waiting.length - 1}` : ''}`, 'inactive')
-            : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
-          <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            <Text dimColor wrap="truncate-end">{r.detail}</Text>
-          </Box>
-          {r.run !== undefined && (
-            <Box flexShrink={0}>
-              <Text dimColor>{r.run ? duration(r.run.ms) : '—'}</Text>
-            </Box>
-          )}
-          {r.action && press(r.action)}
-        </Box>
-        {r.run && (
-          <Box flexDirection="row" gap={1} alignItems="center" marginLeft={canPress ? 4 : 2}>
-            {rich && (
-              <Box flexShrink={0}>
-                <Svg alt={`${duration(r.run.ms)}, gates ${duration(r.run.gates.ms)}`} width={RUN_BAR} height={6} source={runBarSvg(r.run.ms, r.run.gates.ms, longest)} />
-              </Box>
-            )}
-            <Box flexShrink={1} overflow="hidden">
-              <Text dimColor wrap="truncate-end">{runFacts(r.run)}</Text>
-            </Box>
-          </Box>
-        )}
-        {r.details && detailsCard(r)}
-      </Box>
-    )
 
-    if (v.kind === 'message') return <Text dimColor>{v.text}</Text>
     if (v.kind === 'cup') {
       return (
         <Box flexDirection="column" alignItems="center" paddingY={1}>
@@ -590,25 +738,19 @@ export const register: Register = on => {
             </Box>
           )}
           <Box flexDirection="row" gap={2} alignItems="center">
-            <Text>
-              {v.summary.done} of {v.summary.total} brewed
-            </Text>
+            <Text>{v.summary.done} of {v.summary.total} brewed</Text>
             {v.summary.counts.map((c: any) =>
               rich ? (
                 <Box key={c.text} flexDirection="row" gap={1} alignItems="center">
                   <Svg alt={c.text} width={14} height={14} source={iconSvg(c.status)} />
                   <Text color={c.tone}>{c.n}</Text>
                 </Box>
-              ) : (
-                chip(c.text, c.text, c.tone)
-              ),
+              ) : chip(c.text, c.text, c.tone),
             )}
           </Box>
         </Box>
 
-        {v.notices.map((n: any) => (
-          <Text key={n.key} dimColor wrap="truncate-end">⚙ {n.text}</Text>
-        ))}
+        {v.notices.map((n: any) => <Text key={n.key} dimColor wrap="truncate-end">⚙ {n.text}</Text>)}
 
         {v.now && (
           <Box key="now" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} paddingY={rich ? 1 : 0}>
@@ -623,37 +765,18 @@ export const register: Register = on => {
                   <Box flexDirection="row" alignItems="flex-start">
                     {v.now.steps.flatMap((s: any, i: number, all: any[]) => {
                       const reached = (j: number) => all[j].state !== 'todo'
-                      const step = (
-                        <Svg
-                          key={`step-${i}`}
-                          alt={`${s.label}: ${s.state}`}
-                          width={STEP}
-                          height={38}
-                          source={stepSvg(s, i > 0 ? reached(i) : null, i < all.length - 1 ? reached(i + 1) : null)}
-                        />
-                      )
-                      return i === 0
-                        ? [step]
-                        : [
-                            <Box key={`line-${i}`} flexDirection="column" flexGrow={1} flexShrink={1}>
-                              <Svg alt="" height={18} source={lineSvg(reached(i))} />
-                            </Box>,
-                            step,
-                          ]
+                      const step = <Svg key={`step-${i}`} alt={`${s.label}: ${s.state}`} width={STEP} height={38} source={stepSvg(s, i > 0 ? reached(i) : null, i < all.length - 1 ? reached(i + 1) : null)} />
+                      return i === 0 ? [step] : [<Box key={`line-${i}`} flexDirection="column" flexGrow={1} flexShrink={1}><Svg alt="" height={18} source={lineSvg(reached(i))} /></Box>, step]
                     })}
                   </Box>
                 ) : (
-                <Box flexDirection="row" gap={2}>
-                  {v.now.steps.map((s: any) => (
-                    <Text
-                      key={s.label}
-                      color={s.state === 'done' ? 'success' : s.state === 'current' ? 'claude' : 'inactive'}
-                      bold={s.state === 'current'}
-                    >
-                      {s.state === 'done' ? '✓' : s.state === 'current' ? '●' : '○'} {s.label}
-                    </Text>
-                  ))}
-                </Box>
+                  <Box flexDirection="row" gap={2}>
+                    {v.now.steps.map((s: any) => (
+                      <Text key={s.label} color={s.state === 'done' ? 'success' : s.state === 'current' ? 'claude' : 'inactive'} bold={s.state === 'current'}>
+                        {s.state === 'done' ? '✓' : s.state === 'current' ? '●' : '○'} {s.label}
+                      </Text>
+                    ))}
+                  </Box>
                 )}
                 {v.now.gate && <Box flexDirection="row">{chip('gate', v.now.gate.text, v.now.gate.tone)}</Box>}
               </>
@@ -664,40 +787,36 @@ export const register: Register = on => {
         )}
 
         {v.sections.map((section: any) => (
-          <Box key={section.key} flexDirection="column">
+          <Box key={section.key} flexDirection="column" gap={rows}>
             {heading(`h-${section.key}`, section.title)}
             {section.groups.map((group: any) => (
-              <Box key={group.key} flexDirection="column" marginTop={rich ? 1 : 0}>
-                {section.groups.some((g: any) => g.flight) && (
-                  <Text dimColor>{group.flight || 'other'}</Text>
-                )}
-                <Box flexDirection="column" gap={rows}>{group.rows.map((r: any) => row(r))}</Box>
+              <Box key={group.key} flexDirection="column" gap={rows}>
+                {section.groups.some((g: any) => g.flight) && <Text dimColor>{group.flight || 'other'}</Text>}
+                {group.rows.map((r: any) => row(r))}
               </Box>
             ))}
+            {section.domain && (
+              <Box key="facts" flexDirection="row" gap={1} alignItems="center">
+                {mark({ status: 'needs-human', tone: 'permission', mark: '◐' })}
+                <Box flexShrink={0}><Text bold>Domain facts</Text></Box>
+                <Box flexGrow={1} flexShrink={1} overflow="hidden">
+                  <Text dimColor wrap="truncate-end">{`${section.domain.n} to confirm${section.domain.pending > 0 ? ` · ${section.domain.pending} not committed` : ''}`}</Text>
+                </Box>
+                {more({ kind: 'domain' })}
+              </Box>
+            )}
           </Box>
         ))}
 
         {v.done && (
-          <Box key="done" flexDirection="column">
+          <Box key="done" flexDirection="column" gap={rows}>
             <Box flexDirection="row" gap={2} alignItems="center">
               {heading('h-done', `done · ${v.done.count}`)}
-              {v.done.trend.length > 1 && (
-                <Box flexDirection="row" gap={1} alignItems="center">
-                  {rich && <Svg alt={`gate minutes per run: ${v.done.trend.join(', ')}`} width={126} height={20} source={sparkSvg(v.done.trend)} />}
-                  <Text dimColor>{rich ? 'gate time' : `gate min ${v.done.trend.join(' ')}`}</Text>
-                </Box>
-              )}
             </Box>
-            <Box flexDirection="column" gap={rows} marginTop={rows}>{v.done.rows.map((r: any) => row(r, true))}</Box>
+            {v.done.rows.map((r: any) => row(r, true))}
             {canPress && (v.done.more > 0 || showing) && (
-              <Box flexDirection="row" marginTop={rows}>
-                <Button
-                  key="toggle-done"
-                  label={showing ? v.done.toggle.label : `${v.done.toggle.label} ${v.done.count}`}
-                  plain
-                  dimColor
-                  onPress={() => update($, showDone, (x: boolean) => !x)}
-                />
+              <Box flexDirection="row">
+                {act('toggle-done', showing ? v.done.toggle.label : `${v.done.toggle.label} ${v.done.count}`, () => void update($, showDone, (x: boolean) => !x), true)}
               </Box>
             )}
           </Box>
