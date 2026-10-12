@@ -272,26 +272,7 @@ async function observeMarker($: EngineInterface) {
   }
 }
 
-// DEBUG (double click, 2026-10-12): when a press arrives, when the page switches, when it is
-// drawn — written to .ristretto/board-trace.log (git-ignored) on each poll. Removed once found.
-let traceLines: string[] = []
-function trace(msg: string) {
-  traceLines.push(`${new Date().toISOString().slice(11, 23)} ${msg}`)
-}
-async function flushTrace($: EngineInterface) {
-  if (traceLines.length === 0) return
-  try {
-    const path = await repo($, '.ristretto/board-trace.log')
-    const kept = (await $.fs.exists(path)) ? String(await $.fs.read(path)).split(String.fromCharCode(10)).filter(Boolean) : []
-    await $.fs.write(path, [...kept, ...traceLines].slice(-300).join(String.fromCharCode(10)) + String.fromCharCode(10))
-    traceLines = []
-  } catch {
-    // tracing never breaks the board
-  }
-}
-
 async function poll($: EngineInterface) {
-  await flushTrace($)
   try {
     await observeMarker($)
     const mtime = (await $.fs.exists(await repo($, ROADMAP))) ? (await $.fs.stat(await repo($, ROADMAP))).mtimeMs : -1
@@ -596,7 +577,6 @@ export const register: Register = on => {
 
 async function drawPane($: any, e: any) {
   {
-    trace(`render pane page=${JSON.stringify(await read($, page))}`)
     const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
     const canPress = e.surface !== 'mobile' && Button !== undefined
     const current = await read($, live)
@@ -615,14 +595,10 @@ async function drawPane($: any, e: any) {
     // Switch the page at once and refresh behind it: the press returns before any file or git
     // read, so the pane can redraw on the first click.
     const goTo = async (to: BoardPage | null) => {
-      trace(`press goTo ${to ? to.kind + (to.kind === 'feature' ? ' ' + to.id : '') : 'back'}`)
       await update($, page, () => to)
-      trace('page atom updated')
       void (async () => {
         await refreshBoard($)
         if (to?.kind === 'domain') await refreshDomain($, true)
-        trace('background refresh done')
-        await flushTrace($)
       })()
     }
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
