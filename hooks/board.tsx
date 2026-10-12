@@ -513,6 +513,18 @@ export const register: Register = on => {
   // ← goes back. Text colors are theme keys, so light and dark both hold; shapes are SVG in HUE
   // where the surface draws it. Mobile has no buttons: it shows the overview only.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    // A render that throws leaves the pane blank with no word why: say it instead.
+    try {
+      return await drawPane($, e)
+    } catch (err) {
+      const { Text } = $.ui.resolve(e) as any
+      return <Text color="error" wrap="wrap">{`ristretto board: ${String((err as any)?.stack ?? err).slice(0, 600)}`}</Text>
+    }
+  })
+}
+
+async function drawPane($: any, e: any) {
+  {
     const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
     const canPress = e.surface !== 'mobile' && Button !== undefined
     const current = await read($, live)
@@ -839,5 +851,6 @@ export const register: Register = on => {
         )}
       </Box>
     )
-  })
+  }
 }
+
