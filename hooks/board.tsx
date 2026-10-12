@@ -577,7 +577,8 @@ export const register: Register = on => {
     const row = (r: any, dim = false) => (
       <Box key={r.key} flexDirection="row" gap={1} alignItems="center">
         {mark(r)}
-        <Box flexShrink={0}><Text bold={!dim} dimColor={dim}>{r.id}</Text></Box>
+        {/* The name is the row's button: a target as wide as the name, not a one-glyph › alone. */}
+        <Box flexShrink={0}>{canPress ? <Button key={`name-${r.key}`} plain onPress={() => void goTo({ kind: 'feature', id: r.id })}><Text bold={!dim} dimColor={dim}>{r.id}</Text></Button> : <Text bold={!dim} dimColor={dim}>{r.id}</Text>}</Box>
         {r.waiting.length > 0
           ? chip(`tag-${r.key}`, `waits on ${r.waiting[0].id}${r.waiting.length > 1 ? ` +${r.waiting.length - 1}` : ''}`, 'inactive')
           : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
@@ -670,7 +671,7 @@ export const register: Register = on => {
             <Text bold>Domain facts</Text>
             <Text dimColor wrap="wrap">{`${p.open} to confirm · confirmed facts bind the builder and the reviewer`}</Text>
           </Box>
-          {p.locked && <Text color="warning" wrap="wrap">{p.locked}</Text>}
+          {p.locked !== '' && <Text color="warning" wrap="wrap">{p.locked}</Text>}
           {p.notice !== '' && <Text dimColor wrap="wrap">{p.notice}</Text>}
           {p.groups.map((g: any) => (
             <Box key={`df-${g.file}`} flexDirection="column" gap={rows}>
@@ -682,7 +683,7 @@ export const register: Register = on => {
                     <Box flexDirection="row" gap={1} alignItems="center">
                       {act(`open-${id}`, opened === id ? '▾' : '▸', () => void update($, openFact, (o: string | null) => (o === id ? null : id)), true)}
                       {mark({ status: f.decided === 'confirmed' ? 'done' : f.decided === 'removed' ? 'blocked' : 'needs-human', tone: 'permission', mark: f.decided ? '✓' : '◐' })}
-                      <Box flexShrink={0}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Box>
+                      <Box flexShrink={0}>{canPress ? <Button key={`title-${id}`} plain onPress={() => void update($, openFact, (o: string | null) => (o === id ? null : id))}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Button> : <Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text>}</Box>
                       {f.older && !f.decided && chip(`old-${id}`, 'older version', 'warning')}
                       <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{f.decided ?? plain(f.text)}</Text></Box>
                       {open && !f.decided && act(`ok-${id}`, '✓', () => void changeFact($, g.file, f.title, 'confirm'))}
@@ -813,7 +814,7 @@ export const register: Register = on => {
             {section.domain && (
               <Box key="facts" flexDirection="row" gap={1} alignItems="center">
                 {mark({ status: 'needs-human', tone: 'permission', mark: '◐' })}
-                <Box flexShrink={0}><Text bold>Domain facts</Text></Box>
+                <Box flexShrink={0}>{canPress ? <Button key="name-facts" plain onPress={() => void goTo({ kind: 'domain' })}><Text bold>Domain facts</Text></Button> : <Text bold>Domain facts</Text>}</Box>
                 <Box flexGrow={1} flexShrink={1} overflow="hidden">
                   <Text dimColor wrap="truncate-end">{`${section.domain.n} to confirm${section.domain.pending > 0 ? ` · ${section.domain.pending} not committed` : ''}`}</Text>
                 </Box>
