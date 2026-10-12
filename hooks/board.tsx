@@ -4,6 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bandOf, bar, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, addArgs, commitArgs, committed, confirmIn, entriesOf, lockOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
+import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
 
@@ -465,8 +466,8 @@ export const register: Register = on => {
         {canPress && (
           <Box flexShrink={0}>
             {open
-              ? <Button key="band-toggle" label="close" onPress={() => void closePane($)} />
-              : <Button key="band-toggle" label="open" onPress={() => void openPane($)} />}
+              ? keeper.keep(`band|${e.surface}|close`, 'close', () => void closePane($), onPress => <Button key="band-toggle" label="close" onPress={onPress} />)
+              : keeper.keep(`band|${e.surface}|open`, 'open', () => void openPane($), onPress => <Button key="band-toggle" label="open" onPress={onPress} />)}
           </Box>
         )}
       </Box>
@@ -575,6 +576,10 @@ export const register: Register = on => {
   })
 }
 
+// Every Button is built once and handed back on each draw, so it keeps its press handle across
+// redraws (see board-keep.mjs): a click on the drawing just replaced still runs.
+const keeper = buttonKeeper()
+
 async function drawPane($: any, e: any) {
   {
     const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
@@ -601,6 +606,8 @@ async function drawPane($: any, e: any) {
         if (to?.kind === 'domain') await refreshDomain($, true)
       })()
     }
+    const held = (key: string, look: string, run: () => void, build: (onPress: () => void) => any) =>
+      keeper.keep(`pane|${e.surface}|${key}`, look, run, build)
     const inner = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 40) - 6))
     const rich = Svg !== undefined
     const rows = rich ? 1 : 0
@@ -609,18 +616,25 @@ async function drawPane($: any, e: any) {
     const press = (action: { label: string; command: string; args: string }, primary = false, label?: string) =>
       canPress && (
         <Box key={`press-${action.command}-${action.args}-${label ?? ''}`} flexShrink={0}>
-          <Button
-            label={label ?? (rich ? SIGN[action.label] ?? action.label : action.label)}
-            variant={primary ? 'primary' : undefined}
-            onPress={() => void $.command.run({ command: action.command, args: action.args })}
-          />
+          {held(
+            `press-${action.command}-${action.args}-${label ?? ''}`,
+            `${label ?? (rich ? SIGN[action.label] ?? action.label : action.label)}|${primary}`,
+            () => void $.command.run({ command: action.command, args: action.args }),
+            onPress => <Button
+              label={label ?? (rich ? SIGN[action.label] ?? action.label : action.label)}
+              variant={primary ? 'primary' : undefined}
+              onPress={onPress}
+            />,
+          )}
         </Box>
       )
-    const act = (key: string, label: string, onPress: () => void, plain = false) =>
+    const act = (key: string, label: string, run: () => void, plain = false) =>
       canPress && (
         <Box key={key} flexShrink={0}>
           {/* The engine takes `plain` only as true or absent: a false value refuses the whole page. */}
-          {plain ? <Button label={label} plain dimColor onPress={onPress} /> : <Button label={label} onPress={onPress} />}
+          {held(key, `${label}|${plain}`, run, plain
+            ? onPress => <Button label={label} plain dimColor onPress={onPress} />
+            : onPress => <Button label={label} onPress={onPress} />)}
         </Box>
       )
     const more = (to: BoardPage) => act(`more-${to.kind}-${(to as any).id ?? ''}`, '›', () => void goTo(to), true)
@@ -647,7 +661,7 @@ async function drawPane($: any, e: any) {
       <Box key={r.key} flexDirection="row" gap={1} alignItems="center">
         {mark(r)}
         {/* The name is the row's button: a target as wide as the name, not a one-glyph › alone. */}
-        <Box flexShrink={0}>{canPress ? <Button key={`name-${r.key}`} plain onPress={() => void goTo({ kind: 'feature', id: r.id })}><Text bold={!dim} dimColor={dim}>{r.id}</Text></Button> : <Text bold={!dim} dimColor={dim}>{r.id}</Text>}</Box>
+        <Box flexShrink={0}>{canPress ? held(`name-${r.key}`, `${r.id}|${dim}`, () => void goTo({ kind: 'feature', id: r.id }), onPress => <Button key={`name-${r.key}`} plain onPress={onPress}><Text bold={!dim} dimColor={dim}>{r.id}</Text></Button>) : <Text bold={!dim} dimColor={dim}>{r.id}</Text>}</Box>
         {r.waiting.length > 0
           ? chip(`tag-${r.key}`, `waits on ${r.waiting[0].id}${r.waiting.length > 1 ? ` +${r.waiting.length - 1}` : ''}`, 'inactive')
           : r.tag !== '' && (!rich || r.tag === 'easy') && chip(`tag-${r.key}`, r.tag, r.tone)}
@@ -752,7 +766,7 @@ async function drawPane($: any, e: any) {
                     <Box flexDirection="row" gap={1} alignItems="center">
                       {act(`open-${id}`, opened === id ? '▾' : '▸', () => void update($, openFact, (o: string | null) => (o === id ? null : id)), true)}
                       {mark({ status: f.decided === 'confirmed' ? 'done' : f.decided === 'removed' ? 'blocked' : 'needs-human', tone: 'permission', mark: f.decided ? '✓' : '◐' })}
-                      <Box flexShrink={0}>{canPress ? <Button key={`title-${id}`} plain onPress={() => void update($, openFact, (o: string | null) => (o === id ? null : id))}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Button> : <Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text>}</Box>
+                      <Box flexShrink={0}>{canPress ? held(`title-${id}`, `${f.title}|${f.decided ?? ''}`, () => void update($, openFact, (o: string | null) => (o === id ? null : id)), onPress => <Button key={`title-${id}`} plain onPress={onPress}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Button>) : <Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text>}</Box>
                       {f.older && !f.decided && chip(`old-${id}`, 'older version', 'warning')}
                       <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{f.decided ?? plain(f.text)}</Text></Box>
                       {open && !f.decided && act(`ok-${id}`, '✓', () => void changeFact($, g.file, f.title, 'confirm'))}
@@ -883,7 +897,7 @@ async function drawPane($: any, e: any) {
             {section.domain && (
               <Box key="facts" flexDirection="row" gap={1} alignItems="center">
                 {mark({ status: 'needs-human', tone: 'permission', mark: '◐' })}
-                <Box flexShrink={0}>{canPress ? <Button key="name-facts" plain onPress={() => void goTo({ kind: 'domain' })}><Text bold>Domain facts</Text></Button> : <Text bold>Domain facts</Text>}</Box>
+                <Box flexShrink={0}>{canPress ? held('name-facts', 'Domain facts', () => void goTo({ kind: 'domain' }), onPress => <Button key="name-facts" plain onPress={onPress}><Text bold>Domain facts</Text></Button>) : <Text bold>Domain facts</Text>}</Box>
                 <Box flexGrow={1} flexShrink={1} overflow="hidden">
                   <Text dimColor wrap="truncate-end">{`${section.domain.n} to confirm${section.domain.pending > 0 ? ` · ${section.domain.pending} not committed` : ''}`}</Text>
                 </Box>
