@@ -143,6 +143,7 @@ export function parsePlan(text) {
   const depends = dep ? [dep.inline, ...dep.items].flatMap(ids) : [];
   const blk = field(lines, 'Blockers');
   const blockers = blk ? [blk.inline, ...blk.items].filter(Boolean) : [];
+  const goal = (lines.map((line) => /^-\s+Goal:\s*(.+?)\s*$/.exec(line)).find(Boolean) || [])[1] || null;
 
   const proofLines = section(lines, 'Evidence');
   const listed = items(proofLines ?? []);
@@ -161,6 +162,7 @@ export function parsePlan(text) {
     acceptance,
     depends,
     blockers,
+    goal,
     evidence,
     review,
     gate: gateItem ? gateItem.replace(/^Gates?:\s*/, '').trim() : null,

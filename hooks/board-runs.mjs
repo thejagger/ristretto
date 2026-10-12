@@ -12,6 +12,8 @@ export function track(run, live, now) {
     startedAt: now,
     tokens: { in: 0, out: 0, cache: 0 },
     gates: { runs: 0, ms: 0, red: 0 },
+    phases: { plan: 0, code: 0, review: 0, close: 0 },
+    at: null,
   } : null;
   return { run: next, ended: run || null };
 }
@@ -33,7 +35,32 @@ export function addGate(run, ms, red) {
   return { ...run, gates: { runs: run.gates.runs + 1, ms: run.gates.ms + ms, red: run.gates.red + (red ? 1 : 0) } };
 }
 
+// Where a run's time goes: the fold's phase, read into four buckets. A fix round is code; any
+// other phase (starting, interrupted, another feature's) stops the clock.
+const BUCKET = { planning: 'plan', coding: 'code', fixing: 'code', review: 'review', closing: 'close' };
+const PHASES = ['plan', 'code', 'review', 'close'];
+
+export function markPhase(run, live, now) {
+  if (!run) return run;
+  const bucket = (live && live.id === run.id && BUCKET[live.phase]) || null;
+  const at = run.at || null;
+  if (at && at.bucket === bucket) return run;
+  if (!at && !bucket) return run;
+  const phases = { plan: 0, code: 0, review: 0, close: 0, ...(run.phases || {}) };
+  if (at) phases[at.bucket] += Math.max(0, now - at.since);
+  return { ...run, phases, at: bucket ? { bucket, since: now } : null };
+}
+
+// A finished run's time per phase, non-zero ones in order; null for a run recorded before
+// phases were (or one that never reached a phase).
+export function splitOf(record) {
+  if (!record || !record.phases) return null;
+  const split = PHASES.map((phase) => ({ phase, ms: record.phases[phase] || 0 })).filter((x) => x.ms > 0);
+  return split.length > 0 ? split : null;
+}
+
 export function endRun(run, now, status) {
+  const closed = markPhase(run, null, now);
   return {
     id: run.id,
     command: run.command,
@@ -42,6 +69,7 @@ export function endRun(run, now, status) {
     ms: now - run.startedAt,
     tokens: run.tokens,
     gates: run.gates,
+    phases: closed.phases,
     status,
   };
 }

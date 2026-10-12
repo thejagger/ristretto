@@ -116,7 +116,7 @@ const { pathToFileURL } = require('url');
   // Depends with a note after the id, as prep writes it: the id alone, commas inside the note ignored.
   assert.deepStrictEqual(p.parsePlan('- Depends: DGS-162 (merged into `development`, rebased onto it), `settle-residue` *(its client half only)*\n').depends, ['DGS-162', 'settle-residue']);
 
-  assert.deepStrictEqual(p.parsePlan(''), { acceptance: [], depends: [], blockers: [], evidence: [], review: null, gate: null, findings: [], itemised: null });
+  assert.deepStrictEqual(p.parsePlan(''), { acceptance: [], depends: [], blockers: [], goal: null, evidence: [], review: null, gate: null, findings: [], itemised: null });
 
   // manual-checks.md: one section per feature, ticked and unticked items.
   const checks = p.parseChecks([
@@ -138,6 +138,10 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(p.waitingOn({ depends: ['lnw-core', 'mail-outbound', 'rbac', 'mail-classify'] }, statusOf),
     [{ id: 'mail-outbound', status: 'planned' }, { id: 'mail-classify', status: 'missing' }]);
   assert.deepStrictEqual(p.waitingOn(undefined, statusOf), []);
+
+  // The plan's one-line goal, for a feature's page.
+  assert.strictEqual(p.parsePlan('## Spec\n- Source: idea\n- Goal: measure the classifier on real mails.\n').goal, 'measure the classifier on real mails.');
+  assert.strictEqual(p.parsePlan('- Blockers: —\n').goal, null);
 
   console.log('board-plan.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

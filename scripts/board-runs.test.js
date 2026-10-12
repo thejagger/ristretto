@@ -33,5 +33,36 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual([recs.length, recs[0].id], [200, 'f-5']);
   assert.deepStrictEqual(r.trend(recs, 3), [202, 203, 204]);
 
+  // Where a run's time went, phase by phase, from the fold's phase changes. A fix round is code.
+  const ph = (phase, id = 'f-9') => ({ ...live(id), phase });
+  const min = 60000;
+  let pr = r.track(null, ph('planning'), 0).run;
+  pr = r.markPhase(pr, ph('planning'), 0);
+  pr = r.markPhase(pr, ph('coding'), 4 * min);
+  pr = r.markPhase(pr, ph('coding'), 10 * min);
+  pr = r.markPhase(pr, ph('review'), 18 * min);
+  pr = r.markPhase(pr, ph('fixing'), 21 * min);
+  pr = r.markPhase(pr, ph('review'), 24 * min);
+  pr = r.markPhase(pr, ph('closing'), 27 * min);
+  const prec = r.endRun(pr, 30 * min, 'done');
+  assert.deepStrictEqual(prec.phases, { plan: 4 * min, code: 17 * min, review: 6 * min, close: 3 * min });
+  assert.strictEqual(prec.at, undefined, 'the open mark is not kept');
+  assert.deepStrictEqual(r.splitOf(prec).map((x) => [x.phase, x.ms / min]), [['plan', 4], ['code', 17], ['review', 6], ['close', 3]]);
+
+  // shot has no plan step; a run recorded before 0.21 has no split.
+  assert.deepStrictEqual(r.splitOf({ ms: 7, phases: { plan: 0, code: 5, review: 0, close: 2 } }).map((x) => x.phase), ['code', 'close']);
+  assert.strictEqual(r.splitOf({ ms: 1000 }), null);
+  assert.strictEqual(r.splitOf({ ms: 1000, phases: { plan: 0, code: 0, review: 0, close: 0 } }), null);
+
+  // An interruption stops the clock of the phase it interrupted; another feature's phase never counts.
+  let ir = r.markPhase(r.track(null, ph('coding'), 0).run, ph('coding'), 0);
+  ir = r.markPhase(ir, ph('interrupted'), 5 * min);
+  ir = r.markPhase(ir, ph('interrupted'), 50 * min);
+  assert.strictEqual(ir.phases.code, 5 * min);
+  let other = r.markPhase(r.track(null, ph('coding'), 0).run, ph('coding'), 0);
+  other = r.markPhase(other, ph('review', 'f-10'), 3 * min);
+  assert.strictEqual(other.phases.code, 3 * min);
+  assert.strictEqual(other.phases.review, 0);
+
   console.log('board-runs.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
