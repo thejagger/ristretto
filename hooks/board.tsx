@@ -282,11 +282,8 @@ async function flushTrace($: EngineInterface) {
   if (traceLines.length === 0) return
   try {
     const path = await repo($, '.ristretto/board-trace.log')
-    const kept = (await $.fs.exists(path)) ? String(await $.fs.read(path)).split('
-').filter(Boolean) : []
-    await $.fs.write(path, [...kept, ...traceLines].slice(-300).join('
-') + '
-')
+    const kept = (await $.fs.exists(path)) ? String(await $.fs.read(path)).split(String.fromCharCode(10)).filter(Boolean) : []
+    await $.fs.write(path, [...kept, ...traceLines].slice(-300).join(String.fromCharCode(10)) + String.fromCharCode(10))
     traceLines = []
   } catch {
     // tracing never breaks the board
