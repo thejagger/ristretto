@@ -563,7 +563,8 @@ async function drawPane($: any, e: any) {
     const act = (key: string, label: string, onPress: () => void, plain = false) =>
       canPress && (
         <Box key={key} flexShrink={0}>
-          <Button label={label} plain={plain} dimColor={plain} onPress={onPress} />
+          {/* The engine takes `plain` only as true or absent: a false value refuses the whole page. */}
+          {plain ? <Button label={label} plain dimColor onPress={onPress} /> : <Button label={label} onPress={onPress} />}
         </Box>
       )
     const more = (to: BoardPage) => act(`more-${to.kind}-${(to as any).id ?? ''}`, '›', () => void goTo(to), true)

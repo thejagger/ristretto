@@ -466,6 +466,9 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(tsx.includes("from './board-domain.mjs'"), 'domain edits come from board-domain.mjs');
     assert.ok(/commitArgs\(/.test(tsx) && !/'add'/.test(tsx), 'commits with commitArgs, never git add');
     assert.ok(tsx.includes('.ristretto/domain-snapshot'), 'locked while a research run is in flight');
+    // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
+    // ("JSX element <Button key="✓"> plain is true or absent" — the facts page drew nothing).
+    assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
   }
 
   // Final review I2: facts still to confirm keep the overview, even when every feature is done.
