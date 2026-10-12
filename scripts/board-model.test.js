@@ -481,5 +481,19 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(v.sections.find((s) => s.key === 'needs-you').domain, { n: 1, pending: 0 });
   }
 
+  // The band above the prompt: progress, what is blocked, what runs now — nothing else.
+  {
+    const row = (id, status) => ({ flight: '', id, title: id, tier: 'normal', plan: '', commit: '', status, reason: '' });
+    const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [row('a', 'done'), row('b', 'blocked'), row('c', 'planned'), row('d', 'done')] };
+    assert.deepStrictEqual(m.bandOf(board, null, 0), { done: 2, total: 4, blocked: 1, running: null });
+    const live = { command: 'pull', id: 'c', phase: 'coding', round: 0, since: 0, gate: null, armed: true };
+    assert.deepStrictEqual(m.bandOf(board, live, 240000).running, { id: 'c', what: 'coding', clock: '4m00s' });
+    assert.deepStrictEqual(m.bandOf(board, null, 0, true).running, { id: null, what: 'a run is active in another session', clock: '' });
+    assert.strictEqual(m.bandOf({ ...board, error: 'no-roadmap', rows: [] }, null, 0), null, 'no roadmap: no band');
+    const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
+    assert.ok(/component: 'AbovePrompt'/.test(tsx) && /bandOf\(/.test(tsx), 'the band is drawn above the prompt');
+    assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

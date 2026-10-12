@@ -379,6 +379,20 @@ export function domainPage(domain) {
   };
 }
 
+// The band above the prompt: how far the roadmap is, what is blocked, and what runs now. No
+// band where there is no roadmap to speak of.
+export function bandOf(board, live, now, elsewhere = false) {
+  if (board.error || board.rows.length === 0) return null;
+  const count = (status) => board.rows.filter((r) => r.status === status).length;
+  const run = nowOf(board.rows, live, now, elsewhere);
+  return {
+    done: count('done'),
+    total: board.rows.length,
+    blocked: count('blocked'),
+    running: !run ? null : run.id ? { id: run.id, what: run.status, clock: run.clock } : { id: null, what: run.text, clock: '' },
+  };
+}
+
 // The pane as a view: a summary card, the run card, what needs a person, what is next, and
 // what happened, newest first. One row (`opts.open`) opens to its details. No action anywhere
 // while a run is active — this session's, or `elsewhere`, another's — so the pane can never

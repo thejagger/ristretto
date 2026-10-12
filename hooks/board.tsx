@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
-import { EMPTY_BOARD, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_BOARD, bandOf, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, addArgs, commitArgs, committed, confirmIn, entriesOf, lockOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
@@ -32,6 +32,8 @@ const page = atom({ plugin: 'ristretto', key: 'page' } as const, null as BoardPa
 const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAIN as BoardDomain)
 const showConfirmed = atom({ plugin: 'ristretto', key: 'showConfirmed' } as const, false)
 // The one fact opened to its full text, as `<file>\u0000<title>`.
+// Whether the board's pane is open: the band's open/close follows it.
+const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
 const openFact = atom({ plugin: 'ristretto', key: 'openFact' } as const, null as string | null)
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
@@ -50,7 +52,17 @@ let storeKey = ''
 function maybeAutoOpen($: EngineInterface) {
   if (autoOpened || !hasRoadmap || !docked) return
   autoOpened = true
-  void $.ui.open({ id: PANE, title: 'ristretto' })
+  void openPane($)
+}
+
+async function openPane($: EngineInterface) {
+  await $.ui.open({ id: PANE, title: 'ristretto' })
+  await update($, paneOpen, () => true)
+}
+
+async function closePane($: EngineInterface) {
+  await $.ui.close({ id: PANE })
+  await update($, paneOpen, () => false)
 }
 
 async function refreshBoard($: EngineInterface) {
@@ -422,10 +434,67 @@ export const register: Register = on => {
     return started
   })
 
+  // The band above the prompt: how far the roadmap is, what is blocked, what runs now, and
+  // open/close for the pane — the way back to it after closing it. Only where there is a roadmap.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     docked = docks(e.viewport)
     maybeAutoOpen($)
-    return next(e)
+    const current = await read($, live)
+    const band = bandOf(await read($, board), current, Math.max(await read($, tick), current?.since ?? 0), await read($, elsewhere))
+    if (!band) return next(e)
+    const { Box, Text, Button, Svg } = $.ui.resolve(e) as any
+    const rich = Svg !== undefined
+    const canPress = e.surface !== 'mobile' && Button !== undefined
+    const open = await read($, paneOpen)
+    const rest = band.total - band.done - band.blocked
+    const segments = [
+      { status: 'done', n: band.done, tone: 'success' },
+      { status: 'blocked', n: band.blocked, tone: 'error' },
+      { status: 'planned', n: rest, tone: 'inactive' },
+    ].filter(x => x.n > 0)
+    const filled = bar(band.done, band.total, 8)
+    return (
+      <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+        <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1} overflow="hidden">
+          {rich ? <Svg alt="ristretto" width={16} height={16} source={CUP} /> : <Text>☕</Text>}
+          <Box flexShrink={0}><Text>{`${band.done}/${band.total}`}</Text></Box>
+          {rich ? (
+            <Box flexShrink={0}><Svg alt={`${band.done} of ${band.total} brewed`} width={60} height={6} source={statusBarSvg(segments)} /></Box>
+          ) : (
+            <Box flexShrink={0}><Text color="success">{'━'.repeat(filled.filled)}</Text><Text color="inactive">{'─'.repeat(filled.empty)}</Text></Box>
+          )}
+          {band.blocked > 0 && (
+            <Box flexShrink={0} flexDirection="row" gap={1} alignItems="center">
+              {rich ? <Svg alt="blocked" width={12} height={12} source={iconSvg('blocked')} /> : <Text color="error">✕</Text>}
+              <Text color="error">{`${band.blocked}`}</Text>
+            </Box>
+          )}
+          {band.running && (
+            <Box flexShrink={1} overflow="hidden">
+              <Text wrap="truncate-end">
+                <Text color="claude">● </Text>
+                {band.running.id && <Text bold>{`${band.running.id} `}</Text>}
+                <Text dimColor>{`${band.running.what}${band.running.clock ? ` ${band.running.clock}` : ''}`}</Text>
+              </Text>
+            </Box>
+          )}
+        </Box>
+        {canPress && (
+          <Box flexShrink={0}>
+            {open
+              ? <Button key="band-toggle" label="close" onPress={() => void closePane($)} />
+              : <Button key="band-toggle" label="open" onPress={() => void openPane($)} />}
+          </Box>
+        )}
+      </Box>
+    )
+  })
+
+  // The pane closed by its own x (or by anyone): the band offers to open it again.
+  on('ui.close', async ($, e, next) => {
+    const closed = await next(e)
+    if ((e as any).id === PANE) await update($, paneOpen, () => false)
+    return closed
   })
 
   on('command.run', async ($, e, next) => {
@@ -434,7 +503,7 @@ export const register: Register = on => {
     // roadmap from commands/status.md as before.
     if (e.command === 'ristretto:status' && e.args.trim() === '' && e.presentation.isFullscreen && (await $.fs.exists(await repo($, ROADMAP)))) {
       await refreshBoard($)
-      await $.ui.open({ id: PANE, title: 'ristretto' })
+      await openPane($)
       return { text: 'Roadmap opened in the side pane — /ristretto:status <filter> prints it as text.' }
     }
     const hit = /^ristretto:(pull|shot|brew)$/.exec(e.command)
