@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
-import { EMPTY_BOARD, bandOf, bar, docks, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
+import { EMPTY_BOARD, bandOf, bar, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, addArgs, commitArgs, committed, confirmIn, entriesOf, lockOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
@@ -39,21 +39,8 @@ const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun 
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
 let roadmapMtime = -1
-let hasRoadmap = false
-let autoOpened = false
-let docked = false
 let timers: { cancel: () => void }[] = []
 let storeKey = ''
-
-// Unasked, the pane opens once, and only where it docks beside the transcript; on the
-// terminal's main screen it would land inline, so there /ristretto:status prints it as text.
-// Tried from both sides — the render that learns the layout docks, and the read that learns
-// there is a roadmap — so neither has to happen first.
-function maybeAutoOpen($: EngineInterface) {
-  if (autoOpened || !hasRoadmap || !docked) return
-  autoOpened = true
-  void openPane($)
-}
 
 async function openPane($: EngineInterface) {
   await $.ui.open({ id: PANE, title: 'ristretto' })
@@ -67,8 +54,7 @@ async function closePane($: EngineInterface) {
 
 async function refreshBoard($: EngineInterface) {
   try {
-    hasRoadmap = await $.fs.exists(await repo($, ROADMAP))
-    if (!hasRoadmap) {
+    if (!(await $.fs.exists(await repo($, ROADMAP)))) {
       roadmapMtime = -1
       await update($, board, () => ({ ...EMPTY_BOARD, error: 'no-roadmap' }))
       return
@@ -105,7 +91,6 @@ async function refreshBoard($: EngineInterface) {
     const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
     await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))
     roadmapMtime = mtime
-    maybeAutoOpen($)
   } catch (err) {
     roadmapMtime = -1 // a failed read is retried by the next poll, not kept until the file changes
     await update($, board, b => ({ ...b, error: String(err).slice(0, 80) }))
@@ -437,8 +422,6 @@ export const register: Register = on => {
   // The band above the prompt: how far the roadmap is, what is blocked, what runs now, and
   // open/close for the pane — the way back to it after closing it. Only where there is a roadmap.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    docked = docks(e.viewport)
-    maybeAutoOpen($)
     const current = await read($, live)
     const band = bandOf(await read($, board), current, Math.max(await read($, tick), current?.since ?? 0), await read($, elsewhere))
     if (!band) return next(e)

@@ -238,11 +238,9 @@ const shown = (v) => JSON.stringify(v);
     const row = (id, tier, status) => ({ flight: '', id, title: id, tier, status, reason: '' });
     const board = { name: 'demo', rows: [row('a', 'easy', 'planned'), row('c', 'normal', 'done')], format: { project: '0.17', plugin: '0.17.0' }, error: null };
 
-    // Unasked, the pane opens only where the layout docks it beside the transcript.
-    assert.strictEqual(m.docks({ columns: 200, rows: 50, isFullscreen: true }), true);
-    assert.strictEqual(m.docks({ columns: 200, rows: 50, isFullscreen: false }), false, 'the main screen would place it inline');
-    assert.strictEqual(m.docks({ columns: 200, rows: 50 }), false, 'unknown is not docked');
-    assert.strictEqual(m.docks(undefined), false);
+    // The pane never opens unasked: the band above the prompt is the way to it (owner, 2026-10-12).
+    const boardTsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
+    assert.ok(!/autoOpen/i.test(boardTsx) && !('docks' in m), 'no automatic opening of the pane');
 
     // The marker's owner decides whose run it is; gate.js ages a marker out after 24 h idle.
     const DAY = 24 * 60 * 60 * 1000;

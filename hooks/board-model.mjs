@@ -21,11 +21,6 @@ function cells(line) {
     .map((cell) => cell.split(PIPE).join('|').trim());
 }
 
-// Whether a pane opened unasked would dock beside the transcript; unknown is not docked.
-export function docks(viewport) {
-  return Boolean(viewport && viewport.isFullscreen === true);
-}
-
 // Whose run .ristretto/pulling is. gate.js writes the owning session id into it ('' until a
 // hook claims it) and ages a marker with no gate run for a day out as a leftover.
 const MARKER_MAX_IDLE_MS = 24 * 60 * 60 * 1000;
