@@ -14,6 +14,7 @@ Filter (optional): $ARGUMENTS
    If any feature is `needs-human`, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`.
    If any feature is `needs-review`, add one line under it: `👀 3 waiting on your judgement — /ristretto:status review`.
 3. Print a one-line count summary: planned / in-progress / blocked / needs-human / needs-review / done.
+3a. **Domain facts.** If `docs/ristretto/domain/` holds entries whose marker field starts with `unconfirmed`, print one line: `📚 <n> domain facts to confirm — open the board to confirm them`. Nothing when there are none.
 4. Print the roadmap rows. If a filter was given, show only matching rows:
    - `open` → everything not `done` (a `needs-human` or `needs-review` row is still open — its code is built, but something is unproven or unjudged)
    - `done` → only `done`
