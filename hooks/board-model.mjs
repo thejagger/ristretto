@@ -2,7 +2,7 @@
 // session did and draws what it returns. Tested by scripts/board-model.test.js.
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
-import { trend } from './board-runs.mjs';
+import { splitOf } from './board-runs.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
@@ -237,6 +237,14 @@ export function inline(text) {
 // The same text as one plain line, for a row's single truncated line.
 export const plain = (text) => inline(text).map((seg) => seg.text).join('');
 
+// A blocked row names only who it waits on; the reason is on its page.
+export function waitsOn(reason) {
+  const m = /^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(reason || '');
+  return m ? `waits on ${m[1]}` : plain(reason || '');
+}
+
+const SOLVE = (id) => ({ label: 'solve', command: 'ristretto:prep', args: `${id} deep`, chat: true });
+
 // One glyph and one tone per status. Tones are Claude theme keys, so the pane follows the
 // person's light/dark theme on every surface; single-width glyphs, because emoji draw unevenly.
 const LOOK = {
@@ -262,14 +270,13 @@ function rowOf(row, ctx) {
     mark: look.mark,
     tone: look.tone,
     tag: waiting.length > 0 ? 'waits on' : row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
-    detail: plain(row.reason || row.title),
+    detail: row.status === 'blocked' ? waitsOn(row.reason) : plain(row.reason || row.title),
     waiting,
-    toggle: { open: ctx.open === row.id },
   };
   if (row.status === 'planned' && !ctx.busy && waiting.length === 0) {
     out.action = { label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
   }
-  if (ctx.open === row.id) out.details = detailsOf(row, plan, ctx);
+  if (row.status === 'blocked' && !ctx.busy) out.action = SOLVE(row.id);
   return out;
 }
 
@@ -292,7 +299,7 @@ function detailsOf(row, plan, ctx) {
     // A done plan whose Evidence is prose proves its criteria, just not one by one.
     unitemised: row.status === 'done' && plan?.itemised === false,
   };
-  if (!ctx.busy && row.status === 'blocked') details.action = { label: 'refine', command: 'ristretto:prep', args: `${row.id} deep` };
+  if (!ctx.busy && row.status === 'blocked') details.action = SOLVE(row.id);
   if (!ctx.busy && row.status === 'needs-review') details.action = { label: 'judge', command: 'ristretto:pull', args: row.id };
   return details;
 }
@@ -327,6 +334,51 @@ function nowOf(rows, live, now, elsewhere) {
   };
 }
 
+const BACK = (status) => (status === 'done' ? 'done' : status === 'planned' ? 'up next' : 'needs you');
+const factKey = (f) => `${f.file}\u0000${f.title}`;
+
+function featurePage(row, ctx) {
+  const look = LOOK[row.status];
+  const plan = ctx.plans[row.id];
+  const run = ctx.runOf.get(row.id);
+  return {
+    kind: 'feature',
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    mark: look.mark,
+    tone: look.tone,
+    back: BACK(row.status),
+    goal: plan?.goal ?? null,
+    waitingOn: (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
+    split: run ? splitOf(run) : null,
+    details: detailsOf(row, plan, ctx),
+  };
+}
+
+export function domainPage(domain) {
+  const decided = new Map(domain.pending.map((p) => [factKey(p), p.change]));
+  const removed = domain.pending.filter((p) => p.change === 'removed').map((p) => p.entry);
+  const files = [...new Set([...domain.tree, ...removed].map((f) => f.file))].sort();
+  const groups = files.map((file) => {
+    const rows = [
+      ...domain.tree.filter((f) => f.file === file && (f.state === 'unconfirmed' || decided.has(factKey(f)))),
+      ...removed.filter((f) => f.file === file),
+    ].map((f) => ({ ...f, decided: decided.get(factKey(f)) ?? null }));
+    return { file, name: file.replace(/\.md$/, ''), open: rows.filter((r) => !r.decided).length, rows };
+  }).filter((g) => g.rows.length > 0);
+  return {
+    kind: 'domain',
+    back: 'needs you',
+    locked: domain.locked,
+    notice: domain.notice,
+    open: domain.tree.filter((f) => f.state === 'unconfirmed').length,
+    groups,
+    pending: { confirmed: domain.pending.length - removed.length, removed: removed.length },
+    confirmed: domain.tree.filter((f) => f.state === 'confirmed' && !decided.has(factKey(f))),
+  };
+}
+
 // The pane as a view: a summary card, the run card, what needs a person, what is next, and
 // what happened, newest first. One row (`opts.open`) opens to its details. No action anywhere
 // while a run is active — this session's, or `elsewhere`, another's — so the pane can never
@@ -340,7 +392,14 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   const statusOf = new Map(rows.map((r) => [r.id, r.status]));
   const records = opts.runs ?? [];
   const runOf = new Map(records.map((rec) => [rec.id, rec])); // the latest run of each feature wins
-  const ctx = { busy, open: opts.open ?? null, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf };
+  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf };
+  const domain = opts.domain ?? { tree: [], head: [], pending: [], locked: false, notice: '' };
+  const page = opts.page?.kind === 'domain'
+    ? domainPage(domain)
+    : opts.page?.kind === 'feature' && rows.some((r) => r.id === opts.page.id)
+      ? featurePage(rows.find((r) => r.id === opts.page.id), ctx)
+      : null;
+  if (page) return { kind: 'page', page };
   const count = (status) => rows.filter((r) => r.status === status).length;
   const done = count('done');
   if (rows.length > 0 && done === rows.length && !busy) return { kind: 'cup', total: rows.length };
@@ -375,10 +434,11 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     flight,
     rows: picked.filter((r) => r.flight === flight).map((r) => rowOf(r, ctx)),
   }));
+  const facts = { n: domain.tree.filter((f) => f.state === 'unconfirmed').length, pending: domain.pending.length };
   const sections = [
-    { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)) },
+    { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)), ...(facts.n + facts.pending > 0 ? { domain: facts } : {}) },
     { key: 'up-next', title: 'up next', groups: grouped(rows.filter(next)) },
-  ].filter((section) => section.groups.length > 0);
+  ].filter((section) => section.groups.length > 0 || section.domain);
 
   // What happened, newest first: features with a measured run by when it ended, then the
   // rest in reverse roadmap order (a later row is a later feature).
@@ -394,9 +454,11 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     sections,
     done: finished.length === 0 ? null : {
       count: finished.length,
-      rows: shown.map((r) => ({ ...rowOf(r, ctx), run: runOf.get(r.id) ?? null })),
+      rows: shown.map((r) => {
+        const run = runOf.get(r.id) ?? null;
+        return { ...rowOf(r, ctx), run, split: run ? splitOf(run) : null };
+      }),
       more: ordered.length - shown.length,
-      trend: trend(records),
       toggle: { label: opts.showDone ? 'hide' : 'show all' },
     },
   };

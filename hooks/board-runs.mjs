@@ -78,10 +78,6 @@ export function keep(records, record, max = 200) {
   return [...records, record].slice(-max);
 }
 
-export function trend(records, n = 12) {
-  return records.slice(-n).map((rec) => Math.round(rec.gates.ms / 60000));
-}
-
 export function count(tokens) {
   if (tokens >= 1e6) return `${(tokens / 1e6).toFixed(1)}M`;
   if (tokens >= 1e4) return `${Math.round(tokens / 1e3)}k`;

@@ -27,11 +27,10 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(r.track(null, { ...live(null), id: null }, 1).run, null, 'no feature known yet: nothing to measure');
   assert.deepStrictEqual([r.count(845), r.count(12400), r.count(1250000)], ['845', '12k', '1.3M']);
 
-  // Records are kept to the last 200; the trend is gate minutes per run, oldest first.
+  // Records are kept to the last 200.
   let recs = [];
   for (let i = 0; i < 205; i++) recs = r.keep(recs, { id: `f-${i}`, gates: { ms: i * 60000 } });
   assert.deepStrictEqual([recs.length, recs[0].id], [200, 'f-5']);
-  assert.deepStrictEqual(r.trend(recs, 3), [202, 203, 204]);
 
   // Where a run's time went, phase by phase, from the fold's phase changes. A fix round is code.
   const ph = (phase, id = 'f-9') => ({ ...live(id), phase });

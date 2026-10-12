@@ -209,6 +209,7 @@ const shown = (v) => JSON.stringify(v);
 
     assert.deepStrictEqual(startActions(m.view(board, null, 0)), [
       { label: 'brew all', command: 'ristretto:brew', args: '' },
+      { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true },
       { label: 'start', command: 'ristretto:shot', args: 'a' },
       { label: 'start', command: 'ristretto:pull', args: 'b' },
     ], 'the tier picks the command');
@@ -378,34 +379,73 @@ const shown = (v) => JSON.stringify(v);
     // What happened: newest run first, rows without a record after, in reverse roadmap order.
     assert.deepStrictEqual(v.done.rows.map((x) => x.id), ['core', 'mid', 'old']);
     assert.deepStrictEqual([v.done.rows[0].run.ms, v.done.rows[2].run], [700, null]);
-    assert.deepStrictEqual(v.done.trend, [1, 2]);
+    // Each done row carries its own time split — no comparison with other features.
+    assert.deepStrictEqual(v.done.rows.map((x) => x.split), [null, null, null], 'runs recorded without phases');
+    runs[1] = { ...runs[1], phases: { plan: 100, code: 400, review: 200, close: 0 } };
+    const split = m.view(board, null, 0, false, { plans, runs }).done.rows[0].split;
+    assert.deepStrictEqual(split.map((x) => [x.phase, x.ms]), [['plan', 100], ['code', 400], ['review', 200]]);
+    assert.strictEqual(m.view(board, null, 0, false, { plans, runs }).done.usual, undefined, 'no usual, no comparison');
 
-    // One row open at a time, each saying what its status needs said.
-    const opened = (id) => {
-      const w = m.view(board, null, 0, false, { plans, runs, open: id });
-      return [...w.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)), ...w.done.rows].find((x) => x.id === id);
-    };
-    assert.strictEqual(next.find((x) => x.id === 'a').details, undefined, 'closed rows carry no details');
-    const da = opened('a').details;
+    // Rows are one line: no details on the overview; a page opens one feature.
+    assert.ok(v.sections.every((s) => s.groups.every((g) => g.rows.every((x) => x.details === undefined && x.toggle === undefined))));
+    const opened = (id, busy = false) => m.view(board, null, 0, busy, { plans, runs, page: { kind: 'feature', id } });
+    assert.strictEqual(opened('a').kind, 'page');
+    const da = opened('a').page.details;
     assert.deepStrictEqual([da.deps, da.acceptance[0].proof], [[{ id: 'core', status: 'done', ok: true }], null]);
-    const dk = opened('k').details;
-    assert.deepStrictEqual([dk.blockers.length, dk.action], [2, { label: 'refine', command: 'ristretto:prep', args: 'k deep' }]);
-    const drv = opened('rv').details;
+    const pk = opened('k').page;
+    assert.deepStrictEqual([pk.back, pk.details.blockers.length, pk.details.action], ['needs you', 2, { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true }]);
+    const drv = opened('rv').page.details;
     assert.deepStrictEqual([drv.findings, drv.action.command, drv.action.args], [['bug · x.php:1 · wrong'], 'ristretto:pull', 'rv']);
-    const dcore = opened('core').details;
+    const pcore = opened('core').page;
+    assert.deepStrictEqual([pcore.back, pcore.split.length], ['done', 3]);
+    const dcore = pcore.details;
     assert.deepStrictEqual(dcore.acceptance.map((x) => x.proof), ['test_boot', null], 'each criterion with its proof');
     assert.deepStrictEqual([dcore.commit, dcore.run.gates.red, dcore.review], ['abc1234', 1, 'review: clean · rounds: 1']);
-    const dold = opened('old').details;
+    const dold = opened('old').page.details;
     plans.mid = { ...plans.core, evidence: [], itemised: false };
-    assert.strictEqual(opened('mid').details.unitemised, true, 'prose Evidence: said so, not drawn as nothing proved');
+    assert.strictEqual(opened('mid').page.details.unitemised, true, 'prose Evidence: said so, not drawn as nothing proved');
     assert.strictEqual(dcore.unitemised, false);
     // immo-wert writes Plan cells repo-relative.
     assert.strictEqual(m.parseRoadmap(['| Feature | Status | Plan |', '|---|---|---|', '| x | planned | [plan](docs/ristretto/plans/x.md) |'].join('\n')).rows[0].plan, 'plans/x.md');
     assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
+    assert.strictEqual(m.view(board, null, 0, false, { plans, runs, page: { kind: 'feature', id: 'gone' } }).kind, 'board', 'a page whose feature is gone falls back to the overview');
 
-    // No action from an open row while a run is active.
-    const busy = m.view(board, null, 0, true, { plans, runs, open: 'k' });
-    assert.strictEqual(busy.sections.flatMap((s) => s.groups.flatMap((g) => g.rows)).find((x) => x.id === 'k').details.action, undefined);
+    // Solve on the overview's blocked row; nothing to press anywhere while a run is active (review focus 5).
+    const needs = v.sections.find((s) => s.key === 'needs-you').groups.flatMap((g) => g.rows);
+    assert.deepStrictEqual(needs.find((x) => x.id === 'k').action, { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true });
+    const busyView = m.view(board, null, 0, true, { plans, runs });
+    assert.deepStrictEqual(startActions(busyView), [], 'no action on the overview while busy');
+    assert.deepStrictEqual(startActions(opened('k', true)), [], 'no action on a page while busy');
+  }
+
+  // 8. Who a blocked row waits on, and the domain facts row and page.
+  {
+    assert.strictEqual(m.waitsOn('waiting on Jakob: confirm the pass mark (proposal: 0 missed)'), 'waits on Jakob');
+    assert.strictEqual(m.waitsOn('waiting on Anatol — Nodes write API'), 'waits on Anatol');
+    assert.strictEqual(m.waitsOn('no API docs yet'), 'no API docs yet');
+
+    const d = await import(pathToFileURL(path.join(ROOT, 'hooks', 'board-domain.mjs')).href);
+    const text = [
+      '- **A** one.', '  source: x · unconfirmed — proposed by prep f, 2026-10-08',
+      '- **B** two.', '  source: y · unconfirmed — proposed by prep f, 2026-10-08',
+      '- **C** three.', '  source: z · confirmed — Jakob, 2026-10-09',
+    ].join('\n');
+    const head = d.entriesOf('mail.md', text);
+    const treeText = d.removeIn(d.confirmIn(text, 'A', 'Jakob, 2026-10-12'), 'B');
+    const tree = d.markOlder(d.entriesOf('mail.md', treeText));
+    const domain = { tree, head, pending: d.pendingOf(head, tree), locked: false, notice: '' };
+    const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'planned', reason: '' }] };
+
+    const v = m.view(board, null, 0, false, { domain });
+    const needs = v.sections.find((s) => s.key === 'needs-you');
+    assert.deepStrictEqual([needs.groups.length, needs.domain], [0, { n: 0, pending: 2 }], 'the section shows for pending changes alone');
+    assert.strictEqual(m.view(board, null, 0, false, { domain: { ...domain, tree: head, pending: [] } }).sections.find((s) => s.key === 'needs-you').domain.n, 2);
+    assert.strictEqual(m.view(board, null, 0, false, { domain: { ...domain, tree: [], head: [], pending: [] } }).sections.find((s) => s.key === 'needs-you'), undefined, 'no facts: no row');
+
+    const pg = m.view(board, null, 0, false, { domain, page: { kind: 'domain' } }).page;
+    assert.strictEqual(pg.kind, 'domain');
+    assert.deepStrictEqual(pg.groups[0].rows.map((r) => [r.title, r.decided]), [['A', 'confirmed'], ['B', 'removed']]);
+    assert.deepStrictEqual([pg.pending, pg.confirmed.map((f) => f.title)], [{ confirmed: 1, removed: 1 }, ['C']]);
   }
 
   // Format notice. The format has its own version now; the board must compare against it, not
