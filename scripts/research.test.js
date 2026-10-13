@@ -287,4 +287,60 @@ const PROPOSED = '- **Stellplatz** is a full Wohnungseigentumsobjekt\n  source: 
   ok('"confirmed -" inside a statement is not a forged marker');
 }
 
+console.log('== conflict ==');
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}${PROPOSED}` }, 'init');
+  const res = r.run('conflict', 'weg.md', 'Stellplatz', 'OGH 5 Ob 12/24 says a parking space is an accessory · not an object', 'RIS, 2026-10-13', 'review ECO-2');
+  assert.strictEqual(res.status, 0, res.stderr);
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(/unconfirmed — proposed by grind ECO-1, 2026-10-07 · conflict — OGH 5 Ob 12\/24 says a parking space is an accessory , not an object \(RIS, 2026-10-13\), noticed by review ECO-2, \d{4}-\d{2}-\d{2}\n/.test(now), now);
+  assert.ok(now.includes(CONFIRMED), 'the other entry is untouched');
+  r.run('conflict', 'weg.md', 'Stellplatz', 'second look', 'RIS', 'prep ECO-2');
+  const again = r.read('docs/ristretto/domain/weg.md');
+  assert.strictEqual(again.split('conflict —').length - 1, 1, 'a newer conflict replaces the older one');
+  assert.ok(again.includes('conflict — second look (RIS), noticed by prep ECO-2'));
+  ok('conflict appends the field, replaces an older one, keeps the rest');
+}
+{
+  const r = repo();
+  const v = '- **Nodes keys (V1.1)** company_unique_id\n  source: API doc V1.1 · unconfirmed — proposed by prep N-1, 2026-10-08\n';
+  r.commit({ 'docs/ristretto/domain/nodes.md': `# Nodes\r\n\r\n${v.replace(/\n/g, '\r\n')}` }, 'init');
+  assert.strictEqual(r.run('conflict', 'nodes.md', 'Nodes keys (V1.1)', 'V1.2 renames it', 'doc V1.2', 'review N-2').status, 0, 'a title with brackets matches literally');
+  const now = r.read('docs/ristretto/domain/nodes.md');
+  assert.ok(now.includes('\r\n') && !/[^\r]\n/.test(now), 'CRLF kept');
+  assert.strictEqual(r.run('conflict', 'nodes.md', 'Nodes keys', 'x', 'y', 'z').status, 2, 'a title that is only a prefix is no match');
+  assert.strictEqual(r.run('conflict', 'none.md', 'A', 'x', 'y', 'z').status, 2, 'no such file');
+  ok('conflict matches titles literally, keeps CRLF, refuses what it cannot find');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}${PROPOSED}` }, 'init');
+  assert.strictEqual(r.run('conflict', 'weg.md', 'Stellplatz', 'x', 'y', 'z').status, 2, 'two entries with one title: refused');
+  ok('conflict refuses a duplicate title');
+}
+{
+  const r = repo();
+  const other = '- **Wohnung** is an object\n  source: § 2 WEG · confirmed — Jakob, 2026-10-09\n';
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}${other}` }, 'init');
+  r.run('snapshot');
+  r.run('conflict', 'weg.md', 'Hauptobjekt', 'a newer ruling', 'RIS', 'research ECO-3');
+  assert.strictEqual(r.run('check-domain').status, 0, 'a conflict on a confirmed entry is a legal change');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('conflict — a newer ruling'), 'and it is kept');
+  ok('check-domain keeps a conflict added to a confirmed entry');
+}
+{
+  const r = repo();
+  const other = '- **Wohnung** is an object\n  source: § 2 WEG · confirmed — Jakob, 2026-10-09\n';
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}${other}` }, 'init');
+  r.run('snapshot');
+  r.run('conflict', 'weg.md', 'Hauptobjekt', 'a newer ruling', 'RIS', 'research ECO-3');
+  r.write('docs/ristretto/domain/weg.md', r.read('docs/ristretto/domain/weg.md').replace('is an object', 'is any object'));
+  assert.strictEqual(r.run('check-domain').status, 1, 'the edit to Wohnung is undone');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(now.includes('is an object') && !now.includes('any object'), 'Wohnung restored');
+  assert.ok(now.includes('conflict — a newer ruling'), 'while the conflict on Hauptobjekt survives the rebuild');
+  ok('check-domain restores an edit and keeps a conflict in the same file');
+}
+
 console.log(`research.test.js: ${pass} checks passed`);

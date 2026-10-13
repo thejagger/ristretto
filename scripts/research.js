@@ -11,6 +11,11 @@
 //   check-domain   after the run: restore any confirmed entry it changed or deleted, and remove any
 //                  entry it marked confirmed itself.
 //                  exit 0 = clean, 1 = restored or removed something (named), 2 = no snapshot.
+//   conflict <file> <title> <what> <source> <who>
+//                  note on one entry that something disagrees with it: appends
+//                  ` · conflict — <what> (<source>), noticed by <who>, <date>`, replacing an older
+//                  conflict field. The only way an agent marks a fact; settling it is prep's, in the chat.
+//                  exit 0 = noted, 2 = no such file, or no / more than one entry with that title.
 //
 // Agents may add `unconfirmed` domain entries and nothing else. That rule is the whole value of
 // the domain store — a confirmed entry is a person's signature — so it is checked here, not asked for.
@@ -125,6 +130,47 @@ function blocks(text) {
 const isConfirmed = (b) => b.startsWith('- ')
   && b.split('\n').some((line) => line.split('·').some((field) => /^confirmed\b/i.test(field.trim())));
 
+const CONFLICT = /^conflict\b/i;
+// An entry without its conflict fields: what check-domain compares, so a conflict noted on a
+// confirmed entry is not an edit of the person's signature.
+const bare = (b) => b.split('\n')
+  .map((line) => line.split('·').filter((f, j) => j === 0 || !CONFLICT.test(f.trim())).join('·').trimEnd())
+  .join('\n');
+const same = (a, b) => bare(a) === bare(b);
+
+function today() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function conflict(file, title, what, source, who) {
+  const p = path.join(domainDir, path.basename(file || ''));
+  if (!file || !title || !what || !fs.existsSync(p)) {
+    console.error(`research: no domain file ${file} (or a missing argument) — usage: research.js conflict <file> <title> <what> <source> <who>`);
+    return 2;
+  }
+  const text = fs.readFileSync(p, 'utf8');
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const opener = `- **${title}**`;
+  const starts = lines.flatMap((l, i) => (l === opener || l.startsWith(`${opener} `) ? [i] : []));
+  if (starts.length !== 1) {
+    console.error(`research: ${starts.length ? 'more than one' : 'no'} entry titled "${title}" in ${file}`);
+    return 2;
+  }
+  let end = starts[0] + 1;
+  while (end < lines.length && /^\s+\S/.test(lines[end])) end++;
+  for (let i = starts[0]; i < end; i++) {
+    lines[i] = lines[i].split('·').filter((f, j) => j === 0 || !CONFLICT.test(f.trim())).join('·').trimEnd();
+  }
+  const clean = (v) => String(v || '—').replace(/·/g, ',').trim();
+  lines[end - 1] = `${lines[end - 1]} · conflict — ${clean(what)} (${clean(source)}), noticed by ${clean(who)}, ${today()}`;
+  fs.writeFileSync(p, lines.join(eol));
+  console.log(`research: conflict noted on ${path.basename(file)}: ${title}`);
+  return 0;
+}
+
 function snapshot() {
   // A snapshot only outlives its run when the run died before check-domain. Replacing it unchecked
   // would adopt whatever that run did as the new baseline — so check it first.
@@ -155,15 +201,15 @@ function checkDomain({ removeForged = true } = {}) {
     const before = fs.existsSync(snap) ? blocks(fs.readFileSync(snap, 'utf8')) : [];
     const current = path.join(domainDir, f);
     const now = fs.existsSync(current) ? blocks(fs.readFileSync(current, 'utf8')) : [];
-    const missing = before.filter(isConfirmed).filter((b) => !now.includes(b));
+    const missing = before.filter(isConfirmed).filter((b) => !now.some((n) => same(n, b)));
     // A confirmation is a person's signature. One the run wrote itself is a forgery.
-    const forged = removeForged ? now.filter((b) => isConfirmed(b) && !before.includes(b)) : [];
+    const forged = removeForged ? now.filter((b) => isConfirmed(b) && !before.some((x) => same(x, b))) : [];
     if (!missing.length && !forged.length) continue;
-    // Rebuild from the snapshot plus what the run legally added: new unconfirmed entries, minus a
-    // reverted copy of an entry being restored (same first line), so nothing appears twice.
+    // Rebuild from the snapshot plus what the run legally added: new unconfirmed entries and
+    // conflict fields, minus a reverted copy of an entry being restored (same first line).
     const restoredHeads = new Set(missing.map(head));
-    const added = now.filter((b) => b.trim() && !before.includes(b) && !forged.includes(b) && !restoredHeads.has(head(b)));
-    const kept = [...before];
+    const added = now.filter((b) => b.trim() && !before.some((x) => same(x, b)) && !forged.includes(b) && !restoredHeads.has(head(b)));
+    const kept = before.map((b) => (restoredHeads.has(head(b)) ? b : now.find((n) => same(n, b)) ?? b));
     while (kept.length && kept[kept.length - 1] === '') kept.pop();
     fs.mkdirSync(domainDir, { recursive: true });
     fs.writeFileSync(current, `${[...kept, ...added].join('\n')}\n`);
@@ -192,7 +238,10 @@ switch (mode) {
   case 'check-domain':
     process.exit(checkDomain());
     break;
+  case 'conflict':
+    process.exit(conflict(...process.argv.slice(3, 8)));
+    break;
   default:
-    console.error('usage: node scripts/research.js stale <ID> | snapshot | check-domain');
+    console.error('usage: node scripts/research.js stale <ID> | snapshot | check-domain | conflict <file> <title> <what> <source> <who>');
     process.exit(2);
 }
