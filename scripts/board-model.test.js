@@ -612,6 +612,11 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/## Facts — `prep facts`/.test(prep) && /update \/ remove \/ keep/.test(prep), 'prep settles conflicts in the chat');
     assert.ok(/at most two/.test(prep) && /\(stays context: domain\/<file>: <title>\)/.test(prep), 'prep asks about at most two binding facts');
     assert.ok(/in conflict — \/ristretto:prep facts/.test(read('commands/status.md')) && !/to confirm — open the board/.test(read('commands/status.md')), 'status counts conflicts, not unconfirmed facts');
+    // One commit per feature, found by its ID; a check re-run adds to the build's record.
+    const closer = read('briefs/closer.md');
+    assert.ok(/one commit holds code, archived plan and roadmap row/.test(closer) && /`Commit` `—`/.test(closer) && !/files, hash/.test(closer), 'the closer commits once, with no hash');
+    assert.ok(/check re-run only adds `checked:/.test(closer), 'a check re-run only adds');
+    assert.ok(/`Commit` stays `—` for good/.test(prep), 'prep leaves Commit empty for good');
   }
 
   console.log('board-model.test.js: all checks passed');

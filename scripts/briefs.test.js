@@ -117,7 +117,9 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1348,
 // +9 in the reviewer's own `block` bucket — a rule every role must know, not prose.
 // And with the conflict rule (2026-10-13): +28 in common.md for every role, +7 in the
 // reviewer's `block` bucket (building on a confirmed entry in conflict).
-const CAPS = { 'briefs/planner.md': [450, 993], 'briefs/reviewer.md': [450, 1025], 'briefs/closer.md': [400, 893],
+// The closer once more with one commit per feature (2026-10-13): +50 in its own brief — the
+// roadmap row and archived plan ride in the feature commit, and a check re-run only adds. A duty.
+const CAPS = { 'briefs/planner.md': [450, 993], 'briefs/reviewer.md': [450, 1025], 'briefs/closer.md': [400, 943],
                'briefs/researcher.md': [700, 1290] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);

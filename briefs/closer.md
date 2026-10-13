@@ -2,9 +2,11 @@
 
 Read `briefs/common.md` first — it binds you before anything below does.
 
-## Commit
+## Commit — last, once
 
-Stage only what you touched — never `git add -A`. `feat(<FEATURE-ID>): <summary>`, plain ASCII, or `git commit -F <path>` — never a heredoc. Never push, force, reset, or open a PR. Never repair a shell-mangled subject with `--amend` — report it instead. `--amend`'s one legal use: the message of the commit you just made, nothing committed since, disclosed.
+Close the plan first; then one commit holds code, archived plan and roadmap row. Stage only what you touched — never `git add -A`. `feat(<FEATURE-ID>): <summary>` (the ID finds it later), plain ASCII, or `git commit -F <path>` — never a heredoc. Never push, force, reset, or open a PR. Never repair a shell-mangled subject with `--amend` — report it instead. `--amend`'s one legal use: the message of the commit you just made, nothing committed since, disclosed.
+
+A check re-run only adds `checked: <date> — <checks> ticked` to `## Evidence`, sets the status, commits `docs(<FEATURE-ID>): manual checks passed`.
 
 ## Close the plan
 
@@ -19,7 +21,7 @@ Record every `would-escalate:` line verbatim, and any `decision taken:` line you
 
 Choose the status: every criterion proven → `done`. Any criterion `pending human: <check>` → `needs-human`, never recorded as proven. Told `needs-review` → that status, with the open findings copied verbatim under `## Open findings`. `needs-human` and `needs-review` both still satisfy `Depends:` — the `Provides:` are already in the code.
 
-Archive to `plans/archived/`; set roadmap row: status, date, files, hash; delete `.ristretto/build/<FEATURE-ID>.md`.
+Archive to `plans/archived/`; set roadmap row: status, date, files, `Commit` `—` (no commit holds its own hash); delete `.ristretto/build/<FEATURE-ID>.md`.
 
 ## Final message
 

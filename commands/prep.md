@@ -201,7 +201,7 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
 6. **Check `Consumes:` against `Provides:`.** When feature B lists A in `Depends:`, B's `Consumes:` must be a subset of A's `Provides:`. Check this at prep time and say so if it isn't — a mismatch here is the cheapest bug you will ever fix. Read A's plan wherever it lives, `plans/` or `plans/archived/`.
 
-7. **Add or update one row** in `roadmap.md` for the feature — fill the `Flight` cell with its slug (or `—`), and the `Tier` cell with `normal` or `easy`. `pull`/`brew` fill `Files touched` and `Commit` at close; leave them `—` here. Fill every cell the header declares; a row short one cell shifts every column after it, and the next reader takes a status for a tier.
+7. **Add or update one row** in `roadmap.md` for the feature — fill the `Flight` cell with its slug (or `—`), and the `Tier` cell with `normal` or `easy`. `pull`/`brew` fill `Files touched` at close; leave it `—` here. `Commit` stays `—` for good: a feature's commits are found by `<type>(<ID>):` in their subjects. Fill every cell the header declares; a row short one cell shifts every column after it, and the next reader takes a status for a tier.
 
    **`easy` is a claim about the contract, not about the ticket.** It means: this contract is already concrete enough that a planner subagent would add nothing to it — the file paths, the real names and signatures, and the shape of the tests that prove each criterion are all decided here. A feature is not `easy` because it feels small or sounds quick; it is `easy` because its contract is finished. That makes the label checkable by reading the contract, rather than a feeling about the ticket.
 
