@@ -103,10 +103,12 @@ async function refreshBoard($: EngineInterface) {
   }
 }
 
+// The Commit cell is the roadmap's text, not a trusted argument: only a hash reaches git, after
+// --end-of-options. Anything else is never run (and so never retried on every refresh).
 async function loadFiles($: EngineInterface, commit: string) {
-  if (!commit || (await read($, files))[commit]) return
+  if (!/^[0-9a-f]{4,40}$/i.test(commit) || (await read($, files))[commit]) return
   try {
-    const ran = await $.process.run(['git', 'show', '--numstat', '--format=', commit], { cwd: await $.session.root() })
+    const ran = await $.process.run(['git', 'show', '--numstat', '--format=', '--end-of-options', commit], { cwd: await $.session.root() })
     if (ran.exitCode === 0) await update($, files, all => ({ ...all, [commit]: parseNumstat(ran.stdout) }))
   } catch {
     // The card shows the plan's files meanwhile; the next refresh tries again.

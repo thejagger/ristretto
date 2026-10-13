@@ -547,6 +547,8 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
     assert.ok(tsx.includes('section.conflicts'), 'conflict rows are drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
+    // Final review #5: the Commit cell is the roadmap's text, not a trusted argument.
+    assert.ok(/'--end-of-options', commit\]/.test(tsx) && tsx.includes('/^[0-9a-f]{4,40}$/i.test(commit)'), 'only a hash reaches git, and never as an option');
     assert.ok(/<Box key=\{`acc-\$\{i\}`\} flexDirection="row" gap=\{1\} alignItems="flex-start">/.test(tsx), 'an acceptance mark sits on the first line');
     for (const title of ["'Acceptance'", "'Files'", "'Review'", "'Checks'"]) assert.ok(tsx.includes(title), `a ${title} card`);
     // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
