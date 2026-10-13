@@ -56,6 +56,8 @@ declare module 'claude-code' {
       run: BoardRun | null
       runs: BoardRecord[]
       domain: BoardDomain      openFact: string | null
+      files: Record<string, BoardFile[]>
+      folders: Record<string, Record<string, boolean>>
     }
   }
 }

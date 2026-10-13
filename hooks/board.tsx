@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
+import type { Board, BoardDomain, BoardFile, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bandOf, bar, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
+import { parseNumstat } from './board-files.mjs'
 import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
@@ -35,6 +36,9 @@ const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAI
 // Whether the board's pane is open: the band's open/close follows it.
 const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
 const openFact = atom({ plugin: 'ristretto', key: 'openFact' } as const, null as string | null)
+// A feature's files by commit, read once (a commit never changes), and the folders opened by hand.
+const files = atom({ plugin: 'ristretto', key: 'files' } as const, {} as Record<string, BoardFile[]>)
+const folders = atom({ plugin: 'ristretto', key: 'folders' } as const, {} as Record<string, Record<string, boolean>>)
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 
@@ -91,9 +95,21 @@ async function refreshBoard($: EngineInterface) {
     const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
     await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))
     roadmapMtime = mtime
+    const shownRow = opened ? parsed.rows.find(r => r.id === opened) : null
+    if (shownRow?.commit) await loadFiles($, shownRow.commit)
   } catch (err) {
     roadmapMtime = -1 // a failed read is retried by the next poll, not kept until the file changes
     await update($, board, b => ({ ...b, error: String(err).slice(0, 80) }))
+  }
+}
+
+async function loadFiles($: EngineInterface, commit: string) {
+  if (!commit || (await read($, files))[commit]) return
+  try {
+    const ran = await $.process.run(['git', 'show', '--numstat', '--format=', commit], { cwd: await $.session.root() })
+    if (ran.exitCode === 0) await update($, files, all => ({ ...all, [commit]: parseNumstat(ran.stdout) }))
+  } catch {
+    // The card shows the plan's files meanwhile; the next refresh tries again.
   }
 }
 
@@ -501,6 +517,8 @@ async function drawPane($: any, e: any) {
       page: canPress ? await read($, page) : null,
       plans: boardValue.plans,
       checks: boardValue.checks,
+      files: await read($, files),
+      folders: await read($, folders),
       runs: await read($, runs),
       domain: facts,
     })
@@ -585,7 +603,6 @@ async function drawPane($: any, e: any) {
     if (v.kind === 'page' && v.page.kind === 'feature') {
       const p = v.page
       const d = p.details
-      const facts2 = [d.review, d.gate && `gate ${d.gate}`, d.commit && `commit ${d.commit}`].filter(Boolean)
       return (
         <Box flexDirection="column" gap={1}>
           {back(p.back)}
@@ -594,24 +611,6 @@ async function drawPane($: any, e: any) {
             {p.title !== '' && <Text dimColor wrap="wrap">{p.title}</Text>}
           </Box>
           {p.goal && <Text wrap="wrap">{md(p.goal, 'goal')}</Text>}
-          {p.split && card('split', 'inactive', <>
-            <Text bold dimColor>{`${rich ? 'Time' : 'TIME'} · ${duration(d.run.ms)}`}</Text>
-            {rich && <Svg alt="time split" height={6} source={splitSvg(p.split, 1000)} />}
-            <Box flexDirection="row" columnGap={2} flexWrap="wrap">
-              {p.split.map((s: any) => <Text key={`sp-${s.phase}`} color={SPLIT_TONE[s.phase]}>{`${s.phase} ${duration(s.ms)}`}</Text>)}
-            </Box>
-          </>)}
-          {d.missing && <Text dimColor>plan not found</Text>}
-          {d.blockers.length > 0 && card('blockers', 'error', <>
-            <Text bold dimColor>{p.waitingOn ? `Waiting on ${p.waitingOn}` : 'Blocked'}</Text>
-            {d.blockers.map((b: string, i: number) => <Text key={`blk-${i}`} wrap="wrap">{`${i + 1}. `}{md(b, `blk-${i}`)}</Text>)}
-            {d.action?.chat && (
-              <Box flexDirection="column" gap={rich ? 1 : 0}>
-                <Box flexDirection="row">{press(d.action, true, 'solve in chat')}</Box>
-                <Text dimColor wrap="wrap">{`Opens /${d.action.command} ${d.action.args} in the chat. Once it's settled, the plan is updated and the feature is planned again.`}</Text>
-              </Box>
-            )}
-          </>)}
           {d.deps.length > 0 && (
             <Box flexDirection="row" columnGap={2} flexWrap="wrap" alignItems="center">
               <Text dimColor>depends on</Text>
@@ -623,27 +622,80 @@ async function drawPane($: any, e: any) {
               ))}
             </Box>
           )}
-          {d.acceptance.length > 0 && card('acceptance', 'inactive', <>
-            <Text bold dimColor>{rich ? 'Acceptance' : 'ACCEPTANCE'}</Text>
-            {d.acceptance.map((a: any, i: number) => (
-              <Box key={`acc-${i}`} flexDirection="column">
-                <Box flexDirection="row" gap={1}>
-                  {a.proof ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' }) : a.auto ? <Text dimColor>{i + 1}.</Text> : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
-                  <Box flexShrink={1}><Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text></Box>
-                </Box>
-                {a.proof && <Box marginLeft={rich ? 3 : 2}><Text dimColor wrap="truncate-end">{plain(a.proof)}</Text></Box>}
+          {d.missing && <Text dimColor>plan not found</Text>}
+          {p.split && card('split', 'inactive', <>
+            <Text bold dimColor>{`${rich ? 'Time' : 'TIME'} · ${duration(d.run.ms)}`}</Text>
+            {rich && <Svg alt="time split" height={6} source={splitSvg(p.split, 1000)} />}
+            <Box flexDirection="row" columnGap={2} flexWrap="wrap">
+              {p.split.map((s: any) => <Text key={`sp-${s.phase}`} color={SPLIT_TONE[s.phase]}>{`${s.phase} ${duration(s.ms)}`}</Text>)}
+            </Box>
+          </>)}
+          {d.blockers.length > 0 && card('blockers', 'error', <>
+            <Text bold dimColor>{p.waitingOn ? `Waiting on ${p.waitingOn}` : 'Blocked'}</Text>
+            {d.blockers.map((b: string, i: number) => (
+              <Box key={`blk-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
+                <Box flexShrink={0}><Text dimColor>{`${i + 1}.`}</Text></Box>
+                <Box flexShrink={1}><Text wrap="wrap">{md(b, `blk-${i}`)}</Text></Box>
               </Box>
             ))}
+            {d.action?.chat && (
+              <Box flexDirection="column" gap={rich ? 1 : 0}>
+                <Box flexDirection="row">{press(d.action, true, 'solve in chat')}</Box>
+                <Text dimColor wrap="wrap">{`Opens /${d.action.command} ${d.action.args} in the chat. Once it's settled, the plan is updated and the feature is planned again.`}</Text>
+              </Box>
+            )}
+          </>)}
+          {d.acceptance.length > 0 && card('acceptance', 'inactive', <>
+            <Text bold dimColor>{rich ? 'Acceptance' : 'ACCEPTANCE'}</Text>
+            <Box flexDirection="column" gap={rows}>
+              {d.acceptance.map((a: any, i: number) => (
+                <Box key={`acc-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
+                  <Box flexShrink={0}>
+                    {a.proof ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' }) : a.auto ? <Text dimColor>{`${i + 1}.`}</Text> : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
+                  </Box>
+                  <Box flexDirection="column" flexShrink={1}>
+                    <Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text>
+                    {a.proof && <Text dimColor wrap="truncate-end">{plain(a.proof)}</Text>}
+                  </Box>
+                </Box>
+              ))}
+            </Box>
             {d.unitemised && <Text dimColor wrap="wrap">proof not itemised — the plan's Evidence covers these as prose</Text>}
           </>)}
-          {d.findings.length > 0 && card('findings', 'warning', d.findings.map((f: string, i: number) => (
-            <Box key={`fnd-${i}`} flexDirection="row" gap={1}>{mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}<Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box></Box>
-          )))}
-          {d.checks.length > 0 && card('checks', 'permission', d.checks.map((c: any, i: number) => (
-            <Box key={`chk-${i}`} flexDirection="row" gap={1}>{c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}<Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{md(c.text, `chk-${i}`)}</Text></Box></Box>
-          )))}
-          {d.run && <Text dimColor wrap="wrap">{`${p.split ? '' : `${duration(d.run.ms)} · `}${count(d.run.tokens.in + d.run.tokens.out)} tok`}</Text>}
-          {facts2.length > 0 && <Text dimColor wrap="wrap">{facts2.join('  ·  ')}</Text>}
+          {p.files && card('files', 'inactive', <>
+            <Text bold dimColor>{p.files.planned ? `${rich ? 'Files' : 'FILES'} · planned` : `${rich ? 'Files' : 'FILES'} · ${p.files.n} · +${p.files.add} −${p.files.del}`}</Text>
+            {p.files.rows.map((f: any) => {
+              const label = f.kind === 'dir' ? `${f.empty ? ' ' : f.open ? '▾' : '▸'} ${f.name}` : f.name
+              const flip = () => void update($, folders, (all: Record<string, Record<string, boolean>>) => ({ ...all, [p.id]: { ...(all[p.id] ?? {}), [f.path]: !f.open } }))
+              return (
+                <Box key={`file-${f.key}`} flexDirection="row" gap={1} marginLeft={f.depth * 2}>
+                  <Box flexGrow={1} flexShrink={1} overflow="hidden">
+                    {f.kind === 'dir' && !f.empty && canPress
+                      ? held(`dir-${p.id}-${f.path}`, label, flip, onPress => <Button key={`dir-${f.path}`} plain onPress={onPress}><Text bold>{label}</Text></Button>)
+                      : <Text bold={f.kind === 'dir'} wrap="truncate-end">{label}</Text>}
+                  </Box>
+                  {!p.files.planned && (f.bin
+                    ? <Box flexShrink={0}><Text dimColor>bin</Text></Box>
+                    : <Box flexShrink={0} flexDirection="row" gap={1}><Text color="success">{`+${f.add}`}</Text><Text color="error">{`−${f.del}`}</Text></Box>)}
+                </Box>
+              )
+            })}
+          </>)}
+          {(d.review || d.gate || d.findings.length > 0 || d.run || d.commit) && card('review', d.findings.length > 0 ? 'warning' : 'inactive', <>
+            <Text bold dimColor>{rich ? 'Review' : 'REVIEW'}</Text>
+            {d.review && <Text wrap="wrap">{d.review}</Text>}
+            {d.gate && <Text dimColor wrap="wrap">{`gate ${d.gate}`}</Text>}
+            {d.findings.map((f: string, i: number) => (
+              <Box key={`fnd-${i}`} flexDirection="row" gap={1} alignItems="flex-start">{mark({ status: 'needs-review', tone: 'warning', mark: '!', tag: 'finding' })}<Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box></Box>
+            ))}
+            {(d.run || d.commit) && <Text dimColor wrap="wrap">{[d.run && `${p.split ? '' : `${duration(d.run.ms)} · `}${count(d.run.tokens.in + d.run.tokens.out)} tok`, d.commit && `commit ${d.commit}`].filter(Boolean).join('  ·  ')}</Text>}
+          </>)}
+          {d.checks.length > 0 && card('checks', 'permission', <>
+            <Text bold dimColor>{rich ? 'Checks' : 'CHECKS'}</Text>
+            {d.checks.map((c: any, i: number) => (
+              <Box key={`chk-${i}`} flexDirection="row" gap={1} alignItems="flex-start">{c.done ? mark({ status: 'done', tone: 'success', mark: '☑', tag: 'checked' }) : mark({ status: 'needs-human', tone: 'permission', mark: '☐', tag: 'to check' })}<Box flexShrink={1}><Text dimColor={c.done} wrap="wrap">{md(c.text, `chk-${i}`)}</Text></Box></Box>
+            ))}
+          </>)}
           {d.action && !d.action.chat && <Box flexDirection="row">{press(d.action, true)}</Box>}
         </Box>
       )

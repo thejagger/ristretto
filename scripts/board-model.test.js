@@ -510,6 +510,9 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/\bfacts: `<path/.test(tsx) && tsx.includes("'fact-conflict': `<path"), 'facts have their own icon');
     assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
     assert.ok(tsx.includes('section.conflicts'), 'conflict rows are drawn');
+    assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
+    assert.ok(/<Box key=\{`acc-\$\{i\}`\} flexDirection="row" gap=\{1\} alignItems="flex-start">/.test(tsx), 'an acceptance mark sits on the first line');
+    for (const title of ["'Acceptance'", "'Files'", "'Review'", "'Checks'"]) assert.ok(tsx.includes(title), `a ${title} card`);
     // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
     // ("JSX element <Button key="✓"> plain is true or absent" — the facts page drew nothing).
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
