@@ -842,12 +842,14 @@ async function drawPane($: any, e: any) {
                 {group.rows.map((r: any) => row(r))}
               </Box>
             ))}
+            {section.conflicts && <Text key="h-conflicts" dimColor>domain facts</Text>}
             {(section.conflicts ?? []).map((c: any) => (
               <Box key={c.key} flexDirection="row" gap={1} alignItems="center">
                 {rich ? <Svg alt="fact in conflict" width={14} height={14} source={iconSvg('fact-conflict')} /> : <Text color="warning">!</Text>}
                 <Box flexShrink={0}>{canPress ? held(`name-${c.key}`, c.title, () => void goTo({ kind: 'domain' }), onPress => <Button key={`name-${c.key}`} plain onPress={onPress}><Text bold>{c.title}</Text></Button>) : <Text bold>{c.title}</Text>}</Box>
                 <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{`conflict: ${c.what}`}</Text></Box>
                 {c.action && press(c.action)}
+                {act(`more-${c.key}`, '›', () => void goTo({ kind: 'domain' }), true)}
               </Box>
             ))}
           </Box>
