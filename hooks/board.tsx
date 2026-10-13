@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, BoardDomain, BoardFile, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bandOf, bar, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
-import { parseNumstat } from './board-files.mjs'
+import { featureLogArgs, parseNumstat, sumFiles } from './board-files.mjs'
 import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
@@ -36,7 +36,7 @@ const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAI
 // Whether the board's pane is open: the band's open/close follows it.
 const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
 const openFact = atom({ plugin: 'ristretto', key: 'openFact' } as const, null as string | null)
-// A feature's files by commit, read once (a commit never changes), and the folders opened by hand.
+// A feature's files (its commits, found by ID), and the folders opened by hand.
 const files = atom({ plugin: 'ristretto', key: 'files' } as const, {} as Record<string, BoardFile[]>)
 const folders = atom({ plugin: 'ristretto', key: 'folders' } as const, {} as Record<string, Record<string, boolean>>)
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
@@ -96,20 +96,27 @@ async function refreshBoard($: EngineInterface) {
     await update($, board, () => ({ name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }))
     roadmapMtime = mtime
     const shownRow = opened ? parsed.rows.find(r => r.id === opened) : null
-    if (shownRow?.commit) await loadFiles($, shownRow.commit)
+    if (shownRow) await loadFiles($, shownRow.id, shownRow.commit)
   } catch (err) {
     roadmapMtime = -1 // a failed read is retried by the next poll, not kept until the file changes
     await update($, board, b => ({ ...b, error: String(err).slice(0, 80) }))
   }
 }
 
-// The Commit cell is the roadmap's text, not a trusted argument: only a hash reaches git, after
-// --end-of-options. Anything else is never run (and so never retried on every refresh).
-async function loadFiles($: EngineInterface, commit: string) {
-  if (!/^[0-9a-f]{4,40}$/i.test(commit) || (await read($, files))[commit]) return
+// What a feature's commits changed, found by its ID in their subjects (`feat(<ID>): …`), re-read
+// whenever its page opens or the roadmap changes — a squash or a fix after review shows at once.
+// A row from before that rule may only carry a hash in its Commit cell: that is the roadmap's
+// text, not a trusted argument, so only a hash reaches git, after --end-of-options.
+async function loadFiles($: EngineInterface, id: string, commit: string) {
   try {
-    const ran = await $.process.run(['git', 'show', '--numstat', '--format=', '--end-of-options', commit], { cwd: await $.session.root() })
-    if (ran.exitCode === 0) await update($, files, all => ({ ...all, [commit]: parseNumstat(ran.stdout) }))
+    const root = await $.session.root()
+    const byId = await $.process.run(['git', ...featureLogArgs(id)], { cwd: root })
+    let list = byId.exitCode === 0 ? sumFiles(parseNumstat(byId.stdout)) : []
+    if (list.length === 0 && /^[0-9a-f]{4,40}$/i.test(commit)) {
+      const shown = await $.process.run(['git', 'show', '--numstat', '--format=', '--end-of-options', commit], { cwd: root })
+      if (shown.exitCode === 0) list = parseNumstat(shown.stdout)
+    }
+    await update($, files, all => ({ ...all, [id]: list }))
   } catch {
     // The card shows the plan's files meanwhile; the next refresh tries again.
   }

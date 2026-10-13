@@ -363,10 +363,12 @@ function featurePage(row, ctx) {
   };
 }
 
-// The Files card: the commit's files once read (board.tsx reads each commit once), else what
-// the plan says it will touch. Up to OPEN_UP_TO files start open; a click overrides per folder.
+// The Files card: what the feature's commits changed (board.tsx finds them by ID), else what
+// the plan says it will touch. ristretto's own docs ride along in the feature commit and are not
+// what a review reads. Up to OPEN_UP_TO files start open; a click overrides per folder.
 function filesOf(row, ctx) {
-  const read = row.commit ? ctx.files[row.commit] : undefined;
+  const found = (ctx.files[row.id] ?? []).filter((f) => !f.path.startsWith('docs/ristretto/'));
+  const read = found.length > 0 ? found : undefined;
   const list = read ?? plannedOf(row.touched ?? []);
   if (list.length === 0) return null;
   const tree = treeOf(list);

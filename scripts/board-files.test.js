@@ -50,5 +50,17 @@ const { pathToFileURL } = require('url');
     '0d android/ (empty)', '0d lib/data/ (empty)', '0d test/data/', '1f x_test.dart', '0f pubspec.yaml',
   ]);
 
+  // A feature's commits are found by its ID in the subject — `feat(DUAL-123): …`, `fix(DUAL-123): …`
+  // — so a squash, a fix after review, and old rows all read the same; no hash in the roadmap.
+  assert.deepStrictEqual(f.featureLogArgs('DUAL-123'), ['log', '--numstat', '--format=', '-E', '--grep=^[a-z]+\\(DUAL-123\\):']);
+  assert.deepStrictEqual(f.featureLogArgs('a.b+c'), ['log', '--numstat', '--format=', '-E', '--grep=^[a-z]+\\(a\\.b\\+c\\):'], 'regex characters in an ID match literally');
+  const pattern = new RegExp(f.featureLogArgs('DUAL-123')[4].slice('--grep='.length), 'm');
+  assert.ok(pattern.test('feat(DUAL-123): first build') && pattern.test('fix(DUAL-123): review fix'));
+  assert.ok(!pattern.test('feat(DUAL-1234): another') && !pattern.test('docs(ristretto): close DUAL-123'));
+  // Two commits touching one file: one row, summed.
+  assert.deepStrictEqual(f.sumFiles(f.parseNumstat('10\t2\tlib/a.dart\n3\t0\tlib/b.dart\n\n4\t1\tlib/a.dart\n-\t-\tlogo.png\n')), [
+    { path: 'lib/a.dart', add: 14, del: 3, bin: false }, { path: 'lib/b.dart', add: 3, del: 0, bin: false }, { path: 'logo.png', add: 0, del: 0, bin: true },
+  ]);
+
   console.log('board-files.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

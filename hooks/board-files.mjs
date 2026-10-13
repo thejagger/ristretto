@@ -15,6 +15,24 @@ export function parseNumstat(text) {
   });
 }
 
+// A feature's commits, found by its ID in the subject: `feat(<ID>): …`, `fix(<ID>): …`. A squash,
+// a fix after review and an old row all read the same, so the roadmap keeps no hash (a commit
+// cannot hold its own). The ID goes in literally; it is one argv entry, never an option.
+export function featureLogArgs(id) {
+  const literal = String(id).replace(/[.*+?^${}()|[\]\\/-]/g, (c) => (c === '-' || c === '/' ? c : `\\${c}`));
+  return ['log', '--numstat', '--format=', '-E', `--grep=^[a-z]+\\(${literal}\\):`];
+}
+
+// The same file touched by several commits is one row, its lines summed.
+export function sumFiles(files) {
+  const by = new Map();
+  for (const f of files) {
+    const was = by.get(f.path);
+    by.set(f.path, was ? { path: f.path, add: was.add + f.add, del: was.del + f.del, bin: was.bin || f.bin } : { ...f });
+  }
+  return [...by.values()];
+}
+
 // The roadmap's `Files touched` cell, before there is a commit. A trailing `/` is a folder.
 export function plannedOf(touched) {
   return touched.map((p) => p.trim().replace(/^\.?\//, '')).filter(Boolean).map((p) => ({ path: p, add: 0, del: 0, bin: false }));

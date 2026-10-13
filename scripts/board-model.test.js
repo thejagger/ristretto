@@ -487,7 +487,10 @@ const shown = (v) => JSON.stringify(v);
     ];
     const board = { ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } };
     const list = Array.from({ length: 13 }, (_, i) => ({ path: `lib/f${String(i).padStart(2, '0')}.dart`, add: 2, del: 1, bin: false }));
-    const page = (id, extra = {}) => m.view(board, null, 0, false, { page: { kind: 'feature', id }, files: { a7928f6: list }, ...extra }).page;
+    // Files are read per feature (its commits by ID); ristretto's own docs ride along in the
+    // feature commit now and are not what a code review reads.
+    const bookkeeping = [{ path: 'docs/ristretto/roadmap.md', add: 1, del: 1, bin: false }, { path: 'docs/ristretto/plans/archived/d.md', add: 40, del: 0, bin: false }];
+    const page = (id, extra = {}) => m.view(board, null, 0, false, { page: { kind: 'feature', id }, files: { d: [...list, ...bookkeeping], n: bookkeeping }, ...extra }).page;
     const d = page('d').files;
     assert.deepStrictEqual([d.planned, d.n, d.add, d.del], [false, 13, 26, 13]);
     assert.deepStrictEqual(d.rows.map((r) => r.name), ['lib/'], 'more than 12 files: only the top level shows');
@@ -496,7 +499,9 @@ const shown = (v) => JSON.stringify(v);
     const p = page('p').files;
     assert.deepStrictEqual([p.planned, p.rows.map((r) => r.name)], [true, ['lib/data/', 'pubspec.yaml']]);
     assert.strictEqual(page('n').files, null, 'nothing touched yet, no commit: no card');
-    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'a commit not read yet shows the plan meanwhile');
+    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'commits not read yet: the plan meanwhile');
+    assert.strictEqual(page('n').files, null, 'only bookkeeping and nothing planned: no card');
+    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' }, files: { d: [] } }).page.files.planned, true, 'no commit found yet: the plan, not an empty card');
   }
 
   // Final review #4: a feature blocked on a fact is recognised through the roadmap, whichever
@@ -563,6 +568,7 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
     assert.ok(tsx.includes('section.conflicts'), 'conflict rows are drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
+    assert.ok(/featureLogArgs\(id\)/.test(tsx) && /sumFiles\(/.test(tsx), 'the Files card finds a feature\'s commits by its ID');
     // Final review #5: the Commit cell is the roadmap's text, not a trusted argument.
     assert.ok(/'--end-of-options', commit\]/.test(tsx) && tsx.includes('/^[0-9a-f]{4,40}$/i.test(commit)'), 'only a hash reaches git, and never as an option');
     assert.ok(/<Box key=\{`acc-\$\{i\}`\} flexDirection="row" gap=\{1\} alignItems="flex-start">/.test(tsx), 'an acceptance mark sits on the first line');
