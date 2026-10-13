@@ -59,6 +59,32 @@ export function splitOf(record) {
   return split.length > 0 ? split : null;
 }
 
+// Every run of a feature, added up: the build, then a check re-run after the manual checks, or a
+// re-pull after a block. The feature cost all of it, so a later short run must not replace the
+// build. One entry per feature, in the order of its last run; status and command are the last's.
+export function mergeRuns(records) {
+  const out = new Map();
+  for (const rec of records) {
+    const was = out.get(rec.id);
+    out.delete(rec.id);
+    if (!was) {
+      out.set(rec.id, { ...rec, runs: 1 });
+      continue;
+    }
+    const sum = (a = {}, b = {}) => Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map((k) => [k, (a[k] || 0) + (b[k] || 0)]));
+    out.set(rec.id, {
+      ...rec,
+      runs: was.runs + 1,
+      startedAt: Math.min(was.startedAt, rec.startedAt),
+      ms: was.ms + rec.ms,
+      tokens: sum(was.tokens, rec.tokens),
+      gates: sum(was.gates, rec.gates),
+      ...(was.phases || rec.phases ? { phases: sum(was.phases, rec.phases) } : {}),
+    });
+  }
+  return out;
+}
+
 export function endRun(run, now, status) {
   const closed = markPhase(run, null, now);
   return {

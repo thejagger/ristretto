@@ -28,7 +28,7 @@ export type BoardRun = {
   phases?: { plan: number; code: number; review: number; close: number }
   at?: { bucket: string; since: number } | null
 }
-export type BoardRecord = BoardRun & { endedAt: number; ms: number; status: string }
+export type BoardRecord = BoardRun & { endedAt: number; ms: number; status: string; runs?: number }
 export type BoardPhase = 'starting' | 'planning' | 'coding' | 'fixing' | 'review' | 'closing' | 'interrupted'
 export type BoardLive = {
   command: 'pull' | 'shot' | 'brew' | null

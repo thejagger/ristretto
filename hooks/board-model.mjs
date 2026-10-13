@@ -2,7 +2,7 @@
 // session did and draws what it returns. Tested by scripts/board-model.test.js.
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
-import { splitOf } from './board-runs.mjs';
+import { mergeRuns, splitOf } from './board-runs.mjs';
 import { OPEN_UP_TO, plannedOf, rowsOf, treeOf } from './board-files.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
@@ -421,7 +421,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   const busy = live !== null || elsewhere;
   const statusOf = new Map(rows.map((r) => [r.id, r.status]));
   const records = opts.runs ?? [];
-  const runOf = new Map(records.map((rec) => [rec.id, rec])); // the latest run of each feature wins
+  const runOf = mergeRuns(records); // every run of a feature added up — a check re-run adds, never replaces
   const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
   const domain = opts.domain ?? { tree: [] };
   const page = opts.page?.kind === 'domain'

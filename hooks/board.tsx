@@ -628,7 +628,7 @@ async function drawPane($: any, e: any) {
           )}
           {d.missing && <Text dimColor>plan not found</Text>}
           {p.split && card('split', 'inactive', <>
-            <Text bold dimColor>{`${rich ? 'Time' : 'TIME'} · ${duration(d.run.ms)}`}</Text>
+            <Text bold dimColor>{`${rich ? 'Time' : 'TIME'} · ${duration(d.run.ms)}${d.run.runs > 1 ? ` · ${d.run.runs} runs` : ''}`}</Text>
             {rich && <Svg alt="time split" height={6} source={splitSvg(p.split, 1000)} />}
             <Box flexDirection="row" columnGap={2} flexWrap="wrap">
               {p.split.map((s: any) => <Text key={`sp-${s.phase}`} color={SPLIT_TONE[s.phase]}>{`${s.phase} ${duration(s.ms)}`}</Text>)}

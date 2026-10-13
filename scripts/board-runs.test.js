@@ -63,5 +63,29 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(other.phases.code, 3 * min);
   assert.strictEqual(other.phases.review, 0);
 
+  // A feature's runs add up: a check re-run after the manual checks must not replace the build.
+  {
+    const build = { id: 'cam', command: 'pull', startedAt: 0, endedAt: 960000, ms: 960000, status: 'needs-human',
+      tokens: { in: 500000, out: 40000, cache: 9000 }, gates: { runs: 3, ms: 200000, red: 1 },
+      phases: { plan: 120000, code: 600000, review: 180000, close: 60000 } };
+    const check = { id: 'cam', command: 'pull', startedAt: 5000000, endedAt: 5120000, ms: 120000, status: 'done',
+      tokens: { in: 30000, out: 2000, cache: 0 }, gates: { runs: 1, ms: 40000, red: 0 },
+      phases: { plan: 0, code: 0, review: 0, close: 120000 } };
+    const other = { id: 'x', command: 'shot', startedAt: 100, endedAt: 200, ms: 100, status: 'done', tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 0, ms: 0, red: 0 } };
+    const merged = r.mergeRuns([build, other, check]);
+    assert.deepStrictEqual([...merged.keys()], ['x', 'cam'], 'one entry per feature, ordered by its last run');
+    const cam = merged.get('cam');
+    assert.deepStrictEqual(
+      [cam.runs, cam.ms, cam.status, cam.startedAt, cam.endedAt, cam.tokens, cam.gates, cam.phases],
+      [2, 1080000, 'done', 0, 5120000, { in: 530000, out: 42000, cache: 9000 }, { runs: 4, ms: 240000, red: 1 }, { plan: 120000, code: 600000, review: 180000, close: 180000 }],
+    );
+    assert.deepStrictEqual(r.splitOf(cam).map((s) => [s.phase, s.ms]), [['plan', 120000], ['code', 600000], ['review', 180000], ['close', 180000]]);
+    assert.strictEqual(merged.get('x').runs, 1);
+    assert.strictEqual(merged.get('x').phases, undefined, 'a run recorded before phases existed stays without a split');
+    // One unmeasured run among measured ones: the split is of what was measured, the time is all of it.
+    const mixed = r.mergeRuns([{ ...other, id: 'cam' }, check]).get('cam');
+    assert.deepStrictEqual([mixed.ms, mixed.phases.close], [120100, 120000]);
+  }
+
   console.log('board-runs.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

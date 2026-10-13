@@ -518,6 +518,22 @@ const shown = (v) => JSON.stringify(v);
     ]);
   }
 
+  // A check re-run adds to the build's numbers instead of replacing them.
+  {
+    const rows = [
+      { flight: '', id: 'cam', title: 'C', tier: 'normal', plan: '', commit: '', touched: [], status: 'done', reason: '' },
+      { flight: '', id: 'next', title: 'N', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' },
+    ];
+    const board = { ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } };
+    const run =(startedAt, ms, phases) => ({ id: 'cam', command: 'pull', startedAt, endedAt: startedAt + ms, ms, status: 'done', tokens: { in: 10, out: 1, cache: 0 }, gates: { runs: 1, ms: 5, red: 0 }, phases });
+    const runs = [run(0, 900000, { plan: 100000, code: 600000, review: 150000, close: 50000 }), run(2000000, 60000, { plan: 0, code: 0, review: 0, close: 60000 })];
+    const v = m.view(board, null, 0, false, { runs });
+    assert.deepStrictEqual([v.done.rows[0].run.ms, v.done.rows[0].run.runs], [960000, 2], 'the Done row shows both runs');
+    const p = m.view(board, null, 0, false, { runs, page: { kind: 'feature', id: 'cam' } }).page;
+    assert.deepStrictEqual(p.split.map((s) => [s.phase, s.ms]), [['plan', 100000], ['code', 600000], ['review', 150000], ['close', 110000]]);
+    assert.strictEqual(p.details.run.runs, 2);
+  }
+
   // parseRoadmap reads Files touched as a list; `—` is none.
   {
     const text = '| Feature | Title | Status | Files touched | Commit |\n|---|---|---|---|---|\n| a | A | done | pubspec.yaml, lib/data/, test/ | abc |\n| b | B | planned | — | — |\n';
