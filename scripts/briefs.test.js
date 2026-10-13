@@ -89,7 +89,8 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
 // deliberately changes the design proves nothing and blocks the change. That rule kept being
 // re-derived wrong, so it is spelled out rather than hinted at — raise this only for another like it.
 // ~590 after the domain rule: a confirmed domain entry binds like a house rule, and every role
-// has to know it — raise this only for another rule every role needs.
+// has to know it — raise this only for another rule every role needs. 614 after the conflict
+// rule (2026-10-13), written short to stay under it.
 assert.ok(words(common) < 615, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
@@ -104,15 +105,19 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 // 9. Together with common.md, a dispatch is well under the 1901-word baseline.
 //    It sat at 1299 when the domain rule landed; that rule binds the implementer too, so the
 //    target moved by its 16 words (it also forbids editing a confirmed entry) and no more.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1320,
-  'an implementer dispatch must cost well under 1901 words — 1320 is the target, not the baseline');
+//    1316 when the conflict rule landed (2026-10-13): every role notes a contradicted fact by
+//    script and stops on a binding one in conflict — 28 words, so the target moved by 28.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1348,
+  'an implementer dispatch must cost well under 1901 words — 1348 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
 // The reviewer total moved again when it gained the `test` tag — a duty, not prose.
 // All three moved once more with the confirmed-domain rule: +16 in common.md for every role,
 // +9 in the reviewer's own `block` bucket — a rule every role must know, not prose.
-const CAPS = { 'briefs/planner.md': [450, 965], 'briefs/reviewer.md': [450, 990], 'briefs/closer.md': [400, 865],
+// And with the conflict rule (2026-10-13): +28 in common.md for every role, +7 in the
+// reviewer's `block` bucket (building on a confirmed entry in conflict).
+const CAPS = { 'briefs/planner.md': [450, 993], 'briefs/reviewer.md': [450, 1025], 'briefs/closer.md': [400, 893],
                'briefs/researcher.md': [700, 1290] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
