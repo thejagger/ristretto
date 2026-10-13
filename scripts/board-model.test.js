@@ -572,6 +572,9 @@ const shown = (v) => JSON.stringify(v);
     // Final review #5: the Commit cell is the roadmap's text, not a trusted argument.
     assert.ok(/'--end-of-options', commit\]/.test(tsx) && tsx.includes('/^[0-9a-f]{4,40}$/i.test(commit)'), 'only a hash reaches git, and never as an option');
     assert.ok(/<Box key=\{`acc-\$\{i\}`\} flexDirection="row" gap=\{1\} alignItems="flex-start">/.test(tsx), 'an acceptance mark sits on the first line');
+    // Live check 2026-10-13: the proof line truncates, so its column must be allowed to shrink
+    // below that line's width — otherwise the criterion and the proof run out of the card.
+    assert.ok(/<Box flexDirection="column" flexGrow=\{1\} flexShrink=\{1\} overflow="hidden">\s*<Text wrap="wrap">\{md\(a\.text/.test(tsx), 'an acceptance column shrinks to the card');
     for (const title of ["'Acceptance'", "'Files'", "'Review'", "'Checks'"]) assert.ok(tsx.includes(title), `a ${title} card`);
     // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
     // ("JSX element <Button key="✓"> plain is true or absent" — the facts page drew nothing).

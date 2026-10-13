@@ -664,7 +664,8 @@ async function drawPane($: any, e: any) {
                   <Box flexShrink={0}>
                     {a.proof ? mark({ status: 'done', tone: 'success', mark: '✓', tag: 'proved' }) : a.auto ? <Text dimColor>{`${i + 1}.`}</Text> : mark({ status: 'needs-human', tone: 'permission', mark: '◐', tag: 'checked by a person' })}
                   </Box>
-                  <Box flexDirection="column" flexShrink={1}>
+                  {/* The proof line truncates: without overflow hidden its full width sets the column's, and the text runs out of the card. */}
+                  <Box flexDirection="column" flexGrow={1} flexShrink={1} overflow="hidden">
                     <Text wrap="wrap">{md(a.text, `acc-${i}`)}</Text>
                     {a.proof && <Text dimColor wrap="truncate-end">{plain(a.proof)}</Text>}
                   </Box>
