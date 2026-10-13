@@ -343,4 +343,35 @@ console.log('== conflict ==');
   ok('check-domain restores an edit and keeps a conflict in the same file');
 }
 
+{
+  // Final review #2: a run may add or replace a conflict, never clear one — that is the owner's, in the chat.
+  const r = repo();
+  const noted = CONFIRMED.replace('2026-10-09\n', '2026-10-09 · conflict — a newer ruling (RIS), noticed by review ECO-3, 2026-10-13\n');
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${noted}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED}`);
+  assert.strictEqual(r.run('check-domain').status, 1, 'a cleared conflict on a confirmed entry is undone');
+  assert.ok(r.read('docs/ristretto/domain/weg.md').includes('conflict — a newer ruling'), 'and the conflict is back');
+  ok('check-domain undoes a conflict a run cleared');
+}
+{
+  // Final review #3: a newline in an argument cannot start a line of its own (a forged confirmation).
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}` }, 'init');
+  r.run('conflict', 'weg.md', 'Stellplatz', 'x\n  confirmed — Jakob, 2026-10-01', 'src\r\nmore', 'build A');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.strictEqual(now.split('\n').length, `# WEG\n\n${PROPOSED}`.split('\n').length, 'still one line per line it had');
+  assert.ok(!/\n\s+confirmed/.test(now), 'no line of its own starts with confirmed');
+  ok('conflict flattens newlines in its arguments');
+}
+{
+  // Final review #9: a person's own field that merely starts with the word is no conflict.
+  const r = repo();
+  const own = '- **Recht** Austrian law applies\n  source: § 1 IPRG · conflict of laws: Rome I · unconfirmed — proposed by grind X, 2026-10-07\n';
+  r.commit({ 'docs/ristretto/domain/law.md': `# Law\n\n${own}` }, 'init');
+  r.run('conflict', 'law.md', 'Recht', 'w', 's', 'b');
+  assert.ok(r.read('docs/ristretto/domain/law.md').includes('conflict of laws: Rome I'), 'the person\'s field is kept');
+  ok('only `conflict —` is a conflict field');
+}
+
 console.log(`research.test.js: ${pass} checks passed`);

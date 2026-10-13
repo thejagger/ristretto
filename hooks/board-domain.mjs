@@ -9,7 +9,7 @@ export const EMPTY_DOMAIN = { tree: [] };
 const TITLE = /^- \*\*(.+?)\*\*\s*(.*)$/;
 const CONFIRMED = /^confirmed\b/i;
 const UNCONFIRMED = /^unconfirmed\b/i;
-const CONFLICT = /^conflict\b/i;
+const CONFLICT = /^conflict\s*[—–-]/i;
 
 // `conflict — <what> (<source>), noticed by <who>, <date>`, as research.js conflict writes it.
 function conflictOf(field) {

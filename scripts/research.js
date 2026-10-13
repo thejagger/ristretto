@@ -130,7 +130,10 @@ function blocks(text) {
 const isConfirmed = (b) => b.startsWith('- ')
   && b.split('\n').some((line) => line.split('·').some((field) => /^confirmed\b/i.test(field.trim())));
 
-const CONFLICT = /^conflict\b/i;
+// `conflict — …` as this script writes it; a person's own field that starts with the word
+// (`conflict of laws: …`) is not one.
+const CONFLICT = /^conflict\s*[—–-]/i;
+const noted = (b) => b.split('\n').some((line) => line.split('·').some((f, j) => j > 0 && CONFLICT.test(f.trim())));
 // An entry without its conflict fields: what check-domain compares, so a conflict noted on a
 // confirmed entry is not an edit of the person's signature.
 const bare = (b) => b.split('\n')
@@ -164,7 +167,9 @@ function conflict(file, title, what, source, who) {
   for (let i = starts[0]; i < end; i++) {
     lines[i] = lines[i].split('·').filter((f, j) => j === 0 || !CONFLICT.test(f.trim())).join('·').trimEnd();
   }
-  const clean = (v) => String(v || '—').replace(/·/g, ',').trim();
+  // One field on one line: a newline would start a line of its own, and could carry a forged
+  // `confirmed` marker into the entry.
+  const clean = (v) => String(v || '—').replace(/[\r\n]+/g, ' ').replace(/·/g, ',').trim();
   lines[end - 1] = `${lines[end - 1]} · conflict — ${clean(what)} (${clean(source)}), noticed by ${clean(who)}, ${today()}`;
   fs.writeFileSync(p, lines.join(eol));
   console.log(`research: conflict noted on ${path.basename(file)}: ${title}`);
@@ -201,7 +206,12 @@ function checkDomain({ removeForged = true } = {}) {
     const before = fs.existsSync(snap) ? blocks(fs.readFileSync(snap, 'utf8')) : [];
     const current = path.join(domainDir, f);
     const now = fs.existsSync(current) ? blocks(fs.readFileSync(current, 'utf8')) : [];
-    const missing = before.filter(isConfirmed).filter((b) => !now.some((n) => same(n, b)));
+    // A run may add or replace a conflict on a confirmed entry, never clear one: clearing is the
+    // owner's, in the chat.
+    const missing = before.filter(isConfirmed).filter((b) => {
+      const n = now.find((x) => same(x, b));
+      return !n || (noted(b) && !noted(n));
+    });
     // A confirmation is a person's signature. One the run wrote itself is a forgery.
     const forged = removeForged ? now.filter((b) => isConfirmed(b) && !before.some((x) => same(x, b))) : [];
     if (!missing.length && !forged.length) continue;

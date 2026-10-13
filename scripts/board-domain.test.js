@@ -55,6 +55,9 @@ const { pathToFileURL } = require('url');
   assert.ok(!withConflict[0].by.includes('conflict'), 'the marker stays the marker');
   assert.strictEqual(withConflict[1].conflict, null);
   assert.deepStrictEqual(d.EMPTY_DOMAIN, { tree: [] });
+  // Final review #9: a field that only starts with the word is no conflict.
+  const law = '- **Recht** Austrian law applies\n  source: § 1 IPRG · conflict of laws: Rome I · unconfirmed — proposed by grind X, 2026-10-07\n';
+  assert.strictEqual(d.entriesOf('law.md', law)[0].conflict, null);
 
   console.log('board-domain.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
