@@ -35,7 +35,7 @@ export function markerState(owner, idleMs, sessionId) {
 function statusOf(cell) {
   const token = (/^[a-z-]+/.exec(cell) || [''])[0];
   const status = STATUSES.includes(token) ? token : 'unknown';
-  const reason = status === 'unknown' ? cell : cell.slice(token.length).replace(/^\s*[—–-]\s*/, '').trim();
+  const reason = status === 'unknown' ? cell : cell.slice(token.length).replace(/^\s*[:—–-]\s*/, '').trim();
   return { status, reason };
 }
 
@@ -244,9 +244,10 @@ export function waitsOn(reason) {
 const SOLVE = (id) => ({ label: 'solve', command: 'ristretto:prep', args: `${id} deep`, chat: true });
 const SOLVE_FACTS = { label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true };
 
-// A feature that stopped on a fact in conflict says so as `blocked: domain/<file>: …`.
+// A feature that stopped on a fact in conflict names it as `domain/<file>.md: …` — first in the
+// reason (`blocked: domain/…`, common.md) or after the ID (`blocked — <ID> — domain/…`).
 export function factOf(reason) {
-  return (/^\s*(?:blocked:\s*)?domain\/([^:\s]+):/i.exec(reason || '') || [])[1] ?? null;
+  return (/(?:^|[\s—–-])domain\/([^:\s]+\.md):/i.exec(reason || '') || [])[1] ?? null;
 }
 
 // One glyph and one tone per status. Tones are Claude theme keys, so the pane follows the

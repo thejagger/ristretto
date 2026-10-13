@@ -499,6 +499,25 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'a commit not read yet shows the plan meanwhile');
   }
 
+  // Final review #4: a feature blocked on a fact is recognised through the roadmap, whichever
+  // shape the agent wrote — `blocked: domain/…` (common.md) or `blocked — <ID> — domain/…`.
+  {
+    const text = [
+      '| Feature | Title | Status |', '|---|---|---|',
+      '| a | A | blocked: domain/adsb-lol.md: Rate limits is in conflict |',
+      '| b | B | blocked — SPOT-3 — domain/sensors.md: trueNorth is in conflict |',
+      '| c | C | blocked: waiting on Jakob: the pass mark |',
+    ].join('\n');
+    const rows = m.parseRoadmap(text).rows;
+    assert.deepStrictEqual(rows.map((r) => r.reason), ['domain/adsb-lol.md: Rate limits is in conflict', 'SPOT-3 — domain/sensors.md: trueNorth is in conflict', 'waiting on Jakob: the pass mark'], 'a leading ":" is dropped like a dash');
+    assert.deepStrictEqual(rows.map((r) => m.factOf(r.reason)), ['adsb-lol.md', 'sensors.md', null]);
+    const v = m.view({ ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } }, null, 0, false, {});
+    const shownRows = v.sections.find((s) => s.key === 'needs-you').groups.flatMap((g) => g.rows);
+    assert.deepStrictEqual(shownRows.map((r) => [r.detail, r.action.args]), [
+      ['waits on domain/adsb-lol.md', 'facts'], ['waits on domain/sensors.md', 'facts'], ['waits on Jakob', 'c deep'],
+    ]);
+  }
+
   // parseRoadmap reads Files touched as a list; `—` is none.
   {
     const text = '| Feature | Title | Status | Files touched | Commit |\n|---|---|---|---|---|\n| a | A | done | pubspec.yaml, lib/data/, test/ | abc |\n| b | B | planned | — | — |\n';
