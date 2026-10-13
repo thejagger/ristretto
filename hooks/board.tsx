@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardDomain, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRun } from '../types'
 import { EMPTY_BOARD, bandOf, bar, duration, fold, formatOf, inline, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
-import { EMPTY_DOMAIN, addArgs, commitArgs, committed, confirmIn, entriesOf, lockOf, markOlder, pendingOf, removeIn, restoreIn, signatureOf } from './board-domain.mjs'
+import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
 import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
 import { addGate, addTokens, count, endRun, keep, markPhase, track } from './board-runs.mjs'
@@ -31,7 +31,6 @@ const showDone = atom({ plugin: 'ristretto', key: 'showDone' } as const, false)
 const tick = atom({ plugin: 'ristretto', key: 'tick' } as const, 0)
 const page = atom({ plugin: 'ristretto', key: 'page' } as const, null as BoardPage | null)
 const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAIN as BoardDomain)
-const showConfirmed = atom({ plugin: 'ristretto', key: 'showConfirmed' } as const, false)
 // The one fact opened to its full text, as `<file>\u0000<title>`.
 // Whether the board's pane is open: the band's open/close follows it.
 const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
@@ -100,117 +99,22 @@ async function refreshBoard($: EngineInterface) {
 
 const DOMAIN = 'docs/ristretto/domain'
 let domainSig = ''
-let domainAt = 0
 
-// Domain facts as the working tree has them and as HEAD has them; what differs is pending.
-// Re-read when a file changes, and every 30 s for a commit made elsewhere. Whether the facts
-// may change now is read every time, so the buttons follow a run starting or ending at once.
+// Domain facts as the files say them, re-read when a file changes. The board only shows them:
+// a fact becomes binding, or a conflict is settled, in the chat (prep).
 async function refreshDomain($: EngineInterface, force = false) {
   try {
-    const root = await $.session.root()
-    const dir = `${root}/${DOMAIN}`
-    const locked = (await lockReason($)) ?? ''
+    const dir = `${await $.session.root()}/${DOMAIN}`
     const listed = (await $.fs.exists(dir)) ? (await $.fs.list(dir)).filter(e => e.kind === 'file' && e.name.endsWith('.md')) : []
-    const now = await $.clock.now()
     const sig = listed.map(e => `${e.name}:${e.mtimeMs}`).sort().join('|')
-    if (!force && sig === domainSig && now - domainAt < 30000) {
-      if ((await read($, domain)).locked !== locked) await update($, domain, d => ({ ...d, locked }))
-      return
-    }
+    if (!force && sig === domainSig) return
     domainSig = sig
-    domainAt = now
     const tree = []
     for (const e of listed) tree.push(...entriesOf(e.name, String(await $.fs.read(`${dir}/${e.name}`))))
-    const git = (args: string[]) => $.process.run(['git', ...args], { cwd: root })
-    const ls = await git(['ls-tree', '--name-only', 'HEAD', `${DOMAIN}/`])
-    const names = ls.exitCode === 0 ? ls.stdout.split(/\r?\n/).map(l => l.trim().split('/').pop() || '').filter(n => n.endsWith('.md')) : []
-    const head = []
-    for (const name of names) {
-      const shown = await git(['show', `HEAD:${DOMAIN}/${name}`])
-      if (shown.exitCode === 0) head.push(...entriesOf(name, shown.stdout))
-    }
-    await update($, domain, d => ({ ...d, tree: markOlder(tree), head, pending: pendingOf(head, tree), locked }))
+    await update($, domain, () => ({ tree: markOlder(tree) }))
   } catch {
     // The next poll tries again.
   }
-}
-
-// Why the facts cannot change now, or null: a pull or brew is armed (a dirty domain file would
-// read as a subagent that died mid-edit), or a research run is in flight (check-domain would undo
-// a confirmation made now). A marker idle for a day is a leftover, as the board reads it anyway.
-async function lockReason($: EngineInterface) {
-  const root = await $.session.root()
-  const marker = `${root}/.ristretto/pulling`
-  const markerIdleMs = (await $.fs.exists(marker)) ? (await $.clock.now()) - (await $.fs.stat(marker)).mtimeMs : null
-  return lockOf({ markerIdleMs, snapshot: await $.fs.exists(`${root}/.ristretto/domain-snapshot`) })
-}
-
-async function tell($: EngineInterface, notice: string) {
-  await update($, domain, d => ({ ...d, notice }))
-}
-
-// One click on one fact. The file is re-read now, so an entry that changed underneath is
-// edited as it stands or, when gone, left alone and said so.
-async function changeFact($: EngineInterface, file: string, title: string, how: 'confirm' | 'remove' | 'undo') {
-  try {
-    const lock = await lockReason($)
-    if (lock) {
-      await tell($, lock)
-    } else if (how === 'remove' && !committed((await read($, domain)).head, file, title)) {
-      // Removing a fact git has never seen could not be undone: commit it first.
-      await tell($, `"${title}" is new from research — commit it first, then remove it`)
-    } else {
-      const root = await $.session.root()
-      const path = `${root}/${DOMAIN}/${file}`
-      const text = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
-      let next: string | null = null
-      if (how === 'confirm') {
-        const who = await $.process.run(['git', 'config', 'user.name'], { cwd: root })
-        const name = who.exitCode === 0 ? who.stdout.trim() : ''
-        if (!name) {
-          await tell($, 'set git user.name first — it is the signature on a confirmed fact')
-          return
-        }
-        next = confirmIn(text, title, signatureOf(name, await $.clock.now()))
-      } else if (how === 'remove') {
-        next = removeIn(text, title)
-      } else {
-        const shown = await $.process.run(['git', 'show', `HEAD:${DOMAIN}/${file}`], { cwd: root })
-        next = restoreIn(text, shown.exitCode === 0 ? shown.stdout : '', title)
-      }
-      if (next === null) await tell($, `"${title}" changed underneath — shown as it is now`)
-      else {
-        await $.fs.write(path, next)
-        await tell($, '')
-      }
-    }
-  } catch (err) {
-    await tell($, String(err).slice(0, 120))
-  }
-  await refreshDomain($, true)
-}
-
-async function commitFacts($: EngineInterface) {
-  try {
-    const lock = await lockReason($)
-    if (lock) {
-      await tell($, lock)
-    } else {
-      const pending = (await read($, domain)).pending
-      if (pending.length > 0) {
-        const root = await $.session.root()
-        // A fact file research created is untracked; only the changed domain files are staged.
-        const added = await $.process.run(['git', ...addArgs(pending)], { cwd: root })
-        const ran = added.exitCode === 0 ? await $.process.run(['git', ...commitArgs(pending)], { cwd: root }) : added
-        await tell($, ran.exitCode === 0
-          ? 'committed — the repo’s own commit hooks do not run from the board'
-          : `commit failed: ${(ran.stderr || ran.stdout).trim().slice(0, 120)}`)
-      }
-    }
-  } catch (err) {
-    await tell($, String(err).slice(0, 120))
-  }
-  await refreshDomain($, true)
 }
 
 async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
@@ -363,6 +267,9 @@ function iconSvg(status: string) {
     'needs-review': `<path d="M7 1.3l6 11.2H1z" fill="${HUE.warning}" stroke="${HUE.warning}" stroke-width="1" stroke-linejoin="round"/><rect x="6.35" y="4.8" width="1.3" height="4" rx=".5" fill="#fff"/><circle cx="7" cy="10.4" r=".8" fill="#fff"/>`,
     'needs-human': `<circle cx="7" cy="4.4" r="2.6" fill="${HUE.permission}"/><path d="M1.8 13c0-3 2.3-4.8 5.2-4.8s5.2 1.8 5.2 4.8z" fill="${HUE.permission}"/>`,
     done: `<circle cx="7" cy="7" r="6" fill="${HUE.success}"/><path d="M4.3 7.2l1.9 1.9 3.6-3.9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+    // Domain facts: an open book, so the person icon only ever means "you have something to do".
+    facts: `<path d="M7 3.2C5.6 2.2 3.6 1.9 1.6 2.2v8.6c2-.3 4 0 5.4 1 1.4-1 3.4-1.3 5.4-1V2.2c-2-.3-4 0-5.4 1z" fill="none" stroke="${HUE.inactive}" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 3.2v8.6" stroke="${HUE.inactive}" stroke-width="1.2"/>`,
+    'fact-conflict': `<path d="M7 3.2C5.6 2.2 3.6 1.9 1.6 2.2v8.6c2-.3 4 0 5.4 1 1.4-1 3.4-1.3 5.4-1V2.2c-2-.3-4 0-5.4 1z" fill="none" stroke="${HUE.warning}" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 3.2v8.6" stroke="${HUE.warning}" stroke-width="1.2"/><circle cx="11" cy="3" r="2.6" fill="${HUE.warning}"/><rect x="10.45" y="1.4" width="1.1" height="2" rx=".4" fill="#fff"/><circle cx="11" cy="4.3" r=".55" fill="#fff"/>`,
   }
   const shape = shapes[status] ?? `<circle cx="7" cy="7" r="5" fill="none" stroke="${HUE.inactive}" stroke-width="1.4"/>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">${shape}</svg>`
@@ -744,62 +651,40 @@ async function drawPane($: any, e: any) {
 
     if (v.kind === 'page' && v.page.kind === 'domain') {
       const p = v.page
-      const showAll = await read($, showConfirmed)
       const opened = await read($, openFact)
-      const open = !p.locked
       return (
         <Box flexDirection="column" gap={1}>
           {back(p.back)}
           <Box flexDirection="column">
             <Text bold>Domain facts</Text>
-            <Text dimColor wrap="wrap">{`${p.open} to confirm · confirmed facts bind the builder and the reviewer`}</Text>
+            <Text dimColor wrap="wrap">{`${p.n} facts · ${p.binding} binding${p.conflicts ? ` · ${p.conflicts} in conflict` : ''} · binding facts hold the builder and the reviewer; the rest is context`}</Text>
           </Box>
-          {p.locked !== '' && <Text color="warning" wrap="wrap">{p.locked}</Text>}
-          {p.notice !== '' && <Text dimColor wrap="wrap">{p.notice}</Text>}
           {p.groups.map((g: any) => (
             <Box key={`df-${g.file}`} flexDirection="column" gap={rows}>
-              <Text dimColor>{`${g.name} · ${g.open}`}</Text>
+              <Text dimColor>{`${g.name} · ${g.rows.length}`}</Text>
               {g.rows.map((f: any) => {
                 const id = `${g.file}\u0000${f.title}`
+                const toggle = () => void update($, openFact, (o: string | null) => (o === id ? null : id))
                 return (
                   <Box key={`fact-${id}`} flexDirection="column">
                     <Box flexDirection="row" gap={1} alignItems="center">
-                      {act(`open-${id}`, opened === id ? '▾' : '▸', () => void update($, openFact, (o: string | null) => (o === id ? null : id)), true)}
-                      {mark({ status: f.decided === 'confirmed' ? 'done' : f.decided === 'removed' ? 'blocked' : 'needs-human', tone: 'permission', mark: f.decided ? '✓' : '◐' })}
-                      <Box flexShrink={0}>{canPress ? held(`title-${id}`, `${f.title}|${f.decided ?? ''}`, () => void update($, openFact, (o: string | null) => (o === id ? null : id)), onPress => <Button key={`title-${id}`} plain onPress={onPress}><Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text></Button>) : <Text bold={!f.decided} dimColor={!!f.decided}>{f.title}</Text>}</Box>
-                      {f.older && !f.decided && chip(`old-${id}`, 'older version', 'warning')}
-                      <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{f.decided ?? plain(f.text)}</Text></Box>
-                      {open && !f.decided && act(`ok-${id}`, '✓', () => void changeFact($, g.file, f.title, 'confirm'))}
-                      {open && !f.decided && act(`rm-${id}`, '✕', () => void changeFact($, g.file, f.title, 'remove'))}
-                      {open && f.decided && act(`undo-${id}`, 'undo', () => void changeFact($, g.file, f.title, 'undo'), true)}
+                      {rich ? <Svg alt={f.conflict ? 'in conflict' : 'fact'} width={14} height={14} source={iconSvg(f.conflict ? 'fact-conflict' : 'facts')} /> : <Text color={f.conflict ? 'warning' : 'inactive'}>{f.conflict ? '!' : '·'}</Text>}
+                      <Box flexShrink={0}>{canPress ? held(`title-${id}`, `${f.title}|${opened === id}`, toggle, onPress => <Button key={`title-${id}`} plain onPress={onPress}><Text bold>{f.title}</Text></Button>) : <Text bold>{f.title}</Text>}</Box>
+                      {f.state === 'confirmed' && chip(`bind-${id}`, 'binding', 'success')}
+                      {f.older && chip(`old-${id}`, 'older version', 'warning')}
+                      <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{f.conflict ? `conflict: ${f.conflict.what}` : plain(f.text)}</Text></Box>
                     </Box>
-                    {opened === id && card(`full-${id}`, 'permission', <>
+                    {opened === id && card(`full-${id}`, f.conflict ? 'warning' : 'inactive', <>
                       <Text wrap="wrap">{md(f.text, `full-${id}`)}</Text>
                       {f.source !== '' && <Text dimColor wrap="wrap">{f.source}</Text>}
                       {f.by !== '' && <Text dimColor wrap="wrap">{f.by}</Text>}
+                      {f.conflict && <Text color="warning" wrap="wrap">{`conflict: ${f.conflict.what}${f.conflict.source ? ` (${f.conflict.source})` : ''}${f.conflict.by ? `, noticed by ${f.conflict.by}` : ''}`}</Text>}
                     </>)}
                   </Box>
                 )
               })}
             </Box>
           ))}
-          {p.pending.confirmed + p.pending.removed > 0 && (
-            <Box flexDirection="row" gap={1} alignItems="center" borderStyle="round" borderColor="permission" paddingX={1} paddingY={rich ? 1 : 0}>
-              <Box flexGrow={1} flexShrink={1}><Text wrap="wrap">{`${p.pending.confirmed} confirmed, ${p.pending.removed} removed — not committed yet`}</Text></Box>
-              {open && act('commit-facts', 'commit', () => void commitFacts($))}
-            </Box>
-          )}
-          {p.confirmed.length > 0 && (
-            <Box flexDirection="column" gap={rows}>
-              {act('show-confirmed', `${showAll ? 'hide' : 'show'} ${p.confirmed.length} confirmed`, () => void update($, showConfirmed, (x: boolean) => !x), true)}
-              {showAll && p.confirmed.map((f: any) => (
-                <Box key={`cf-${f.file}-${f.title}`} flexDirection="row" gap={1}>
-                  {mark({ status: 'done', tone: 'success', mark: '✓' })}
-                  <Box flexShrink={1}><Text wrap="wrap"><Text bold>{f.title}</Text>{` ${f.text}`}</Text></Box>
-                </Box>
-              ))}
-            </Box>
-          )}
         </Box>
       )
     }
@@ -847,6 +732,17 @@ async function drawPane($: any, e: any) {
               ) : chip(c.text, c.text, c.tone),
             )}
           </Box>
+          {v.summary.facts && (
+            <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+              <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>
+                {rich ? <Svg alt="domain facts" width={14} height={14} source={iconSvg('facts')} /> : <Text dimColor>📖</Text>}
+                {canPress
+                  ? held('name-facts', `${v.summary.facts.n}|${v.summary.facts.binding}`, () => void goTo({ kind: 'domain' }), onPress => <Button key="name-facts" plain onPress={onPress}><Text dimColor>{`${v.summary.facts.n} domain facts · ${v.summary.facts.binding} binding`}</Text></Button>)
+                  : <Text dimColor>{`${v.summary.facts.n} domain facts · ${v.summary.facts.binding} binding`}</Text>}
+              </Box>
+              {more({ kind: 'domain' })}
+            </Box>
+          )}
         </Box>
 
         {v.notices.map((n: any) => <Text key={n.key} dimColor wrap="truncate-end">⚙ {n.text}</Text>)}
@@ -894,16 +790,14 @@ async function drawPane($: any, e: any) {
                 {group.rows.map((r: any) => row(r))}
               </Box>
             ))}
-            {section.domain && (
-              <Box key="facts" flexDirection="row" gap={1} alignItems="center">
-                {mark({ status: 'needs-human', tone: 'permission', mark: '◐' })}
-                <Box flexShrink={0}>{canPress ? held('name-facts', 'Domain facts', () => void goTo({ kind: 'domain' }), onPress => <Button key="name-facts" plain onPress={onPress}><Text bold>Domain facts</Text></Button>) : <Text bold>Domain facts</Text>}</Box>
-                <Box flexGrow={1} flexShrink={1} overflow="hidden">
-                  <Text dimColor wrap="truncate-end">{`${section.domain.n} to confirm${section.domain.pending > 0 ? ` · ${section.domain.pending} not committed` : ''}`}</Text>
-                </Box>
-                {more({ kind: 'domain' })}
+            {(section.conflicts ?? []).map((c: any) => (
+              <Box key={c.key} flexDirection="row" gap={1} alignItems="center">
+                {rich ? <Svg alt="fact in conflict" width={14} height={14} source={iconSvg('fact-conflict')} /> : <Text color="warning">!</Text>}
+                <Box flexShrink={0}>{canPress ? held(`name-${c.key}`, c.title, () => void goTo({ kind: 'domain' }), onPress => <Button key={`name-${c.key}`} plain onPress={onPress}><Text bold>{c.title}</Text></Button>) : <Text bold>{c.title}</Text>}</Box>
+                <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text dimColor wrap="truncate-end">{`conflict: ${c.what}`}</Text></Box>
+                {c.action && press(c.action)}
               </Box>
-            )}
+            ))}
           </Box>
         ))}
 

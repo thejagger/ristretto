@@ -55,9 +55,7 @@ declare module 'claude-code' {
       page: BoardPage | null
       run: BoardRun | null
       runs: BoardRecord[]
-      domain: BoardDomain
-      showConfirmed: boolean
-      openFact: string | null
+      domain: BoardDomain      openFact: string | null
     }
   }
 }

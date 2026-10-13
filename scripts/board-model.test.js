@@ -504,8 +504,12 @@ const shown = (v) => JSON.stringify(v);
     // The pane never draws an input field, and acts on domain files only through board-domain.
     assert.ok(!/\bInput\b/.test(tsx), 'no input fields in the pane');
     assert.ok(tsx.includes("from './board-domain.mjs'"), 'domain edits come from board-domain.mjs');
-    assert.ok(/commitArgs\(/.test(tsx) && !/'add'/.test(tsx), 'commits with commitArgs, never git add');
-    assert.ok(tsx.includes('.ristretto/domain-snapshot'), 'locked while a research run is in flight');
+    assert.ok(!/\b(commitArgs|addArgs|confirmIn|removeIn|restoreIn|lockOf|signatureOf|pendingOf)\b/.test(tsx), 'the board confirms, removes and commits nothing');
+    const rd = tsx.slice(tsx.indexOf('async function refreshDomain'));
+    assert.ok(!/'git'/.test(rd.slice(0, rd.indexOf('\nasync function', 10))), 'facts are read from the files alone');
+    assert.ok(/\bfacts: `<path/.test(tsx) && tsx.includes("'fact-conflict': `<path"), 'facts have their own icon');
+    assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
+    assert.ok(tsx.includes('section.conflicts'), 'conflict rows are drawn');
     // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
     // ("JSX element <Button key="✓"> plain is true or absent" — the facts page drew nothing).
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
