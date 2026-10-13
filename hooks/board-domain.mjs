@@ -4,11 +4,19 @@
 // is the bold run that opens it: `- **<title>** <text>`. A person confirms by the board's click;
 // the marker then reads `confirmed — <name>, <date> (<what the proposal said>)`.
 
-export const EMPTY_DOMAIN = { tree: [], head: [], pending: [], locked: '', notice: '' };
+export const EMPTY_DOMAIN = { tree: [] };
 
 const TITLE = /^- \*\*(.+?)\*\*\s*(.*)$/;
 const CONFIRMED = /^confirmed\b/i;
 const UNCONFIRMED = /^unconfirmed\b/i;
+const CONFLICT = /^conflict\b/i;
+
+// `conflict — <what> (<source>), noticed by <who>, <date>`, as research.js conflict writes it.
+function conflictOf(field) {
+  const rest = field.replace(/^conflict\s*[—–-]?\s*/i, '');
+  const m = /^(.*)\s\(([^()]*)\),\s*noticed by\s+(.+)$/.exec(rest);
+  return m ? { what: m[1].trim(), source: m[2].trim(), by: m[3].trim() } : { what: rest.trim(), source: '', by: '' };
+}
 
 function split(text) {
   const s = String(text);
@@ -41,7 +49,9 @@ export function entriesOf(file, text) {
     const head = TITLE.exec(lines[start]);
     if (!head) return [];
     const body = lines.slice(start + 1, end).map((l) => l.trim());
-    const all = [lines[start], ...body].flatMap(fields);
+    const every = [lines[start], ...body].flatMap(fields);
+    const noted = every.find((f) => CONFLICT.test(f));
+    const all = every.filter((f) => !CONFLICT.test(f));
     const marker = all.find((f) => CONFIRMED.test(f) || UNCONFIRMED.test(f)) || '';
     const src = body.find((l) => /^source:/i.test(l));
     const source = src
@@ -50,10 +60,11 @@ export function entriesOf(file, text) {
     return [{
       file,
       title: head[1],
-      text: [head[2], ...body.filter((l) => !/^source:/i.test(l))].join(' ').trim(),
+      text: [head[2].split('·')[0].trim(), ...body.filter((l) => !/^source:/i.test(l))].join(' ').trim(),
       source,
       state: all.some((f) => CONFIRMED.test(f)) ? 'confirmed' : 'unconfirmed',
       by: marker.replace(/^(un)?confirmed\s*[—–-]?\s*/i, ''),
+      conflict: noted ? conflictOf(noted) : null,
     }];
   });
 }

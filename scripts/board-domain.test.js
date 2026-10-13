@@ -109,5 +109,16 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(d.lockOf({ markerIdleMs: day + 1, snapshot: false }), null, 'a marker idle for a day is a leftover');
   assert.strictEqual(d.lockOf({ markerIdleMs: null, snapshot: true }), 'a research run is in flight (or did not finish — the next research run checks it)');
 
+  // A conflict noted by research.js conflict: parsed apart, and the fact keeps its own state.
+  const noted = mail.replace('read 2026-10-08 · unconfirmed — proposed by prep lnw-auto, 2026-10-08\n- **Reply',
+    'read 2026-10-08 · unconfirmed — proposed by prep lnw-auto, 2026-10-08 · conflict — Exchange drops In-Reply-To on auto-replies (live test, 2026-10-13), noticed by review lnw-auto-reply, 2026-10-13\n- **Reply');
+  assert.notStrictEqual(noted, mail, 'the fixture took the conflict');
+  const withConflict = d.entriesOf('mail.md', noted);
+  assert.deepStrictEqual(withConflict[0].conflict, { what: 'Exchange drops In-Reply-To on auto-replies', source: 'live test, 2026-10-13', by: 'review lnw-auto-reply, 2026-10-13' });
+  assert.strictEqual(withConflict[0].state, 'unconfirmed');
+  assert.ok(!withConflict[0].by.includes('conflict'), 'the marker stays the marker');
+  assert.strictEqual(withConflict[1].conflict, null);
+  assert.deepStrictEqual(d.EMPTY_DOMAIN, { tree: [] });
+
   console.log('board-domain.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

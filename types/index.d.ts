@@ -1,5 +1,5 @@
 export type BoardStatus = 'planned' | 'in-progress' | 'blocked' | 'needs-human' | 'needs-review' | 'done' | 'unknown'
-export type BoardRow = { flight: string; id: string; title: string; tier: 'easy' | 'normal'; plan: string; commit: string; status: BoardStatus; reason: string }
+export type BoardRow = { flight: string; id: string; title: string; tier: 'easy' | 'normal'; plan: string; commit: string; touched: string[]; status: BoardStatus; reason: string }
 export type Board = {
   name: string
   rows: BoardRow[]
@@ -40,9 +40,9 @@ export type BoardLive = {
   armed: boolean
 }
 export type BoardPage = { kind: 'feature'; id: string } | { kind: 'domain' }
-export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean }
-export type BoardPending = { file: string; title: string; change: 'confirmed' | 'removed'; entry: BoardFact }
-export type BoardDomain = { tree: BoardFact[]; head: BoardFact[]; pending: BoardPending[]; locked: string; notice: string }
+export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean; conflict: { what: string; source: string; by: string } | null }
+export type BoardDomain = { tree: BoardFact[] }
+export type BoardFile = { path: string; add: number; del: number; bin: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

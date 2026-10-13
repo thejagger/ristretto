@@ -3,6 +3,7 @@
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
 import { splitOf } from './board-runs.mjs';
+import { OPEN_UP_TO, plannedOf, rowsOf, treeOf } from './board-files.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
@@ -53,6 +54,7 @@ export function parseRoadmap(text) {
   const head = cells(lines[at]).map((c) => c.toLowerCase());
   const col = (...names) => head.findIndex((h) => names.includes(h));
   const [iFlight, iId, iTitle, iTier, iStatus, iPlan, iCommit] = [col('flight'), col('feature', 'id'), col('title'), col('tier'), col('status'), col('plan'), col('commit')];
+  const iTouched = col('files touched', 'touched');
 
   const rows = [];
   let end = lines.length;
@@ -68,6 +70,7 @@ export function parseRoadmap(text) {
       tier: iTier >= 0 && /^easy\b/.test(row[iTier] || '') ? 'easy' : 'normal',
       plan: planOf(iPlan < 0 ? '' : row[iPlan] || ''),
       commit: iCommit < 0 ? '' : (row[iCommit] || '').replace(/`/g, '').replace(/^[—–-]$/, '').trim(),
+      touched: iTouched < 0 ? [] : (row[iTouched] || '').replace(/`/g, '').split(/,\s*/).map((s) => s.trim()).filter((s) => s && !/^[—–-]$/.test(s)),
       ...statusOf(iStatus < 0 ? '' : row[iStatus] || ''),
     });
   }
@@ -239,6 +242,12 @@ export function waitsOn(reason) {
 }
 
 const SOLVE = (id) => ({ label: 'solve', command: 'ristretto:prep', args: `${id} deep`, chat: true });
+const SOLVE_FACTS = { label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true };
+
+// A feature that stopped on a fact in conflict says so as `blocked: domain/<file>: …`.
+export function factOf(reason) {
+  return (/^\s*(?:blocked:\s*)?domain\/([^:\s]+):/i.exec(reason || '') || [])[1] ?? null;
+}
 
 // One glyph and one tone per status. Tones are Claude theme keys, so the pane follows the
 // person's light/dark theme on every surface; single-width glyphs, because emoji draw unevenly.
@@ -258,6 +267,7 @@ function rowOf(row, ctx) {
   const look = LOOK[row.status];
   const plan = ctx.plans[row.id];
   const waiting = row.status === 'planned' ? waitingOn(plan, ctx.statusOf) : [];
+  const fact = row.status === 'blocked' ? factOf(row.reason) : null;
   const out = {
     key: `row-${row.id}`,
     id: row.id,
@@ -265,13 +275,13 @@ function rowOf(row, ctx) {
     mark: look.mark,
     tone: look.tone,
     tag: waiting.length > 0 ? 'waits on' : row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
-    detail: row.status === 'blocked' ? waitsOn(row.reason) : plain(row.reason || row.title),
+    detail: row.status === 'blocked' ? (fact ? `waits on domain/${fact}` : waitsOn(row.reason)) : plain(row.reason || row.title),
     waiting,
   };
   if (row.status === 'planned' && !ctx.busy && waiting.length === 0) {
     out.action = { label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
   }
-  if (row.status === 'blocked' && !ctx.busy) out.action = SOLVE(row.id);
+  if (row.status === 'blocked' && !ctx.busy) out.action = fact ? SOLVE_FACTS : SOLVE(row.id);
   return out;
 }
 
@@ -294,7 +304,7 @@ function detailsOf(row, plan, ctx) {
     // A done plan whose Evidence is prose proves its criteria, just not one by one.
     unitemised: row.status === 'done' && plan?.itemised === false,
   };
-  if (!ctx.busy && row.status === 'blocked') details.action = SOLVE(row.id);
+  if (!ctx.busy && row.status === 'blocked') details.action = factOf(row.reason) ? SOLVE_FACTS : SOLVE(row.id);
   if (!ctx.busy && row.status === 'needs-review') details.action = { label: 'judge', command: 'ristretto:pull', args: row.id };
   return details;
 }
@@ -330,12 +340,12 @@ function nowOf(rows, live, now, elsewhere) {
 }
 
 const BACK = (status) => (status === 'done' ? 'done' : status === 'planned' ? 'up next' : 'needs you');
-const factKey = (f) => `${f.file}\u0000${f.title}`;
 
 function featurePage(row, ctx) {
   const look = LOOK[row.status];
   const plan = ctx.plans[row.id];
   const run = ctx.runOf.get(row.id);
+  const fact = row.status === 'blocked' ? factOf(row.reason) : null;
   return {
     kind: 'feature',
     id: row.id,
@@ -345,32 +355,42 @@ function featurePage(row, ctx) {
     tone: look.tone,
     back: BACK(row.status),
     goal: plan?.goal ?? null,
-    waitingOn: (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
+    waitingOn: fact ? `domain/${fact}` : (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
     split: run ? splitOf(run) : null,
+    files: filesOf(row, ctx),
     details: detailsOf(row, plan, ctx),
   };
 }
 
+// The Files card: the commit's files once read (board.tsx reads each commit once), else what
+// the plan says it will touch. Up to OPEN_UP_TO files start open; a click overrides per folder.
+function filesOf(row, ctx) {
+  const read = row.commit ? ctx.files[row.commit] : undefined;
+  const list = read ?? plannedOf(row.touched ?? []);
+  if (list.length === 0) return null;
+  const tree = treeOf(list);
+  const clicked = ctx.folders[row.id] ?? {};
+  const all = list.length <= OPEN_UP_TO;
+  return { planned: !read, n: list.length, add: tree.add, del: tree.del, rows: rowsOf(tree, (p) => clicked[p] ?? all) };
+}
+
+// The facts as information: per file, those in conflict first, then the binding ones, then
+// context. Nothing here is confirmed, removed or committed — that happens in the chat.
 export function domainPage(domain) {
-  const decided = new Map(domain.pending.map((p) => [factKey(p), p.change]));
-  const removed = domain.pending.filter((p) => p.change === 'removed').map((p) => p.entry);
-  const files = [...new Set([...domain.tree, ...removed].map((f) => f.file))].sort();
-  const groups = files.map((file) => {
-    const rows = [
-      ...domain.tree.filter((f) => f.file === file && (f.state === 'unconfirmed' || decided.has(factKey(f)))),
-      ...removed.filter((f) => f.file === file),
-    ].map((f) => ({ ...f, decided: decided.get(factKey(f)) ?? null }));
-    return { file, name: file.replace(/\.md$/, ''), open: rows.filter((r) => !r.decided).length, rows };
-  }).filter((g) => g.rows.length > 0);
+  const rank = (f) => (f.conflict ? 0 : f.state === 'confirmed' ? 1 : 2);
+  const files = [...new Set(domain.tree.map((f) => f.file))].sort();
   return {
     kind: 'domain',
-    back: 'needs you',
-    locked: domain.locked,
-    notice: domain.notice,
-    open: domain.tree.filter((f) => f.state === 'unconfirmed').length,
-    groups,
-    pending: { confirmed: domain.pending.length - removed.length, removed: removed.length },
-    confirmed: domain.tree.filter((f) => f.state === 'confirmed' && !decided.has(factKey(f))),
+    back: 'overview',
+    n: domain.tree.length,
+    binding: domain.tree.filter((f) => f.state === 'confirmed').length,
+    conflicts: domain.tree.filter((f) => f.conflict).length,
+    groups: files.map((file) => ({
+      file,
+      name: file.replace(/\.md$/, ''),
+      rows: domain.tree.map((f, i) => ({ f, i })).filter(({ f }) => f.file === file)
+        .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map(({ f }) => f),
+    })),
   };
 }
 
@@ -401,8 +421,8 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   const statusOf = new Map(rows.map((r) => [r.id, r.status]));
   const records = opts.runs ?? [];
   const runOf = new Map(records.map((rec) => [rec.id, rec])); // the latest run of each feature wins
-  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf };
-  const domain = opts.domain ?? { tree: [], head: [], pending: [], locked: '', notice: '' };
+  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
+  const domain = opts.domain ?? { tree: [] };
   const page = opts.page?.kind === 'domain'
     ? domainPage(domain)
     : opts.page?.kind === 'feature' && rows.some((r) => r.id === opts.page.id)
@@ -411,9 +431,9 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   if (page) return { kind: 'page', page };
   const count = (status) => rows.filter((r) => r.status === status).length;
   const done = count('done');
-  // The cup only when nothing is left for a person either: facts to confirm keep the overview.
-  const factsLeft = domain.pending.length > 0 || domain.tree.some((f) => f.state === 'unconfirmed');
-  if (rows.length > 0 && done === rows.length && !busy && !factsLeft) return { kind: 'cup', total: rows.length };
+  // The cup only when nothing is left for a person either: a fact in conflict keeps the overview.
+  const conflicted = domain.tree.filter((f) => f.conflict);
+  if (rows.length > 0 && done === rows.length && !busy && !conflicted.length) return { kind: 'cup', total: rows.length };
 
   const counts = [
     ['needs-review', 'to review', 'warning'],
@@ -427,6 +447,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   summary.segments = ['done', 'needs-review', 'needs-human', 'blocked', 'in-progress', 'planned', 'unknown']
     .map((status) => ({ status, n: count(status), tone: LOOK[status].tone }))
     .filter((s) => s.n > 0);
+  summary.facts = domain.tree.length ? { n: domain.tree.length, binding: domain.tree.filter((f) => f.state === 'confirmed').length } : null;
   if (!busy && count('planned') > 0) summary.action = { label: 'brew all', command: 'ristretto:brew', args: '' };
 
   const notices = [];
@@ -445,11 +466,14 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     flight,
     rows: picked.filter((r) => r.flight === flight).map((r) => rowOf(r, ctx)),
   }));
-  const facts = { n: domain.tree.filter((f) => f.state === 'unconfirmed').length, pending: domain.pending.length };
+  const conflicts = conflicted.map((f) => ({
+    key: `fact-${f.file}-${f.title}`, file: f.file, title: f.title, what: f.conflict.what, binding: f.state === 'confirmed',
+    ...(busy ? {} : { action: SOLVE_FACTS }),
+  }));
   const sections = [
-    { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)), ...(facts.n + facts.pending > 0 ? { domain: facts } : {}) },
+    { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)), ...(conflicts.length ? { conflicts } : {}) },
     { key: 'up-next', title: 'up next', groups: grouped(rows.filter(next)) },
-  ].filter((section) => section.groups.length > 0 || section.domain);
+  ].filter((section) => section.groups.length > 0 || section.conflicts);
 
   // What happened, newest first: features with a measured run by when it ended, then the
   // rest in reverse roadmap order (a later row is a later feature).

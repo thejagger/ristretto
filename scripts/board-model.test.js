@@ -421,29 +421,71 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.waitsOn('waiting on Jakob: confirm the pass mark (proposal: 0 missed)'), 'waits on Jakob');
     assert.strictEqual(m.waitsOn('waiting on Anatol — Nodes write API'), 'waits on Anatol');
     assert.strictEqual(m.waitsOn('no API docs yet'), 'no API docs yet');
+  }
 
-    const d = await import(pathToFileURL(path.join(ROOT, 'hooks', 'board-domain.mjs')).href);
-    const text = [
-      '- **A** one.', '  source: x · unconfirmed — proposed by prep f, 2026-10-08',
-      '- **B** two.', '  source: y · unconfirmed — proposed by prep f, 2026-10-08',
-      '- **C** three.', '  source: z · confirmed — Jakob, 2026-10-09',
-    ].join('\n');
-    const head = d.entriesOf('mail.md', text);
-    const treeText = d.removeIn(d.confirmIn(text, 'A', 'Jakob, 2026-10-12'), 'B');
-    const tree = d.markOlder(d.entriesOf('mail.md', treeText));
-    const domain = { tree, head, pending: d.pendingOf(head, tree), locked: false, notice: '' };
-    const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'planned', reason: '' }] };
-
-    const v = m.view(board, null, 0, false, { domain });
+  // 8b. Facts are information; a conflict is the only thing that needs a person.
+  {
+    const fact = (title, state, conflict = null, file = 'adsb-lol.md') => ({ file, title, text: `${title} text`, source: 's', state, by: '', conflict });
+    const tree = [
+      fact('API terms', 'unconfirmed'),
+      fact('Licence', 'confirmed'),
+      fact('Rate limits', 'unconfirmed', { what: '429 now carries X-RateLimit-Limit', source: 'live', by: 'review spotter-data, 2026-11-02' }),
+      fact('trueNorth is magnetic on Android', 'unconfirmed', null, 'sensors.md'),
+    ];
+    const board = { ...m.EMPTY_BOARD, name: 'plane-spotter', rows: [{ flight: '', id: 'a', title: 'A', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' }], format: { project: '0.20', plugin: '0.20' } };
+    const v = m.view(board, null, 0, false, { domain: { tree } });
+    assert.deepStrictEqual(v.summary.facts, { n: 4, binding: 1 }, 'the summary carries the facts as one info line');
     const needs = v.sections.find((s) => s.key === 'needs-you');
-    assert.deepStrictEqual([needs.groups.length, needs.domain], [0, { n: 0, pending: 2 }], 'the section shows for pending changes alone');
-    assert.strictEqual(m.view(board, null, 0, false, { domain: { ...domain, tree: head, pending: [] } }).sections.find((s) => s.key === 'needs-you').domain.n, 2);
-    assert.strictEqual(m.view(board, null, 0, false, { domain: { ...domain, tree: [], head: [], pending: [] } }).sections.find((s) => s.key === 'needs-you'), undefined, 'no facts: no row');
+    assert.deepStrictEqual(needs.conflicts, [{ key: 'fact-adsb-lol.md-Rate limits', file: 'adsb-lol.md', title: 'Rate limits', what: '429 now carries X-RateLimit-Limit', binding: false, action: { label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true } }]);
+    assert.strictEqual(needs.domain, undefined, 'no "to confirm" row any more');
+    const busy = m.view(board, null, 0, true, { domain: { tree } });
+    assert.strictEqual(busy.sections.find((s) => s.key === 'needs-you').conflicts[0].action, undefined, 'no solve while a run is active');
+    const calm = m.view(board, null, 0, false, { domain: { tree: tree.filter((f) => !f.conflict) } });
+    assert.strictEqual(calm.sections.find((s) => s.key === 'needs-you'), undefined, 'facts without a conflict need nobody');
+    assert.strictEqual(m.view(board, null, 0, false, { domain: { tree: [] } }).summary.facts, null, 'no facts: no line');
 
-    const pg = m.view(board, null, 0, false, { domain, page: { kind: 'domain' } }).page;
-    assert.strictEqual(pg.kind, 'domain');
-    assert.deepStrictEqual(pg.groups[0].rows.map((r) => [r.title, r.decided]), [['A', 'confirmed'], ['B', 'removed']]);
-    assert.deepStrictEqual([pg.pending, pg.confirmed.map((f) => f.title)], [{ confirmed: 1, removed: 1 }, ['C']]);
+    const pg = m.view(board, null, 0, false, { domain: { tree }, page: { kind: 'domain' } }).page;
+    assert.deepStrictEqual([pg.kind, pg.back, pg.n, pg.binding, pg.conflicts], ['domain', 'overview', 4, 1, 1]);
+    assert.deepStrictEqual(pg.groups.map((g) => [g.name, g.rows.map((f) => f.title)]), [
+      ['adsb-lol', ['Rate limits', 'Licence', 'API terms']],
+      ['sensors', ['trueNorth is magnetic on Android']],
+    ], 'per file: conflicts first, then binding, then context');
+    assert.ok(!('pending' in pg) && !('locked' in pg) && !('confirmed' in pg), 'nothing to confirm, commit or lock');
+
+    // A feature blocked on a fact in conflict waits on the fact file and is solved by prep facts.
+    const blocked = { ...board, rows: [{ ...board.rows[0], status: 'blocked', reason: 'blocked: domain/adsb-lol.md: Rate limits is in conflict' }] };
+    const row = m.view(blocked, null, 0, false, { domain: { tree } }).sections.find((s) => s.key === 'needs-you').groups[0].rows[0];
+    assert.deepStrictEqual([row.detail, row.action.args], ['waits on domain/adsb-lol.md', 'facts']);
+    const bp = m.view(blocked, null, 0, false, { domain: { tree }, page: { kind: 'feature', id: 'a' } }).page;
+    assert.deepStrictEqual([bp.waitingOn, bp.details.action.args], ['domain/adsb-lol.md', 'facts']);
+    assert.strictEqual(m.factOf('waiting on Anatol: the V1.2 doc'), null);
+  }
+
+  // The Files card: the commit's files when known, the plan's Files touched before.
+  {
+    const rows = [
+      { flight: '', id: 'd', title: 'D', tier: 'normal', plan: '', commit: 'a7928f6', touched: ['lib/'], status: 'done', reason: '' },
+      { flight: '', id: 'p', title: 'P', tier: 'normal', plan: '', commit: '', touched: ['pubspec.yaml', 'lib/data/'], status: 'planned', reason: '' },
+      { flight: '', id: 'n', title: 'N', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' },
+    ];
+    const board = { ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } };
+    const list = Array.from({ length: 13 }, (_, i) => ({ path: `lib/f${String(i).padStart(2, '0')}.dart`, add: 2, del: 1, bin: false }));
+    const page = (id, extra = {}) => m.view(board, null, 0, false, { page: { kind: 'feature', id }, files: { a7928f6: list }, ...extra }).page;
+    const d = page('d').files;
+    assert.deepStrictEqual([d.planned, d.n, d.add, d.del], [false, 13, 26, 13]);
+    assert.deepStrictEqual(d.rows.map((r) => r.name), ['lib/'], 'more than 12 files: only the top level shows');
+    const opened = page('d', { folders: { d: { 'lib/': true } } }).files;
+    assert.strictEqual(opened.rows.length, 14, 'a folder opened by a click shows its files');
+    const p = page('p').files;
+    assert.deepStrictEqual([p.planned, p.rows.map((r) => r.name)], [true, ['lib/data/', 'pubspec.yaml']]);
+    assert.strictEqual(page('n').files, null, 'nothing touched yet, no commit: no card');
+    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'a commit not read yet shows the plan meanwhile');
+  }
+
+  // parseRoadmap reads Files touched as a list; `—` is none.
+  {
+    const text = '| Feature | Title | Status | Files touched | Commit |\n|---|---|---|---|---|\n| a | A | done | pubspec.yaml, lib/data/, test/ | abc |\n| b | B | planned | — | — |\n';
+    assert.deepStrictEqual(m.parseRoadmap(text).rows.map((r) => r.touched), [['pubspec.yaml', 'lib/data/', 'test/'], []]);
   }
 
   // Format notice. The format has its own version now; the board must compare against it, not
@@ -469,14 +511,14 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
   }
 
-  // Final review I2: facts still to confirm keep the overview, even when every feature is done.
+  // Final review I2, reworded: every feature done → the cup, unless a fact is in conflict.
   {
     const done = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'done', reason: '' }] };
     assert.strictEqual(m.view(done, null, 0, false, {}).kind, 'cup');
-    const fact = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '' };
-    const v = m.view(done, null, 0, false, { domain: { tree: [fact], head: [fact], pending: [], locked: false, notice: '' } });
-    assert.strictEqual(v.kind, 'board');
-    assert.deepStrictEqual(v.sections.find((s) => s.key === 'needs-you').domain, { n: 1, pending: 0 });
+    const calm = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '', conflict: null };
+    assert.strictEqual(m.view(done, null, 0, false, { domain: { tree: [calm] } }).kind, 'cup', 'context facts do not hold the cup back');
+    const v = m.view(done, null, 0, false, { domain: { tree: [{ ...calm, conflict: { what: 'w', source: 's', by: 'b' } }] } });
+    assert.strictEqual(v.kind, 'board', 'a conflict keeps the overview');
   }
 
   // The band above the prompt: progress, what is blocked, what runs now — nothing else.
