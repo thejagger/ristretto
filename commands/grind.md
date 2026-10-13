@@ -27,6 +27,8 @@ The ID is the tracked ID, verbatim. A raw idea has none: mint the slug `prep` wo
 
   When it returns, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain`. Exit 1 → it undid domain changes the run was not allowed to make; name them under *Problems & risks*. Exit 2 → the domain store was not checked (no snapshot — another research run took it); say so there too. Then read the research file.
 
+  Entries the research touched that carry a `conflict —` field: list them under *Problems & risks* with `settle with /ristretto:prep facts` — grind changes nothing.
+
 ## Don't guess at what you can't see
 
 If the research lists something under `not reached` that the feature depends on — a ticket, an internal page (Jira, Notion, NGS knowledge base), a screenshot, an attachment — **stop and ask the user to paste the content**, naming exactly what you need. Don't invent acceptance criteria or scope from an inaccessible link — a review built on guesses is worse than no review.

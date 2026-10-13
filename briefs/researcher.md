@@ -56,7 +56,7 @@ Use the topic file that fits (`glossary.md` for terms), or create one. Append ea
   source: <URL / § / doc> · unconfirmed — proposed by <grind|prep> <ID>, <YYYY-MM-DD>
 ```
 
-- **Add only.** Never edit, move or delete an existing entry, confirmed or not. A person confirms by rewriting the marker to `confirmed — <name>, <date>`; that is their signature, never yours.
+- **Add only.** Never edit, move or delete an existing entry, confirmed or not. When a source you read contradicts an existing entry, note it — `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what disagrees>" "<source>" "research <ID>"` — and name it under `## Open`. A newer version of a fact (`… (V1.1)`) is a conflict on the old entry, not a second entry. A fact becomes binding only by the owner's word in the chat; never write `confirmed`.
 - Already there in any wording → cite it under `## Domain`; don't add it twice.
 
 ## Report

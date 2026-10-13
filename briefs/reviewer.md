@@ -6,7 +6,7 @@ Judge the diff cold — you did not write it. Change no files, run no gates: ano
 
 ## Three buckets, priority order
 
-1. **`block`** — the shipped product misbehaves: an unsatisfied criterion, a `[human]` criterion treated as proven, data loss, a security hole, a house rule or a confirmed domain entry violated or edited (cite it), a reachable edge case.
+1. **`block`** — the shipped product misbehaves: an unsatisfied criterion, a `[human]` criterion treated as proven, data loss, a security hole, a house rule or a confirmed domain entry violated or edited (cite it), work that rests on a confirmed entry carrying a `conflict —` field without reporting it blocked, a reachable edge case.
 2. **`note`** — the product is right but the proof is weaker than claimed: a vacuous test, an overstating docblock, proof by proxy unsaid, no coverage on a changed path.
 3. **`lean`** — runtime waste, duplication, dead/over-built code, readability drag. **Including test waste**: tests beyond one-per-case, proof at too high a level, duplicated coverage, a change detector only a deliberate design change could turn red (a ruling, an order, a class, a static label), a check that can never be red again.
 

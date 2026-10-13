@@ -19,6 +19,9 @@ THE WORKFLOW
                                     fast by default; escalates into roast mode
                                     when a criterion can't be made checkable.
                                     "deep" forces the roast.
+     …or /ristretto:prep facts      settle domain facts in conflict, one by
+                                    one: update / remove / keep. prep also asks
+                                    at most two "binding?" questions per plan.
   3. /ristretto:brew [easy]         brew the whole pot: implements every
                                     eligible feature unattended, one gated
                                     commit each, on feature/brew-<date>.
@@ -49,8 +52,8 @@ THE REST OF THE MENU
                                     where it docks; a filter prints text.
                                     › opens a feature's page (criteria, proof,
                                     time split); solve sends a blocked feature
-                                    to prep in the chat; domain facts are
-                                    confirmed on the board.
+                                    to prep in the chat; domain facts are shown
+                                    there, conflicts get solve (prep facts).
                                     filters: open | done | blocked | checks | ID | flight
   /ristretto:tamp [target] [fix]    lean-code review of a diff/file: waste,
                                     duplication, over-build. "fix" applies.

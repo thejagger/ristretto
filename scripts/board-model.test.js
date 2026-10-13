@@ -542,5 +542,17 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
   }
 
+  // The chat side of facts: who may note a conflict, where it is settled, when prep asks.
+  {
+    const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+    const prep = read('commands/prep.md');
+    assert.ok(/research\.js" conflict/.test(read('briefs/common.md')), 'builders and reviewers note conflicts through the script');
+    assert.ok(/research\.js" conflict/.test(read('briefs/researcher.md')), 'so does research');
+    assert.ok(/blocked: domain\/<file>: <title> is in conflict/.test(read('briefs/common.md')), 'a binding fact in conflict blocks, in the shape the board reads');
+    assert.ok(/## Facts — `prep facts`/.test(prep) && /update \/ remove \/ keep/.test(prep), 'prep settles conflicts in the chat');
+    assert.ok(/at most two/.test(prep) && /\(stays context: domain\/<file>: <title>\)/.test(prep), 'prep asks about at most two binding facts');
+    assert.ok(/in conflict — \/ristretto:prep facts/.test(read('commands/status.md')) && !/to confirm — open the board/.test(read('commands/status.md')), 'status counts conflicts, not unconfirmed facts');
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

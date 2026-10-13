@@ -1,11 +1,13 @@
 ---
 description: Plans features into the roadmap. No code.
-argument-hint: <feature IDs, pasted feature text, or short descriptions> [deep]
+argument-hint: <feature IDs, pasted feature text, or short descriptions> [deep] | facts
 ---
 
 You are in the **PREP** phase of ristretto. You plan; you do **not** write or modify any implementation code. The code is written fresh later, by `pull`.
 
 Inputs to prep: $ARGUMENTS  (add `deep` to force roast mode on every input)
+
+If the only input is `facts`, skip to **Facts — `prep facts`, and the binding question** below and plan nothing.
 
 Each input is one of: a **tracked feature** (has an ID like `BREW-224` — keep that ID exactly, it's how the work is tracked in git), a **raw idea** you want to build, or a **feature too big** to plan as one unit.
 
@@ -55,6 +57,7 @@ then `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain` (exit 1 →
 
 - **Why** — the plan's `Why:` line is the research's stated why, or `—`. A missing why never escalates to roast mode by itself; when roast runs anyway, ask the why first, with the research's candidates as your recommended answer.
 - **Domain** — a confirmed entry in `docs/ristretto/domain/` is given: never ask it again. A `Decisions:` line that rests on an unconfirmed entry says so: `(rests on unconfirmed domain/<file>: <entry>)`.
+- **Conflicts** — an entry the research touched that carries a `conflict —` field is settled now, before planning, as in **Facts — `prep facts`, and the binding question**.
 - **Already settled** — cite it in `Decisions:` instead of asking.
 - **Open** — the roast agenda, before anything else you would ask.
 
@@ -205,6 +208,24 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    Note what follows: an `easy` label makes **your** job harder, not easier. With no planner to expand the contract into file paths and signatures, the contract itself has to carry them.
 
    **Write `easy` only with a reason**, as a `Tier: easy — <one clause>` line at the top of the plan's `## Approach`. `normal` is the default and needs no justification. The asymmetry is deliberate and is the same device the review's `note` findings use: the optimistic label is the cheap one, so it should cost a sentence. **When torn, write `normal`** — the ratchet only ever escalates, so an under-optimistic label costs nothing but a planner you would have run anyway, while an over-optimistic one costs an implementer stopping mid-flight.
+
+## Facts — `prep facts`, and the binding question
+
+Domain facts are context unless the owner said otherwise; the board only shows them. Two things about them are asked here, in the chat, and nowhere else.
+
+**Conflicts.** For every entry in `docs/ristretto/domain/` with a `conflict —` field (all of them for `prep facts`; the ones the research touched otherwise), one at a time: show the entry, the conflict and its source, and ask **update / remove / keep**.
+- **update** — rewrite the statement and `source:` from the conflict's evidence and drop the conflict field. An entry that was confirmed is confirmed again: `confirmed — <git config user.name>, <YYYY-MM-DD> (updated in prep facts)`.
+- **remove** — delete the entry.
+- **keep** — drop the conflict field; the entry stands as it was.
+
+Then every `blocked` row whose reason reads `blocked: domain/<file>: <title> is in conflict` for an entry settled now flips back to `planned`. Leave the changes in the working tree; prep commits nothing.
+
+**Binding — at the end, after `check-domain`.** Pick the unconfirmed entries this plan's `Decisions:` actually rest on — at most two — and ask once:
+> The plan rests on these facts. Should they bind the build?
+> 1. **<title>** — <statement, one line> (domain/<file>)
+> Answer like `1 yes, 2 no`, or `skip`.
+
+A yes rewrites that entry's marker to `confirmed — <git config user.name>, <YYYY-MM-DD> (said yes in prep <ID>)`. A no adds `(stays context: domain/<file>: <title>)` to the `Decisions:` line, and a later prep of the same ID reads it and does not ask again. Never more than two; never in an unattended run; never an entry already confirmed.
 
 ## Hard rules
 
