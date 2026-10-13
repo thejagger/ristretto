@@ -279,9 +279,9 @@ function rowOf(row, ctx) {
     waiting,
   };
   if (row.status === 'planned' && !ctx.busy && waiting.length === 0) {
-    out.action = { label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
+    out.action = { key: `start-${row.id}`, label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
   }
-  if (row.status === 'blocked' && !ctx.busy) out.action = fact ? SOLVE_FACTS : SOLVE(row.id);
+  if (row.status === 'blocked' && !ctx.busy) out.action = { key: `solve-${row.id}`, ...(fact ? SOLVE_FACTS : SOLVE(row.id)) };
   return out;
 }
 
@@ -304,8 +304,8 @@ function detailsOf(row, plan, ctx) {
     // A done plan whose Evidence is prose proves its criteria, just not one by one.
     unitemised: row.status === 'done' && plan?.itemised === false,
   };
-  if (!ctx.busy && row.status === 'blocked') details.action = factOf(row.reason) ? SOLVE_FACTS : SOLVE(row.id);
-  if (!ctx.busy && row.status === 'needs-review') details.action = { label: 'judge', command: 'ristretto:pull', args: row.id };
+  if (!ctx.busy && row.status === 'blocked') details.action = { key: `solve-${row.id}`, ...(factOf(row.reason) ? SOLVE_FACTS : SOLVE(row.id)) };
+  if (!ctx.busy && row.status === 'needs-review') details.action = { key: `judge-${row.id}`, label: 'judge', command: 'ristretto:pull', args: row.id };
   return details;
 }
 
@@ -448,7 +448,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     .map((status) => ({ status, n: count(status), tone: LOOK[status].tone }))
     .filter((s) => s.n > 0);
   summary.facts = domain.tree.length ? { n: domain.tree.length, binding: domain.tree.filter((f) => f.state === 'confirmed').length } : null;
-  if (!busy && count('planned') > 0) summary.action = { label: 'brew all', command: 'ristretto:brew', args: '' };
+  if (!busy && count('planned') > 0) summary.action = { key: 'brew-all', label: 'brew all', command: 'ristretto:brew', args: '' };
 
   const notices = [];
   const plugin = (/^(\d+\.\d+)/.exec(board.format.plugin) || [])[1];
@@ -468,7 +468,7 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
   }));
   const conflicts = conflicted.map((f) => ({
     key: `fact-${f.file}-${f.title}`, file: f.file, title: f.title, what: f.conflict.what, binding: f.state === 'confirmed',
-    ...(busy ? {} : { action: SOLVE_FACTS }),
+    ...(busy ? {} : { action: { key: `solve-fact-${f.file}-${f.title}`, ...SOLVE_FACTS } }),
   }));
   const sections = [
     { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)), ...(conflicts.length ? { conflicts } : {}) },

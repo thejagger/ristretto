@@ -14,7 +14,8 @@ function startActions(v) {
   const walk = (x) => {
     if (Array.isArray(x)) return x.forEach(walk);
     if (!x || typeof x !== 'object') return;
-    if (x.action && x.action.command) out.push(x.action);
+    // What an action does; its key (one button per key) has its own test in section 8b.
+    if (x.action && x.action.command) { const { key, ...does } = x.action; out.push(does); }
     Object.values(x).forEach(walk);
   };
   walk(v);
@@ -391,7 +392,7 @@ const shown = (v) => JSON.stringify(v);
     const da = opened('a').page.details;
     assert.deepStrictEqual([da.deps, da.acceptance[0].proof], [[{ id: 'core', status: 'done', ok: true }], null]);
     const pk = opened('k').page;
-    assert.deepStrictEqual([pk.back, pk.details.blockers.length, pk.details.action], ['needs you', 2, { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true }]);
+    assert.deepStrictEqual([pk.back, pk.details.blockers.length, pk.details.action], ['needs you', 2, { key: 'solve-k', label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true }]);
     const drv = opened('rv').page.details;
     assert.deepStrictEqual([drv.findings, drv.action.command, drv.action.args], [['bug · x.php:1 · wrong'], 'ristretto:pull', 'rv']);
     const pcore = opened('core').page;
@@ -410,7 +411,7 @@ const shown = (v) => JSON.stringify(v);
 
     // Solve on the overview's blocked row; nothing to press anywhere while a run is active (review focus 5).
     const needs = v.sections.find((s) => s.key === 'needs-you').groups.flatMap((g) => g.rows);
-    assert.deepStrictEqual(needs.find((x) => x.id === 'k').action, { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true });
+    assert.deepStrictEqual(needs.find((x) => x.id === 'k').action, { key: 'solve-k', label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true });
     const busyView = m.view(board, null, 0, true, { plans, runs });
     assert.deepStrictEqual(startActions(busyView), [], 'no action on the overview while busy');
     assert.deepStrictEqual(startActions(opened('k', true)), [], 'no action on a page while busy');
@@ -436,7 +437,7 @@ const shown = (v) => JSON.stringify(v);
     const v = m.view(board, null, 0, false, { domain: { tree } });
     assert.deepStrictEqual(v.summary.facts, { n: 4, binding: 1 }, 'the summary carries the facts as one info line');
     const needs = v.sections.find((s) => s.key === 'needs-you');
-    assert.deepStrictEqual(needs.conflicts, [{ key: 'fact-adsb-lol.md-Rate limits', file: 'adsb-lol.md', title: 'Rate limits', what: '429 now carries X-RateLimit-Limit', binding: false, action: { label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true } }]);
+    assert.deepStrictEqual(needs.conflicts, [{ key: 'fact-adsb-lol.md-Rate limits', file: 'adsb-lol.md', title: 'Rate limits', what: '429 now carries X-RateLimit-Limit', binding: false, action: { key: 'solve-fact-adsb-lol.md-Rate limits', label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true } }]);
     assert.strictEqual(needs.domain, undefined, 'no "to confirm" row any more');
     const busy = m.view(board, null, 0, true, { domain: { tree } });
     assert.strictEqual(busy.sections.find((s) => s.key === 'needs-you').conflicts[0].action, undefined, 'no solve while a run is active');
@@ -459,6 +460,22 @@ const shown = (v) => JSON.stringify(v);
     const bp = m.view(blocked, null, 0, false, { domain: { tree }, page: { kind: 'feature', id: 'a' } }).page;
     assert.deepStrictEqual([bp.waitingOn, bp.details.action.args], ['domain/adsb-lol.md', 'facts']);
     assert.strictEqual(m.factOf('waiting on Anatol: the V1.2 doc'), null);
+  }
+
+  // Final review #1: every action on a drawing has its own key — the pane builds each button
+  // once per key, so two rows sharing `prep facts` must not share a button.
+  {
+    const fact = (title, file = 'a.md') => ({ file, title, text: 't', source: '', state: 'confirmed', by: '', conflict: { what: 'w', source: 's', by: 'b' } });
+    const row = (id, status, reason = '') => ({ flight: '', id, title: id, tier: 'normal', plan: '', commit: '', touched: [], status, reason });
+    const board = { ...m.EMPTY_BOARD, name: 'x', format: { project: '0.20', plugin: '0.20' },
+      rows: [row('a', 'blocked', 'blocked — domain/a.md: A is in conflict'), row('b', 'blocked', 'blocked — domain/a.md: B is in conflict'), row('c', 'blocked', 'waiting on Jakob: x'), row('d', 'planned'), row('e', 'planned')] };
+    const v = m.view(board, null, 0, false, { domain: { tree: [fact('A'), fact('B')] } });
+    const actions = [v.summary.action, ...v.sections.flatMap((s) => [...s.groups.flatMap((g) => g.rows.map((r) => r.action)), ...(s.conflicts ?? []).map((c) => c.action)])].filter(Boolean);
+    assert.strictEqual(actions.length, 8, 'brew all, three solves, two starts, two fact solves');
+    assert.ok(actions.every((a) => typeof a.key === 'string'), 'every action carries a key');
+    assert.strictEqual(new Set(actions.map((a) => a.key)).size, actions.length, `keys are unique: ${actions.map((a) => a.key).join(', ')}`);
+    const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
+    assert.ok(/held\(\s*action\.key/.test(tsx), 'the pane keeps a button per action key');
   }
 
   // The Files card: the commit's files when known, the plan's Files touched before.

@@ -538,11 +538,13 @@ async function drawPane($: any, e: any) {
     const rows = rich ? 1 : 0
     const SIGN: Record<string, string> = { start: '▶', 'brew all': '☕ brew all' }
     // A button never shrinks or wraps: its own box keeps its width.
-    const press = (action: { label: string; command: string; args: string }, primary = false, label?: string) =>
+    // Each action carries its own key from the model: one button per key, never the same kept
+    // button twice in a drawing (two rows solving with `prep facts` share a command, not a key).
+    const press = (action: { key: string; label: string; command: string; args: string }, primary = false, label?: string) =>
       canPress && (
-        <Box key={`press-${action.command}-${action.args}-${label ?? ''}`} flexShrink={0}>
+        <Box key={`press-${action.key}-${label ?? ''}`} flexShrink={0}>
           {held(
-            `press-${action.command}-${action.args}-${label ?? ''}`,
+            action.key + (label ? `-${label}` : ''),
             `${label ?? (rich ? SIGN[action.label] ?? action.label : action.label)}|${primary}`,
             () => void $.command.run({ command: action.command, args: action.args }),
             onPress => <Button
