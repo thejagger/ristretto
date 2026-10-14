@@ -35,9 +35,10 @@ export function addGate(run, ms, red) {
   return { ...run, gates: { runs: run.gates.runs + 1, ms: run.gates.ms + ms, red: run.gates.red + (red ? 1 : 0) } };
 }
 
-// Where a run's time goes: the fold's phase, read into four buckets. A fix round is code; any
-// other phase (starting, interrupted, another feature's) stops the clock.
-const BUCKET = { planning: 'plan', coding: 'code', fixing: 'code', review: 'review', closing: 'close' };
+// Where a run's time goes: the fold's phase, read into four buckets. A fix round is review, as
+// on the effort bar (records written before keep the split they had); any other phase
+// (starting, interrupted, another feature's) stops the clock.
+export const BUCKET = { planning: 'plan', coding: 'code', fixing: 'review', review: 'review', closing: 'close' };
 const PHASES = ['plan', 'code', 'review', 'close'];
 
 export function markPhase(run, live, now) {
@@ -108,4 +109,31 @@ export function count(tokens) {
   if (tokens >= 1e6) return `${(tokens / 1e6).toFixed(1)}M`;
   if (tokens >= 1e4) return `${Math.round(tokens / 1e3)}k`;
   return String(tokens);
+}
+
+// A model as a person reads it: `claude-opus-5-5` is Opus 5.5, `sonnet[1m]` is Sonnet; anything
+// else is shown as given, and no model at all as a dash.
+export function modelName(id) {
+  const s = String(id ?? '').trim();
+  if (!s) return '—';
+  const m = /^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/.exec(s);
+  if (m) return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}`;
+  const alias = /^(opus|sonnet|haiku|fable)\b/.exec(s);
+  return alias ? `${alias[1][0].toUpperCase()}${alias[1].slice(1)}` : s;
+}
+
+// Who works on a feature, one role after another (spec 4.8): a new role closes the open one at
+// the time it starts. A second review round reads `reviewer r2`.
+export function addRole(roles, { id, role, round }, model, now) {
+  const label = role === 'reviewer' && round > 1 ? `reviewer r${round}` : role;
+  const list = (roles[id] ?? []).map((x) => (x.endedAt === null ? { ...x, endedAt: now } : x));
+  return { ...roles, [id]: [...list, { role: label, model: modelName(model), startedAt: now, endedAt: null }] };
+}
+
+// A finished agent knows how long it ran: that corrects the last role's end, never past now.
+export function closeRole(roles, id, ms, now) {
+  const list = roles[id];
+  if (!list || !list.length) return roles;
+  const last = list[list.length - 1];
+  return { ...roles, [id]: [...list.slice(0, -1), { ...last, endedAt: Math.min(now, last.startedAt + ms) }] };
 }

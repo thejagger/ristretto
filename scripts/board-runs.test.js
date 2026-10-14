@@ -32,7 +32,8 @@ const { pathToFileURL } = require('url');
   for (let i = 0; i < 205; i++) recs = r.keep(recs, { id: `f-${i}`, gates: { ms: i * 60000 } });
   assert.deepStrictEqual([recs.length, recs[0].id], [200, 'f-5']);
 
-  // Where a run's time went, phase by phase, from the fold's phase changes. A fix round is code.
+  // Where a run's time went, phase by phase, from the fold's phase changes. A fix round is review
+  // (spec 0.3 #9: the effort bar keeps fixing inside review, so the split does too).
   const ph = (phase, id = 'f-9') => ({ ...live(id), phase });
   const min = 60000;
   let pr = r.track(null, ph('planning'), 0).run;
@@ -44,9 +45,9 @@ const { pathToFileURL } = require('url');
   pr = r.markPhase(pr, ph('review'), 24 * min);
   pr = r.markPhase(pr, ph('closing'), 27 * min);
   const prec = r.endRun(pr, 30 * min, 'done');
-  assert.deepStrictEqual(prec.phases, { plan: 4 * min, code: 17 * min, review: 6 * min, close: 3 * min });
+  assert.deepStrictEqual(prec.phases, { plan: 4 * min, code: 14 * min, review: 9 * min, close: 3 * min });
   assert.strictEqual(prec.at, undefined, 'the open mark is not kept');
-  assert.deepStrictEqual(r.splitOf(prec).map((x) => [x.phase, x.ms / min]), [['plan', 4], ['code', 17], ['review', 6], ['close', 3]]);
+  assert.deepStrictEqual(r.splitOf(prec).map((x) => [x.phase, x.ms / min]), [['plan', 4], ['code', 14], ['review', 9], ['close', 3]]);
 
   // shot has no plan step; a run recorded before 0.21 has no split.
   assert.deepStrictEqual(r.splitOf({ ms: 7, phases: { plan: 0, code: 5, review: 0, close: 2 } }).map((x) => x.phase), ['code', 'close']);
@@ -86,6 +87,28 @@ const { pathToFileURL } = require('url');
     const mixed = r.mergeRuns([{ ...other, id: 'cam' }, check]).get('cam');
     assert.deepStrictEqual([mixed.ms, mixed.phases.close], [120100, 120000]);
   }
+
+  assert.strictEqual(r.BUCKET.fixing, 'review', 'a fix round counts as review');
+
+  // Roles: who works on a feature, on which model, for how long. A new role closes the open one.
+  let roles = r.addRole({}, { id: 'a', role: 'planner', round: 0 }, 'claude-opus-5-5', 1000);
+  roles = r.addRole(roles, { id: 'a', role: 'reviewer', round: 2 }, 'claude-opus-5-5', 5000);
+  assert.deepStrictEqual(roles.a.map((x) => [x.role, x.model, x.startedAt, x.endedAt]), [['planner', 'Opus 5.5', 1000, 5000], ['reviewer r2', 'Opus 5.5', 5000, null]]);
+  assert.strictEqual(r.addRole({}, { id: 'b', role: 'reviewer', round: 1 }, 'sonnet', 0).b[0].role, 'reviewer', 'round 1 needs no number');
+  // A finished agent's own duration corrects the open role's end; it never ends past now.
+  roles = r.closeRole(roles, 'a', 2000, 9000);
+  assert.strictEqual(roles.a[1].endedAt, 7000);
+  assert.strictEqual(r.closeRole(roles, 'zz', 1, 1), roles, 'an unknown feature changes nothing');
+  assert.strictEqual(r.closeRole(r.addRole({}, { id: 'c', role: 'closer', round: 0 }, 'haiku', 100), 'c', 99999, 500).c[0].endedAt, 500);
+  // Model names a person reads.
+  assert.strictEqual(r.modelName('claude-opus-5-5'), 'Opus 5.5');
+  assert.strictEqual(r.modelName('claude-haiku-4-5-20251001'), 'Haiku 4.5');
+  assert.strictEqual(r.modelName('claude-sonnet-5-5'), 'Sonnet 5.5');
+  assert.strictEqual(r.modelName('sonnet[1m]'), 'Sonnet');
+  assert.strictEqual(r.modelName('opus'), 'Opus');
+  assert.strictEqual(r.modelName('gpt-x'), 'gpt-x');
+  assert.strictEqual(r.modelName(''), '—');
+  assert.strictEqual(r.modelName(undefined), '—');
 
   console.log('board-runs.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
