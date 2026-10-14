@@ -50,10 +50,10 @@ THE REST OF THE MENU
                                     the spot → escalates to pull.
   /ristretto:status [filter]        roadmap view. bare: the live side pane
                                     where it docks; a filter prints text.
-                                    › opens a feature's page (criteria, proof,
-                                    time split); solve sends a blocked feature
-                                    to prep in the chat; domain facts are shown
-                                    there, conflicts get solve (prep facts).
+                                    branch first: what holds it from shipping,
+                                    the suite, then needs you / up next / done.
+                                    a row opens its page (criteria, proof, time
+                                    split); no buttons — you act in the chat.
                                     filters: open | done | blocked | checks | ID | flight
   /ristretto:tamp [target] [fix]    lean-code review of a diff/file: waste,
                                     duplication, over-build. "fix" applies.

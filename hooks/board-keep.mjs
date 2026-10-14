@@ -1,10 +1,10 @@
 // Buttons that survive a redraw.
 //
 // The engine routes a press by the handle a Button gets when it is built, and each drawing lets
-// go of the handles the one before it held. The board redraws at least every 5 s, so a click on
-// the drawing just replaced carried a handle nobody held and ran nothing: most presses took two
-// clicks. A Button built once and handed back on every draw keeps its handle, and its press runs
-// the action of the draw that is current.
+// go of the handles the one before it held: a click on the drawing just replaced carried a handle
+// nobody held and ran nothing. A Button built once and handed back on every draw keeps its
+// handle, and its press runs the action of the draw that is current. The board's Buttons are the
+// band's board toggle and, where a surface has no press area (Client), a row's ID.
 
 export function buttonKeeper(now = () => Date.now(), idleMs = 60000) {
   const kept = new Map()
