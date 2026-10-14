@@ -109,6 +109,12 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(r.modelName('gpt-x'), 'gpt-x');
   assert.strictEqual(r.modelName(''), '—');
   assert.strictEqual(r.modelName(undefined), '—');
+  // The model a spawn ran on: the resolved id, else the alias the Agent call named, else nothing
+  // (spec 4.8: the role and its time still show, the model as a dash).
+  assert.strictEqual(r.spawnModel({ model: 'claude-opus-5-5' }, 'opus'), 'claude-opus-5-5');
+  assert.strictEqual(r.spawnModel({}, 'sonnet'), 'sonnet');
+  assert.strictEqual(r.spawnModel(undefined, undefined), '');
+  assert.strictEqual(r.modelName(r.spawnModel({}, 'haiku')), 'Haiku');
 
   console.log('board-runs.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

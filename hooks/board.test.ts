@@ -28,11 +28,13 @@ const ROADMAP = [
   '- **blk** — waiting on Anatol: the API doc',
 ].join('\n')
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }> }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number> }
 
 function world(): World {
   return {
+    session: 's1',
     files: {
+      '.git/logs/refs/heads/main': 'one move\n',
       'docs/ristretto/roadmap.md': ROADMAP,
       'docs/ristretto/plans/archived/review-here.md': '## Open findings\n\n- one\n- two\n',
       'docs/ristretto/plans/pw.md': '- Depends: blk\n',
@@ -49,6 +51,7 @@ function world(): World {
       'rev-parse HEAD': { exitCode: 0, stdout: `${'c'.repeat(40)}\n` },
       [`diff --quiet --end-of-options ${'a'.repeat(40)} HEAD -- . :(exclude)docs/ristretto`]: { exitCode: 0, stdout: '' },
       'rev-parse --absolute-git-dir': { exitCode: 0, stdout: '/repo/.git\n' },
+      'rev-parse --git-common-dir': { exitCode: 0, stdout: '.git\n' },
     },
   }
 }
@@ -59,7 +62,7 @@ function install(on: any, w: World, theme = 'dark') {
   const rel = (p: string) => String(p).replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').replace(`${ROOT}/`, '')
   const isDir = (p: string) => Object.keys(w.files).some(f => f.startsWith(`${rel(p)}/`))
   on('session.root', () => ({ value: ROOT }) as any)
-  on('session.id', () => ({ value: 's1' }) as any)
+  on('session.id', () => ({ value: w.session }) as any)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as any)
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd ?? ROOT }) as any)
   on('fs.exists', ($: any, e: any) => ({ value: rel(e.path) in w.files || isDir(e.path) }) as any)
@@ -69,7 +72,7 @@ function install(on: any, w: World, theme = 'dark') {
   })
   on('fs.stat', ($: any, e: any) => {
     if (!(rel(e.path) in w.files) && !isDir(e.path)) throw new Error(`ENOENT ${e.path}`)
-    return { value: { kind: isDir(e.path) ? 'dir' : 'file', size: 1, mtimeMs: (w.files[rel(e.path)] ?? '').length } } as any
+    return { value: { kind: isDir(e.path) ? 'dir' : 'file', size: 1, mtimeMs: w.mtimes?.[rel(e.path)] ?? (w.files[rel(e.path)] ?? '').length } } as any
   })
   on('fs.list', () => ({ value: [] }) as any)
   on('process.run', ($: any, e: any) => {
@@ -79,7 +82,7 @@ function install(on: any, w: World, theme = 'dark') {
   })
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
   on('ui.open', () => ({ value: { isPlaced: true } }) as any)
-  mock.store(on)
+  mock.store(on, w.store ?? {})
 }
 
 async function start($: any, on: any, w = world(), theme = 'dark') {
@@ -198,6 +201,9 @@ describe('the overview', () => {
     const t = await texts(ui)
     expect(t).toContain('brew/x')
     expect(t).toContain('tick 1 check')
+    // The terminal resolves an Svg but draws it as an empty box: marks must be glyphs there.
+    expect(t).toMatch(/[✓◐○✕]/)
+    expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
   })
 })
 
@@ -247,6 +253,59 @@ describe('between features', () => {
     expect(t).toContain('next')
     expect(t).toMatch(/0 of \d+ brewed/)
   })
+})
+
+describe('the edges', () => {
+  test('the terminal draws no emoji: the band starts with its counts, the cup is drawn in text', async ($, on) => {
+    const w = world()
+    w.files['docs/ristretto/roadmap.md'] = ROADMAP.split('\n').map(l => l.replace(/\| (needs-human|needs-review|blocked|planned) \|/, '| done |')).join('\n')
+    await start($, on, w)
+    const term = await band($, 'terminal')
+    expect(await texts(term)).not.toContain('☕')
+    const cupPane = await mount($, 'terminal')
+    const t = await texts(cupPane)
+    expect(t).toContain('brewed')
+    expect(t).not.toContain('☕')
+  })
+
+  test('the base branch moving (a fetch, a merge elsewhere) is read on the next poll', async ($, on) => {
+    const w = world()
+    const clock = await start($, on, w)
+    const ui = await mount($)
+    expect(await texts(ui)).toContain('3 features')
+    // main took d-here: only two features are ahead of it now.
+    w.git['log --format=%ct%x09%s refs/heads/main..HEAD --'] = { exitCode: 0, stdout: '1760430000\tfeat(review-here): r\n1760420000\tfeat(human-here): h\n' }
+    w.files['.git/logs/refs/heads/main'] = 'one move\nanother move\n'
+    await clock.advance(5000)
+    await clock.settle()
+    await ui.drawn()
+    expect(await texts(ui)).toContain('2 features')
+  })
+
+  test('a brew snapshot is kept per session: a restart finds its own, never another session\'s', async ($, on) => {
+    const now = Date.UTC(2026, 9, 14, 12, 0)
+    const snap = { startedAt: now - 600000, ids: ['p1', 'p2', 'pw'], reruns: [] }
+    // Restarted mid-brew: the marker is this session's, brew's orchestrating marker is there.
+    const mine = world()
+    mine.files['.ristretto/pulling'] = 's1'
+    mine.files['.ristretto/orchestrating'] = ''
+    mine.mtimes = { '.ristretto/pulling': now }
+    mine.store = { 'brew:/repo:s1': snap }
+    await start($, on, mine)
+    expect(await texts(await mount($))).toMatch(/0 of 2 brewed/)
+  })
+
+  test('another session\'s brew snapshot is not taken (nor cleared) by this one', async ($, on) => {
+    const now = Date.UTC(2026, 9, 14, 12, 0)
+    const w = world()
+    w.files['.ristretto/pulling'] = 's1'
+    w.files['.ristretto/orchestrating'] = ''
+    w.mtimes = { '.ristretto/pulling': now }
+    w.store = { 'brew:/repo:s2': { startedAt: now - 600000, ids: ['p1', 'p2', 'pw'], reruns: [] } }
+    await start($, on, w)
+    expect(await texts(await mount($))).not.toMatch(/of 2 brewed/)
+  })
+
 })
 
 describe('the band', () => {

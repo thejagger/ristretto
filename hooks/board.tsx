@@ -10,7 +10,7 @@ import { chip, terminalSegments, tracker } from './board-effort.mjs'
 import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock } from './board-svg.mjs'
 import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parsePlan } from './board-plan.mjs'
-import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, track } from './board-runs.mjs'
+import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md, of the branch the session is
 // on and of the run this session is doing. It observes and never answers: every hook passes its
@@ -68,6 +68,8 @@ let timers: { cancel: () => void }[] = []
 let storeKey = ''
 let brewKey = ''
 let gitDir: string | null | undefined
+// The base ref's reflog (`<common git dir>/logs/<ref>`), once the branch is read.
+let baseLog: string | null = null
 let lastSig = ''
 
 // The time the handler that changed what is shown changed it: what a drawing counts its clocks
@@ -216,7 +218,10 @@ async function refreshBranch($: EngineInterface) {
     }
     const base = parseBase({ head, originHead, refs, isAncestor: (a: string, b: string) => behind.get(`${a}|${b}`) ?? false })
     let commits: { at: number; subject: string }[] = []
+    baseLog = null
     if (base) {
+      const common = (await git($, ['rev-parse', '--git-common-dir'])).stdout.trim()
+      if (common) baseLog = `${/^([A-Za-z]:)?[\\/]/.test(common) ? common : `${await $.session.root()}/${common}`}/logs/${base.ref}`
       const log = await git($, logArgs(base.ref))
       if (log.exitCode === 0) commits = parseLog(log.stdout) as typeof commits
     }
@@ -262,7 +267,7 @@ async function gitSig($: EngineInterface) {
       const at = await git($, ['rev-parse', '--absolute-git-dir'])
       gitDir = at.exitCode === 0 ? at.stdout.trim() : null
     }
-    const paths = [...(gitDir ? [`${gitDir}/HEAD`, `${gitDir}/logs/HEAD`] : []), await repo($, SUITE)]
+    const paths = [...(gitDir ? [`${gitDir}/HEAD`, `${gitDir}/logs/HEAD`] : []), ...(baseLog ? [baseLog] : []), await repo($, SUITE)]
     const parts: string[] = []
     for (const p of paths) {
       try {
@@ -421,6 +426,8 @@ function isRoadmap(path: unknown) {
 // What each whole-row press area runs, by its id: the closure of the latest drawing, as the
 // button keeper keeps a Button's handler current.
 const pressRuns = new Map<string, () => void>()
+// The model alias each feature's latest Agent call named, for a spawn that resolves none.
+const aliasOf = new Map<string, string>()
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -432,7 +439,7 @@ export const register: Register = on => {
     const root = await $.session.root()
     // Run records live in the engine's store, per repo, so the history outlives the session.
     storeKey = `runs:${root}`
-    brewKey = `brew:${root}`
+    brewKey = `brew:${root}:${await $.session.id()}`
     gitDir = undefined
     const kept = await $.store.get(storeKey)
     await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
@@ -496,7 +503,7 @@ export const register: Register = on => {
         const label = open ? 'hide board' : 'board'
         toggle = keeper.keep(`band|${e.surface}|toggle`, label, () => void (open ? closePane($) : openPane($)), (onPress: () => void) => <els.Button key="band-toggle" onPress={onPress}>{label}</els.Button>)
       }
-      return bandLine(els, b, await read($, drawnAt), toggle)
+      return bandLine(els, b, await read($, drawnAt), toggle, e.surface)
     } catch {
       return next(e)
     }
@@ -539,6 +546,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const brief = parseBrief(String(e.prompt ?? ''))
+    if (brief) aliasOf.set(brief.id, String((e as any).model ?? ''))
     if (brief) await observe($, { kind: 'brief', ...brief })
     const ran = await next(e)
     try {
@@ -564,8 +572,8 @@ export const register: Register = on => {
     const res = await next(e)
     try {
       const brief = parseBrief(String((e as any).prompt ?? ''))
-      const model = (res as any)?.model
-      if (brief && typeof model === 'string') {
+      if (brief) {
+        const model = spawnModel(res, aliasOf.get(brief.id))
         const current = await read($, live)
         const round = current && current.id === brief.id ? current.round : 0
         const now = await $.clock.now()
@@ -655,6 +663,9 @@ async function toggleFold($: EngineInterface, cardKey: string) {
 // redraws (see board-keep.mjs). Only the band's toggle and the VS Code fallback are Buttons now.
 const keeper = buttonKeeper()
 
+// The cup where a surface draws no SVG: in text, never an emoji (they draw unevenly).
+const CUP_TEXT = ['   ) )  ( (', '.__________.', '|          |]', '|          |', "`----------'"]
+
 // Glyphs where a surface draws no SVG (the terminal): one character per mark, its tone a theme key.
 const GLYPH: Record<string, [string, string]> = {
   planned: ['○', 'inactive'], next: ['○', 'text'], queued: ['○', 'inactive'], running: ['●', 'claude'], lane: ['◉', 'claude'],
@@ -675,16 +686,16 @@ const pxFor = (cells: number) => Math.max(120, Math.min(1400, Math.floor(cells *
 // The band, one line: the cup, the run's chip while one runs, the words in theme keys, who is
 // needed, and the board toggle right. Each part sits in its own box with its own one-line Text;
 // the ID gives way first; a part that starts a box starts with a no-break space.
-function bandLine(els: any, b: any, nowMs: number, toggle: any) {
+function bandLine(els: any, b: any, nowMs: number, toggle: any, surface: string) {
   const { Box, Text, Svg } = els
-  const rich = !!Svg
+  const rich = !!Svg && surface !== 'terminal'
   const running = !!b.running
   const part = (key: string, text: string, props: any, shrink: number) => (
     <Box key={key} flexShrink={shrink} overflow="hidden"><Text {...props} wrap="truncate-end">{text}</Text></Box>
   )
   const lead = rich
     ? <Box key="cup" flexShrink={0}><Svg alt={running ? 'brewing' : 'ristretto'} width={16} height={16} source={cup({ size: 16, live: running && !!b.running.id })} /></Box>
-    : <Box key="cup" flexShrink={0}><Text>☕</Text></Box>
+    : null
   let bar: any = null
   let words: any[]
   let need = 0
@@ -733,7 +744,8 @@ async function drawPane($: any, e: any) {
   // drops it, so there a row presses by its Button.
   const Client = e.surface === 'desktop' || e.surface === 'terminal' ? els.Client : undefined
   if (!themeKnown) await readTheme($)
-  const rich = !!Svg
+  // The terminal resolves an Svg but draws it as nothing: glyphs there.
+  const rich = !!Svg && e.surface !== 'terminal'
   const canPress = e.surface !== 'mobile' && (!!Client || !!Button)
   const nowMs = await read($, drawnAt)
   const current = await read($, live)
@@ -951,7 +963,7 @@ async function drawPane($: any, e: any) {
   if (v.kind === 'cup') {
     return (
       <Box flexDirection="column" alignItems="center" paddingY={1}>
-        {rich ? img(cup({ size: 64, live: false }), 'all brewed') : <Text color="claude">☕</Text>}
+        {rich ? img(cup({ size: 64, live: false }), 'all brewed') : CUP_TEXT.map((line, i) => <Text key={`cup-${i}`} color="claude">{line}</Text>)}
         <Text bold>{`all ${v.total} brewed`}</Text>
         <Text dimColor>roadmap clear</Text>
       </Box>

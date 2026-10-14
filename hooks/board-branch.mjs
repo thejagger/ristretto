@@ -72,7 +72,8 @@ export function featuresOn(commits, known) {
   return out;
 }
 
-const HEX = /^[0-9a-f]{40}$/;
+// An object name: SHA-1 (40 hex) or SHA-256 (64 hex).
+const HEX = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 // Whether the proved tree is HEAD's code: exit 0 when it is. The roadmap and plans are left out,
 // so a close commit after the verify keeps it. Only a hex tree from the file reaches git.
@@ -116,8 +117,9 @@ export function branchOf({ head, base, commits, known, runs, now, onDefault = fa
   const ids = base && commits.length ? featuresOn(commits, known) : null;
   let lastBrew = '';
   if (ids && ids.length) {
-    const ended = (runs || []).filter((r) => ids.includes(r.id) && r.endedAt).map((r) => r.endedAt);
-    if (ended.length) lastBrew = `last brew ${ago(Math.max(...ended), now)}`;
+    // The newest run, named by its own command: a pull or a shot is not a brew.
+    const newest = (runs || []).filter((r) => ids.includes(r.id) && r.endedAt).sort((a, b) => b.endedAt - a.endedAt)[0];
+    if (newest) lastBrew = `last ${['pull', 'shot', 'brew'].includes(newest.command) ? newest.command : 'brew'} ${ago(newest.endedAt, now)}`;
     else {
       const at = commits.filter((c) => !isDocs(c.subject) && ids.includes(featureIdOf(c.subject))).map((c) => c.at);
       if (at.length) lastBrew = `last commit ${ago(Math.max(...at), now)}`;

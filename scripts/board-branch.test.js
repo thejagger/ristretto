@@ -59,6 +59,12 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(b.suiteOf({ verdict: 'green', tree: 'not-a-tree' }, { treeMatches: true }).state, 'unproven', 'a half-written file never proves');
   assert.strictEqual(b.suiteOf('garbage', { treeMatches: true }).state, 'unproven');
   assert.deepStrictEqual(b.suiteArgs(H('b')), ['diff', '--quiet', '--end-of-options', H('b'), 'HEAD', '--', '.', ':(exclude)docs/ristretto']);
+  // SHA-256 repositories: 64-hex trees and heads prove too.
+  const H64 = (c) => c.repeat(64);
+  assert.deepStrictEqual(b.suiteArgs(H64('b')).slice(3, 4), [H64('b')]);
+  assert.strictEqual(b.suiteOf({ verdict: 'green', tree: H64('b'), head: H64('c') }, { treeMatches: true, head: H64('a') }).state, 'green');
+  assert.strictEqual(b.suiteOf({ verdict: 'green', tree: null, head: H64('a') }, { treeMatches: false, head: H64('a') }).state, 'green');
+  assert.strictEqual(b.suiteArgs('b'.repeat(50)), null, 'neither 40 nor 64 hex');
   assert.strictEqual(b.suiteArgs('../../etc'), null);
   assert.strictEqual(b.suiteArgs('z'.repeat(40)), null);
   assert.strictEqual(b.suiteArgs(null), null);
@@ -77,6 +83,11 @@ const { pathToFileURL } = require('url');
   const at = new Date(2026, 9, 14, 13, 13).getTime();
   br = b.branchOf({ head: 'brew/x', base: { ref: 'refs/heads/main', label: 'main' }, commits: [{ at: at - 3600000, subject: 'feat(a): x' }], known: () => true, runs: [{ id: 'a', endedAt: at }, { id: 'zz', endedAt: at + 60000 }], now });
   assert.deepStrictEqual([br.base, br.ids, br.lastBrew], ['main', ['a'], 'last brew today 13:13'], 'the newest run of a feature on the branch');
+  // The run's own command names it: a pull or a shot is not a brew.
+  br = b.branchOf({ head: 'f', base: { ref: 'refs/heads/main', label: 'main' }, commits: [{ at, subject: 'feat(a): x' }], known: () => true, runs: [{ id: 'a', command: 'brew', endedAt: at - 60000 }, { id: 'a', command: 'pull', endedAt: at }], now });
+  assert.strictEqual(br.lastBrew, 'last pull today 13:13');
+  br = b.branchOf({ head: 'f', base: { ref: 'refs/heads/main', label: 'main' }, commits: [{ at, subject: 'feat(a): x' }], known: () => true, runs: [{ id: 'a', command: 'shot', endedAt: at }], now });
+  assert.strictEqual(br.lastBrew, 'last shot today 13:13');
   br = b.branchOf({ head: 'brew/x', base: { ref: 'refs/heads/main', label: 'main' }, commits: [{ at, subject: 'feat(a): x' }], known: () => true, runs: [], now });
   assert.strictEqual(br.lastBrew, 'last commit today 13:13', 'no run record: the newest feature commit');
   br = b.branchOf({ head: 'brew/x', base: { ref: 'refs/heads/main', label: 'main' }, commits: [{ at, subject: 'chore: x' }], known: () => true, runs: [], now });

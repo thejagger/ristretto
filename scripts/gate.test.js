@@ -1627,7 +1627,9 @@ assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the refusal must name the fa
   assert.notStrictEqual(s.tree, g(dir, ['rev-parse', 'HEAD^{tree}']), 'the tree must include the uncommitted change');
   assert.strictEqual(g(dir, ['diff', '--cached', '--name-only']), '', "the user's index must stay untouched");
   assert.ok(Math.abs(s.at - Date.now()) < 60000);
-  assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'suite-index')), 'the index copy must be removed');
+  // The index copy lives in the git dir (it must never land in the tree it describes) and is gone after.
+  assert.ok(!fs.existsSync(path.join(dir, '.git', 'ristretto-suite-index')), 'the index copy must be removed');
+  assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'suite-index')), 'and never written into the work tree');
   // Committing exactly what was proved keeps the same tree: the verdict still holds after the closer commits.
   g(dir, ['add', '-A']);
   spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'v2'], { cwd: dir });
@@ -1648,6 +1650,22 @@ assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the refusal must name the fa
   assert.ok(s.failing.length > 0, 'a red verdict must name what failed');
   gate(dir, 'disarm');
   assert.ok(fs.existsSync(path.join(dir, '.ristretto', 'suite.json')), 'disarm must keep suite.json');
+
+  // A SHA-256 repository: its 64-hex tree is recorded too.
+  {
+    const d = tmpRepo(JSON.stringify({ gates: { test: PASS } }));
+    fs.writeFileSync(path.join(d, '.gitignore'), '.ristretto/\n');
+    fs.writeFileSync(path.join(d, 'src.txt'), 'v1');
+    const init = spawnSync('git', ['init', '-q', '--object-format=sha256'], { cwd: d, encoding: 'utf8' });
+    if (init.status === 0) {
+      spawnSync('git', ['add', '-A'], { cwd: d });
+      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init'], { cwd: d });
+      assert.strictEqual(gate(d, 'verify').status, 0);
+      const s256 = suite(d);
+      assert.match(s256.tree, /^[0-9a-f]{64}$/, 'a SHA-256 tree is kept, not dropped');
+      assert.match(s256.head, /^[0-9a-f]{64}$/);
+    }
+  }
 
   // Outside git the verdict is still recorded, with no head or tree to prove it by.
   dir = tmpRepo(JSON.stringify({ gates: { test: PASS } }));

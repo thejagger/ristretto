@@ -580,7 +580,7 @@ function recordSuite(verdict, gates, failing, extra = {}) {
       try { fs.unlinkSync(copyAt); } catch { /* never written */ }
     }
   }
-  if (tree !== null && !/^[0-9a-f]{40}$/.test(tree)) tree = null;
+  if (tree !== null && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree)) tree = null; // SHA-1 or SHA-256
   try {
     fs.mkdirSync(path.dirname(suitePath), { recursive: true });
     fs.writeFileSync(suitePath, JSON.stringify({ verdict, head, tree, at: Date.now(), gates, failing, ...extra }));

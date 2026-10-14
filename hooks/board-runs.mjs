@@ -137,3 +137,10 @@ export function closeRole(roles, id, ms, now) {
   const last = list[list.length - 1];
   return { ...roles, [id]: [...list.slice(0, -1), { ...last, endedAt: Math.min(now, last.startedAt + ms) }] };
 }
+
+// The model a spawned role ran on: the id the spawn resolved, else the alias the Agent call
+// named, else nothing (the table then shows a dash, the role and its time still).
+export function spawnModel(result, alias) {
+  if (result && typeof result.model === 'string' && result.model) return result.model;
+  return typeof alias === 'string' ? alias : '';
+}
