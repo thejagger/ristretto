@@ -501,3 +501,121 @@ export function view(board, live, now, elsewhere = false, opts = {}) {
     },
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// v3: one state, branch first (spec section 0 and 4). What holds this branch from shipping, what
+// needs a person but is not this branch's, what brew takes next, and what is done. Rows carry no
+// action: the person acts in the chat. Times are measured to `opts.drawnAt`, the stamp of the
+// handler that changed what is shown, never to a clock read while drawing.
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const featureOpen = (id) => ({ kind: 'feature', id });
+
+// What a needs-* feature still waits on, in words: `tick 2 checks`, `2 findings · 1 check`.
+function waitsWords(row, ctx) {
+  const list = ctx.checks[row.id];
+  const unticked = (list ?? []).filter((c) => !c.done).length;
+  if (row.status === 'needs-human') {
+    if (!list || !list.length) return 'needs a check';
+    return unticked ? `tick ${plural(unticked, 'check')}` : 'checks ticked';
+  }
+  const f = ctx.plans[row.id]?.findings?.length || 1;
+  return `${plural(f, 'finding')}${unticked ? ` · ${plural(unticked, 'check')}` : ''}`;
+}
+
+const blockedWords = (row) => {
+  const fact = factOf(row.reason);
+  return fact ? `waits on domain/${fact}` : waitsOn(row.reason);
+};
+
+// The feature brew takes first: the topmost planned row that waits on nothing, or a needs-human
+// row whose checks are all ticked (a check re-run), in roadmap order (brew.md "Pick").
+function nextPick(rows, ctx, running) {
+  for (const r of rows) {
+    if (r.id === running) continue;
+    if (r.status === 'planned' && waitingOn(ctx.plans[r.id], ctx.statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length)) return r.id;
+    const list = ctx.checks[r.id];
+    if (r.status === 'needs-human' && list && list.length && list.every((c) => c.done)) return r.id;
+  }
+  return null;
+}
+
+function doneRowOf(r, run) {
+  return {
+    key: `done-${r.id}`, glyph: 'done', id: r.id, detail: plain(r.title), tone: 'dim',
+    meta: run ? duration(run.ms) : '', split: run ? splitOf(run) : null, open: featureOpen(r.id),
+  };
+}
+
+export function stateOf(board, live, elsewhere = false, opts = {}) {
+  const rows = board.rows;
+  const busy = live !== null || elsewhere;
+  const running = live && live.id;
+  const statusOf = new Map(rows.map((r) => [r.id, r.status]));
+  const runOf = mergeRuns(opts.runs ?? []);
+  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
+  const branchIds = opts.branch?.ids ?? null;
+  const onBranch = (id) => !!branchIds && branchIds.includes(id);
+  const nextId = nextPick(rows, ctx, running);
+  const suite = opts.suite ?? { state: 'unproven', text: 'suite unproven', failing: '' };
+
+  // What holds the branch: its features that are not done, in roadmap order, a red suite first.
+  const holders = [];
+  if (branchIds) {
+    if (suite.state === 'red') {
+      holders.push({ key: 'hold-suite', glyph: 'suite-red', id: 'full suite', detail: `red · ${suite.failing || 'a gate'}`, tone: 'error', open: null });
+    }
+    for (const r of rows) {
+      if (!onBranch(r.id) || r.id === running) continue;
+      const hold = (detail, tone) => holders.push({
+        key: `hold-${r.id}`, glyph: r.status === 'in-progress' ? 'running' : r.status, id: r.id, detail, tone,
+        open: featureOpen(r.id), ...(r.id === nextId ? { tag: 'next' } : {}),
+      });
+      if (r.status === 'needs-human') hold(waitsWords(r, ctx), 'permission');
+      else if (r.status === 'needs-review') hold(waitsWords(r, ctx), 'warning');
+      else if (r.status === 'blocked') hold(`blocked · ${blockedWords(r)}`, 'error');
+      else if (r.status === 'in-progress') hold('in progress · no run', 'dim');
+    }
+  }
+
+  // What needs a person but does not hold this branch: blocked rows without code here, needs-*
+  // rows built elsewhere (or every one, with no scope), and facts in conflict.
+  const needsYou = [];
+  for (const r of rows) {
+    if (onBranch(r.id) || r.id === running) continue;
+    if (r.status === 'blocked') needsYou.push({ key: `need-${r.id}`, glyph: 'blocked', id: r.id, detail: blockedWords(r), tone: 'dim', open: featureOpen(r.id) });
+    else if (r.status === 'needs-human' || r.status === 'needs-review') {
+      needsYou.push({ key: `need-${r.id}`, glyph: r.status, id: r.id, detail: waitsWords(r, ctx), tone: 'dim', open: featureOpen(r.id), ...(r.id === nextId ? { tag: 'next' } : {}) });
+    }
+  }
+  for (const f of (opts.domain ?? { tree: [] }).tree.filter((x) => x.conflict)) {
+    needsYou.push({ key: `fact-${f.file}-${f.title}`, glyph: 'fact-conflict', id: f.title, detail: `${f.file} · in conflict`, tone: 'warning', open: { kind: 'domain' } });
+  }
+
+  // Up next: what waits on nothing, in brew's order, five at most.
+  const planned = rows.filter((r) => r.status === 'planned' && r.id !== running);
+  const free = (r) => waitingOn(ctx.plans[r.id], statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
+  const eligible = planned.filter(free);
+  const upNext = {
+    rows: eligible.slice(0, 5).map((r) => ({
+      key: `next-${r.id}`, glyph: r.id === nextId ? 'next' : 'planned', id: r.id, detail: r.id === nextId ? 'next' : 'queued',
+      tone: r.id === nextId ? 'default' : 'dim', open: featureOpen(r.id),
+    })),
+    eligible: eligible.length,
+    more: Math.max(0, eligible.length - 5),
+    waiting: planned.length - eligible.length,
+  };
+
+  // Done: newest first, a measured run by when it ended, the rest by roadmap order reversed.
+  const finished = rows.filter((r) => r.status === 'done');
+  const measured = finished.filter((r) => runOf.has(r.id)).sort((a, b) => runOf.get(b.id).endedAt - runOf.get(a.id).endedAt);
+  const ordered = [...measured, ...finished.filter((r) => !runOf.has(r.id)).reverse()];
+  const here = branchIds ? ordered.filter((r) => onBranch(r.id)) : ordered.slice(0, 5);
+  const done = { here: here.map((r) => doneRowOf(r, runOf.get(r.id))), total: finished.length, recent: !branchIds, all: ordered.map((r) => doneRowOf(r, runOf.get(r.id))) };
+
+  return {
+    busy, ctx, branchIds, holders, needsYou, upNext, nextId, done, suite,
+    open: rows.filter((r) => r.status !== 'done').length,
+    needYou: needsYou.length,
+  };
+}

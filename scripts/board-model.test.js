@@ -622,5 +622,96 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/`Commit` stays `—` for good/.test(prep), 'prep leaves Commit empty for good');
   }
 
+  // 20. v3: one state decides what holds the branch, what needs you, what is next, what is done.
+  {
+    const R = (id, status, extra = {}) => ({ flight: '', id, title: `${id} title`, tier: 'normal', plan: '', commit: '', touched: [], status, reason: '', ...extra });
+    const P = (o = {}) => ({ depends: [], blockers: [], findings: [], acceptance: [], ...o });
+    const board = {
+      name: 'roadmap', format: { project: null, plugin: '' }, error: null,
+      rows: [
+        R('d-old', 'done'), R('d-here', 'done'), R('human-here', 'needs-human'), R('review-here', 'needs-review'),
+        R('human-away', 'needs-human'), R('blk', 'blocked', { reason: 'waiting on Anatol: the API doc' }),
+        R('p1', 'planned'), R('p2', 'planned'), R('p3', 'planned'), R('p4', 'planned'), R('p5', 'planned'), R('p6', 'planned'),
+        R('pw', 'planned'),
+      ],
+    };
+    const plans = { 'review-here': P({ findings: ['a', 'b'] }), pw: P({ depends: ['blk'] }) };
+    const checks = {
+      'human-here': [{ done: true, text: 'x' }, { done: false, text: 'y' }],
+      'review-here': [{ done: false, text: 'x' }, { done: false, text: 'y' }],
+      'human-away': [{ done: false, text: 'z' }],
+    };
+    const branch = { name: 'brew/x', base: 'main', ids: ['human-here', 'review-here', 'd-here', 'blk-nope'], lastBrew: '' };
+    const runs = [{ id: 'd-here', startedAt: 0, endedAt: 9000, ms: 9000, phases: { plan: 1000, code: 8000, review: 0, close: 0 } }];
+    const opts = { branch, suite: { state: 'green', text: 'suite green', failing: '' }, runs, plans, checks, domain: { tree: [] }, drawnAt: 10000 };
+    let s = m.stateOf(board, null, false, opts);
+    const by = (list, id) => list.find((r) => r.id === id);
+
+    // Holders: what this branch's features still wait on, in their tone.
+    assert.deepStrictEqual(s.holders.map((h) => [h.id, h.detail, h.tone]), [
+      ['human-here', 'tick 1 check', 'permission'],
+      ['review-here', '2 findings · 2 checks', 'warning'],
+    ]);
+    assert.strictEqual(s.branchIds.length, 4);
+    // The same kind of row off the branch, and a blocked row with no commit here, need you instead.
+    assert.deepStrictEqual(s.needsYou.map((r) => r.id), ['human-away', 'blk']);
+    assert.strictEqual(by(s.needsYou, 'blk').detail, 'waits on Anatol');
+    assert.ok(!by(s.holders, 'blk'));
+    assert.strictEqual(s.needYou, s.needsYou.length);
+    assert.strictEqual(s.open, 11, 'open = rows not done');
+
+    // Up next: eligible planned rows in roadmap order, at most 5, the rest counted.
+    assert.deepStrictEqual(s.upNext.rows.map((r) => [r.id, r.detail]), [['p1', 'next'], ['p2', 'queued'], ['p3', 'queued'], ['p4', 'queued'], ['p5', 'queued']]);
+    assert.deepStrictEqual([s.upNext.more, s.upNext.waiting, s.upNext.eligible], [1, 1, 6]);
+    assert.strictEqual(s.nextId, 'p1');
+
+    // Done: this branch's, newest first, each with its own split; the total beside it.
+    assert.deepStrictEqual(s.done.here.map((r) => r.id), ['d-here']);
+    assert.deepStrictEqual([s.done.total, s.done.recent], [2, false]);
+    assert.strictEqual(by(s.done.here, 'd-here').meta, '9s');
+    assert.ok(by(s.done.here, 'd-here').split);
+
+    // A red suite proving this code holds the branch first; an unproven one holds nothing.
+    s = m.stateOf(board, null, false, { ...opts, suite: { state: 'red', text: 'full suite · red · test', failing: 'test' } });
+    assert.deepStrictEqual([s.holders[0].id, s.holders[0].detail, s.holders[0].tone], ['full suite', 'red · test', 'error']);
+    s = m.stateOf(board, null, false, { ...opts, suite: { state: 'unproven', text: 'suite unproven', failing: '' } });
+    assert.strictEqual(s.holders.length, 2);
+
+    // A checks re-run is what brew takes first when it is higher on the roadmap.
+    const ticked = { ...checks, 'human-here': [{ done: true, text: 'x' }] };
+    s = m.stateOf(board, null, false, { ...opts, checks: ticked });
+    assert.strictEqual(s.nextId, 'human-here');
+    assert.deepStrictEqual([by(s.holders, 'human-here').detail, by(s.holders, 'human-here').tag], ['checks ticked', 'next']);
+    assert.strictEqual(s.upNext.rows[0].detail, 'queued', 'the first planned row is not next while a re-run comes first');
+
+    // A blocked feature whose code is on the branch (a failed check re-run) holds it.
+    s = m.stateOf(board, null, false, { ...opts, branch: { ...branch, ids: [...branch.ids, 'blk'] } });
+    assert.deepStrictEqual([by(s.holders, 'blk').detail, by(s.holders, 'blk').tone], ['blocked · waits on Anatol', 'error']);
+    assert.ok(!by(s.needsYou, 'blk'));
+
+    // In progress with no run active holds it; the running feature itself is the Brewing card's.
+    const prog = { ...board, rows: [...board.rows, R('ip', 'in-progress')] };
+    s = m.stateOf(prog, null, false, { ...opts, branch: { ...branch, ids: [...branch.ids, 'ip'] } });
+    assert.strictEqual(by(s.holders, 'ip').detail, 'in progress · no run');
+    s = m.stateOf(prog, { command: 'pull', id: 'ip', phase: 'coding', round: 0, since: 0, gate: null, armed: true }, false, { ...opts, branch: { ...branch, ids: [...branch.ids, 'ip'] } });
+    assert.ok(!by(s.holders, 'ip'));
+    assert.ok(s.busy);
+
+    // No scope (no base, nothing ahead): no holders; every needs-* row needs you; Recently done.
+    s = m.stateOf(board, null, false, { ...opts, branch: { ...branch, ids: null } });
+    assert.deepStrictEqual([s.holders.length, s.branchIds], [0, null]);
+    assert.deepStrictEqual(s.needsYou.map((r) => r.id), ['human-here', 'review-here', 'human-away', 'blk']);
+    assert.strictEqual(s.done.recent, true);
+    assert.deepStrictEqual(s.done.here.map((r) => r.id), ['d-here', 'd-old'], 'newest first: measured, then later rows');
+
+    // A fact in conflict needs you, amber.
+    s = m.stateOf(board, null, false, { ...opts, domain: { tree: [{ file: 'web-auth.md', title: 'Sessions', state: 'confirmed', conflict: { what: 'x' } }] } });
+    const fact = s.needsYou[s.needsYou.length - 1];
+    assert.deepStrictEqual([fact.glyph, fact.detail, fact.tone, fact.open.kind], ['fact-conflict', 'web-auth.md · in conflict', 'warning', 'domain']);
+
+    // No buttons anywhere: the person acts in the chat.
+    assert.ok(!/"action"/.test(JSON.stringify(m.stateOf(board, null, false, opts))));
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
