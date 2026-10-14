@@ -57,6 +57,14 @@ const { pathToFileURL } = require('url');
   const pattern = new RegExp(f.featureLogArgs('DUAL-123')[4].slice('--grep='.length), 'm');
   assert.ok(pattern.test('feat(DUAL-123): first build') && pattern.test('fix(DUAL-123): review fix'));
   assert.ok(!pattern.test('feat(DUAL-1234): another') && !pattern.test('docs(ristretto): close DUAL-123'));
+  // The ID back out of a subject, by the same rule: ristretto's own scope and odd shapes are never one.
+  assert.strictEqual(f.featureIdOf('feat(lnw-export): x'), 'lnw-export');
+  assert.strictEqual(f.featureIdOf('fix(DUAL-123): review fix'), 'DUAL-123');
+  assert.strictEqual(f.featureIdOf('docs(ristretto): y'), null);
+  assert.strictEqual(f.featureIdOf('feat(../x): y'), null);
+  assert.strictEqual(f.featureIdOf('Merge branch main'), null);
+  assert.strictEqual(f.isDocs('docs(lnw-export): manual checks passed'), true);
+  assert.strictEqual(f.isDocs('feat(lnw-export): x'), false);
   // Two commits touching one file: one row, summed.
   assert.deepStrictEqual(f.sumFiles(f.parseNumstat('10\t2\tlib/a.dart\n3\t0\tlib/b.dart\n\n4\t1\tlib/a.dart\n-\t-\tlogo.png\n')), [
     { path: 'lib/a.dart', add: 14, del: 3, bin: false }, { path: 'lib/b.dart', add: 3, del: 0, bin: false }, { path: 'logo.png', add: 0, del: 0, bin: true },

@@ -18,9 +18,25 @@ export function parseNumstat(text) {
 // A feature's commits, found by its ID in the subject: `feat(<ID>): …`, `fix(<ID>): …`. A squash,
 // a fix after review and an old row all read the same, so the roadmap keeps no hash (a commit
 // cannot hold its own). The ID goes in literally; it is one argv entry, never an option.
+// One rule for both directions: the type before the scope, as git's ERE and as a JS pattern.
+const TYPE = '^[a-z]+';
 export function featureLogArgs(id) {
   const literal = String(id).replace(/[.*+?^${}()|[\]\\/-]/g, (c) => (c === '-' || c === '/' ? c : `\\${c}`));
-  return ['log', '--numstat', '--format=', '-E', `--grep=^[a-z]+\\(${literal}\\):`];
+  return ['log', '--numstat', '--format=', '-E', `--grep=${TYPE}\\(${literal}\\):`];
+}
+
+// The feature a subject names, by the same rule. ristretto's own scope (strata's and lanes'
+// commits) is never a feature, and an ID only in the shape plans use for IDs can reach a path.
+const SUBJECT = new RegExp(`${TYPE}\\(([^)]+)\\):`);
+export function featureIdOf(subject) {
+  const m = SUBJECT.exec(String(subject));
+  if (!m || m[1] === 'ristretto' || !/^[A-Za-z0-9][\w.-]*$/.test(m[1])) return null;
+  return m[1];
+}
+
+// A docs commit carries no code: a block's roadmap edit, a check re-run, a record correction.
+export function isDocs(subject) {
+  return /^docs\(/.test(String(subject));
 }
 
 // The same file touched by several commits is one row, its lines summed.
