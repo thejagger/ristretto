@@ -252,6 +252,8 @@ const lockPath = path.join(projectDir, '.ristretto', 'gate-lock');
 const formatBrokenPath = path.join(projectDir, '.ristretto', 'format-broken');
 const baselinePath = path.join(projectDir, '.ristretto', 'baseline.json');
 const orchestratingPath = path.join(projectDir, '.ristretto', 'orchestrating');
+// The full-suite verdict the board reads; it outlives the run, so disarm leaves it.
+const suitePath = path.join(projectDir, '.ristretto', 'suite.json');
 
 // Files ristretto reads and never writes. A hand-curated memory file that an agent appends to
 // stops being worth reading, so every brief in every command says so — and prose held right up
@@ -553,6 +555,36 @@ function git(args) {
   } catch {
     return null;
   }
+}
+
+// What the last full verify said, and which code it proved, for the board: a verdict stays true
+// while the code it proved is the code there. The tree is written through a copy of the index
+// kept inside the git dir, so the user's own index is never touched and the copy never lands in
+// the tree it describes. Best-effort: without it the board reads "unproven".
+function recordSuite(verdict, gates, failing, extra = {}) {
+  const run = (args, env) => {
+    const r = spawnSync('git', args, { cwd: projectDir, encoding: 'utf8', env: env || process.env, stdio: ['ignore', 'pipe', 'ignore'] });
+    return r.status === 0 ? r.stdout.trim() : null;
+  };
+  const head = run(['rev-parse', '--verify', '--quiet', 'HEAD']);
+  let tree = null;
+  const index = run(['rev-parse', '--git-path', 'index']);
+  const copy = run(['rev-parse', '--git-path', 'ristretto-suite-index']);
+  if (index !== null && copy !== null) {
+    const copyAt = path.resolve(projectDir, copy);
+    try {
+      try { fs.copyFileSync(path.resolve(projectDir, index), copyAt); } catch { /* no index yet: add builds one */ }
+      const env = { ...process.env, GIT_INDEX_FILE: copyAt };
+      if (run(['add', '-A'], env) !== null) tree = run(['write-tree'], env);
+    } finally {
+      try { fs.unlinkSync(copyAt); } catch { /* never written */ }
+    }
+  }
+  if (tree !== null && !/^[0-9a-f]{40}$/.test(tree)) tree = null;
+  try {
+    fs.mkdirSync(path.dirname(suitePath), { recursive: true });
+    fs.writeFileSync(suitePath, JSON.stringify({ verdict, head, tree, at: Date.now(), gates, failing, ...extra }));
+  } catch { /* best-effort */ }
 }
 
 // Paths of every dirty or untracked file, as git reports them.
@@ -1366,7 +1398,7 @@ async function main() {
     // no constant naming it (no single file owns that directory), so it stays a literal.
     const known = new Set([
       markerPath, orchestratingPath, retriesPath, greenPath, stalledPath,
-      toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath,
+      toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath,
     ].map((p) => path.basename(p)));
     known.add('build');
     for (const rel of allReportPaths()) known.add(path.basename(rel));
@@ -1436,6 +1468,7 @@ async function main() {
           console.error(drift.join('\n'));
         } else {
           console.log('gates: cached green — tree byte-identical to the last proven run, nothing re-run');
+          recordSuite('green', 'cached', '', { cached: true });
           process.exit(0);
         }
       }
@@ -1446,6 +1479,7 @@ async function main() {
     if (r.ok === null) {
       console.error(`ristretto: could not start — ${lockHolder()} still holds the gate lock after ${waitSec}s.`);
       console.error('  The tree is UNVERIFIED, not red. Let that run finish, then verify again.');
+      recordSuite('unverified', '', '');
       process.exit(1);
     }
     // After the loop, not before: the slow-suite/slow-scoped checks inside read the duration this
@@ -1457,6 +1491,7 @@ async function main() {
       process.exit(0);
     }
     console.log(`gates: ${r.results.join(' ')}`);
+    recordSuite(r.failures ? 'red' : 'green', r.results.join(' '), r.failures ? r.results.filter((x) => x.endsWith('✗')).map((x) => x.slice(0, -2)).join(', ') : '');
     // Record and show the toolchain this verdict was produced with, so a hook that resolves
     // something else can say so instead of surfacing a mystery red on an untouched tree.
     const tools = resolveGateTools();

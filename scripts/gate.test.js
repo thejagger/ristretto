@@ -372,6 +372,7 @@ fs.writeFileSync(path.join(dir, '.ristretto', 'gate-lock'),
 r = gate(dir, 'verify');
 assert.strictEqual(r.status, 1, 'verify must not report success it never established');
 assert.ok(r.stderr.includes('UNVERIFIED'), 'verify must say the tree is unverified, not red');
+assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.ristretto', 'suite.json'), 'utf8')).verdict, 'unverified', 'the board must read unverified, not red');
 
 // --- verify cached: do not re-pay for an unchanged tree. ---
 
@@ -1606,5 +1607,51 @@ arm(dir);
 r = gate(dir, 'full', JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_id: 'a1' }), {}, 'subagent');
 assert.strictEqual(r.status, 2, 'a red gate on a hand-back must exit 2 — got exit ' + r.status + ': ' + r.stderr.slice(0, 300));
 assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the refusal must name the failing gate — got: ' + r.stderr.slice(0, 300));
+
+// --- The suite verdict the board reads (.ristretto/suite.json). ---
+{
+  const suite = (d) => JSON.parse(fs.readFileSync(path.join(d, '.ristretto', 'suite.json'), 'utf8'));
+  const g = (d, args) => spawnSync('git', args, { cwd: d, encoding: 'utf8' }).stdout.trim();
+
+  // A green verify records the head and the tree it proved — uncommitted work included, from a
+  // copy of the index, so the user's own index is never touched.
+  dir = gitTmpRepo(JSON.stringify({ gates: { test: PASS } }));
+  fs.writeFileSync(path.join(dir, 'src.txt'), 'v2, not yet committed');
+  assert.strictEqual(gate(dir, 'verify').status, 0, 'verify must pass');
+  let s = suite(dir);
+  assert.strictEqual(s.verdict, 'green');
+  assert.strictEqual(s.head, g(dir, ['rev-parse', 'HEAD']), 'suite.json must name the head it proved');
+  assert.match(s.tree, /^[0-9a-f]{40}$/);
+  assert.notStrictEqual(s.tree, g(dir, ['rev-parse', 'HEAD^{tree}']), 'the tree must include the uncommitted change');
+  assert.strictEqual(g(dir, ['diff', '--cached', '--name-only']), '', "the user's index must stay untouched");
+  assert.ok(Math.abs(s.at - Date.now()) < 60000);
+  assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'suite-index')), 'the index copy must be removed');
+  // Committing exactly what was proved keeps the same tree: the verdict still holds after the closer commits.
+  g(dir, ['add', '-A']);
+  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'v2'], { cwd: dir });
+  assert.strictEqual(g(dir, ['rev-parse', 'HEAD^{tree}']), s.tree, 'the proved tree must equal the committed one');
+
+  // A cached green is recorded too, and says so.
+  gate(dir, 'verify');
+  assert.strictEqual(gate(dir, 'verify', '{}', {}, 'cached').status, 0);
+  s = suite(dir);
+  assert.strictEqual(s.verdict, 'green');
+  assert.strictEqual(s.cached, true, 'a cached verdict must say it was cached');
+
+  // Red names the failing gate; disarm keeps the verdict (it outlives the run).
+  dir = gitTmpRepo(JSON.stringify({ gates: { test: FAIL } }));
+  assert.strictEqual(gate(dir, 'verify').status, 1, 'a red verify must exit 1');
+  s = suite(dir);
+  assert.strictEqual(s.verdict, 'red');
+  assert.ok(s.failing.length > 0, 'a red verdict must name what failed');
+  gate(dir, 'disarm');
+  assert.ok(fs.existsSync(path.join(dir, '.ristretto', 'suite.json')), 'disarm must keep suite.json');
+
+  // Outside git the verdict is still recorded, with no head or tree to prove it by.
+  dir = tmpRepo(JSON.stringify({ gates: { test: PASS } }));
+  assert.strictEqual(gate(dir, 'verify').status, 0);
+  s = suite(dir);
+  assert.deepStrictEqual([s.verdict, s.head, s.tree], ['green', null, null]);
+}
 
 console.log('gate.test.js: all checks passed');
