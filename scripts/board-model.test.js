@@ -234,6 +234,17 @@ const shown = (v) => JSON.stringify(v);
     v = m.view(board, null, false, { branch: { name: 'x', base: null, ids: null, lastBrew: '' }, suite });
     assert.deepStrictEqual([v.cards[0].footer, v.cards[0].scoped, v.cards[0].ready], ['no main branch to compare with', false, false]);
     assert.strictEqual(v.cards.find((c) => c.kind === 'done').recent, true);
+    // On the default branch with no remote there is nothing to compare with, and it says so
+    // without claiming there is no main branch (final review).
+    v = m.view(board, null, false, { branch: { name: 'main', base: null, ids: null, lastBrew: '', onDefault: true }, suite });
+    assert.strictEqual(v.cards[0].footer, 'on main · nothing to compare with');
+    // Every row done but the full suite red on this code: no cup, the red suite holds the branch.
+    const allDone = { ...board, rows: [row('c', 'normal', 'done')] };
+    const red = { state: 'red', text: 'full suite · red · test', failing: 'test' };
+    v = m.view(allDone, null, false, { branch, suite: red });
+    assert.strictEqual(v.kind, 'board', 'a red suite is never hidden by the cup');
+    assert.strictEqual(v.cards[0].holds[0].id, 'full suite');
+    assert.strictEqual(m.view(allDone, null, false, { branch, suite }).kind, 'cup', 'green: the cup');
     // Not a git repo: no Branch card at all.
     assert.strictEqual(m.view(board, null, false, {}).cards[0].kind, 'needs');
   }

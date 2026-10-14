@@ -630,7 +630,7 @@ function branchCard(state, branch, compact) {
   const done = ids ? ids.filter((id) => statusOf.get(id) === 'done').length : 0;
   const count = (glyph) => state.holders.filter((h) => h.glyph === glyph).length;
   const ready = !!ids && ids.length > 0 && state.holders.length === 0 && state.suite.state === 'green';
-  const footer = !branch.base ? 'no main branch to compare with'
+  const footer = !branch.base ? (branch.onDefault ? `on ${branch.name} · nothing to compare with` : 'no main branch to compare with')
     : !ids ? 'nothing on this branch yet'
       : [state.suite.text, branch.lastBrew].filter(Boolean).join(' · ');
   return {
@@ -658,7 +658,8 @@ export function view(board, live, elsewhere = false, opts = {}) {
     return { kind: 'page', page: featurePage(rows.find((r) => r.id === opts.page.id), state.ctx) };
   }
   const conflicted = domain.tree.filter((f) => f.conflict);
-  if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && !conflicted.length) return { kind: 'cup', total: rows.length };
+  // A red suite on this code holds the branch even when every row is done: never under the cup.
+  if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && !conflicted.length && state.holders.length === 0) return { kind: 'cup', total: rows.length };
 
   const notices = [];
   const plugin = (/^(\d+\.\d+)/.exec(board.format.plugin) || [])[1];

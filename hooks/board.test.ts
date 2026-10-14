@@ -178,12 +178,15 @@ describe('the overview', () => {
   test('VS Code has no press areas: a row opens by its ID\'s Button; mobile draws the overview with no presses', async ($, on) => {
     await start($, on)
     const vs = await mount($, 'vscode')
-    // Where the surface has Buttons but no Client, the ID is the row's Button; where it has neither, the rows still read.
-    expect(await texts(vs)).toContain('review-here')
-    if ((await vs.findAll({ type: 'Client' })).length === 0 && (await vs.findAll({ type: 'Button' })).length > 0) {
-      await vs.press({ key: 'open-hold-review-here' })
-      expect(await texts(vs)).toContain('Needs a look')
-    }
+    // VS Code draws no Client: the ID is the row's Button, a title folds by its Button, ← Board goes back.
+    expect((await vs.findAll({ type: 'Client' })).length).toBe(0)
+    await vs.press({ key: 'fold-next' })
+    expect(await texts(vs)).not.toContain('queued')
+    await vs.press({ key: 'fold-next' })
+    await vs.press({ key: 'open-hold-review-here' })
+    expect(await texts(vs)).toContain('Needs a look')
+    await vs.press({ key: 'back-btn' })
+    expect(await texts(vs)).toContain('Up next')
     const phone = await mount($, 'mobile')
     expect((await phone.findAll({ type: 'Button' })).length).toBe(0)
     expect(await texts(phone)).toContain('brew/x')
@@ -228,6 +231,21 @@ describe('the rendering rules', () => {
     await ui.drawn()
     expect(await svgs(ui)).toEqual(s0)
     await holdsTheLook(ui, 'running')
+  })
+})
+
+describe('between features', () => {
+  test('a brew between features (or restarted mid-brew) still shows the rest of the brew and its tally', async ($, on) => {
+    const clock = await start($, on)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await clock.settle()
+    const ui = await mount($)
+    const t = await texts(ui)
+    expect(t).toContain('Brewing')
+    expect(t).toContain('starting')
+    expect(t).toContain('p1')
+    expect(t).toContain('next')
+    expect(t).toMatch(/0 of \d+ brewed/)
   })
 })
 

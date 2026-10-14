@@ -37,6 +37,15 @@ export function parseBase({ head, originHead, refs, isAncestor }) {
   return ref ? { ref, label: name } : null;
 }
 
+// The default branch's name (origin/HEAD's target, else main, else master), or null: on it,
+// with no remote, there is nothing to compare with rather than no main branch.
+export function defaultBranch({ originHead, refs }) {
+  const have = new Set(lines(refs));
+  const origin = lines(originHead)[0] || '';
+  if (origin.startsWith(REMOTE)) return origin.slice(REMOTE.length);
+  return ['main', 'master'].find((n) => have.has(LOCAL + n) || have.has(REMOTE + n)) ?? null;
+}
+
 export function logArgs(baseRef) {
   return ['log', '--format=%ct%x09%s', `${baseRef}..HEAD`, '--'];
 }
@@ -103,7 +112,7 @@ export function ago(ms, now) {
 // The branch as the board shows it. `ids` is null when nothing can be scoped to it (no base, or
 // nothing ahead, spec 4.3). `lastBrew` is the newest run of a feature on it, else its newest
 // feature commit.
-export function branchOf({ head, base, commits, known, runs, now }) {
+export function branchOf({ head, base, commits, known, runs, now, onDefault = false }) {
   const ids = base && commits.length ? featuresOn(commits, known) : null;
   let lastBrew = '';
   if (ids && ids.length) {
@@ -114,5 +123,5 @@ export function branchOf({ head, base, commits, known, runs, now }) {
       if (at.length) lastBrew = `last commit ${ago(Math.max(...at), now)}`;
     }
   }
-  return { name: head, base: base ? base.label : null, ids, lastBrew };
+  return { name: head, base: base ? base.label : null, ids, lastBrew, onDefault };
 }

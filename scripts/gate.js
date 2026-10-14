@@ -1221,6 +1221,8 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
   const results = [];
   let failures = '';
   let hung = false;
+  // A gate that failed, as against one that hung: a hang is unverified, never red.
+  let red = false;
 
   for (const gate of gateList(scoped)) {
     const gateStartedAt = Date.now();
@@ -1291,12 +1293,13 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
       failures += `\n${advice}`;
       continue;
     }
+    red = true;
     failures += attributed
       ? `\n${attributionLines(attributed)}`
       : `\n--- ristretto gate '${gate.label}' FAILED ---\n${result.output.split('\n').slice(-40).join('\n')}`;
   }
 
-  if (failures) return { ok: false, stalled: hung, results, failures };
+  if (failures) return { ok: false, stalled: hung, red, results, failures };
 
   // Nothing is hung any more. A marker left from an older run keeps saying one is, with no expiry
   // and nothing to contradict it — state that lies is worse than state that is missing.
@@ -1491,7 +1494,7 @@ async function main() {
       process.exit(0);
     }
     console.log(`gates: ${r.results.join(' ')}`);
-    recordSuite(r.failures ? 'red' : 'green', r.results.join(' '), r.failures ? r.results.filter((x) => x.endsWith('✗')).map((x) => x.slice(0, -2)).join(', ') : '');
+    recordSuite(r.failures ? (r.red ? 'red' : 'unverified') : 'green',r.results.join(' '), r.failures ? r.results.filter((x) => x.endsWith('✗')).map((x) => x.slice(0, -2)).join(', ') : '');
     // Record and show the toolchain this verdict was produced with, so a hook that resolves
     // something else can say so instead of surfacing a mystery red on an untouched tree.
     const tools = resolveGateTools();

@@ -31,6 +31,12 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(b.parseBase({ head: 'main', originHead: 'refs/remotes/origin/main', refs: 'refs/heads/main\nrefs/remotes/origin/main\n', isAncestor: () => true }), { ref: 'refs/remotes/origin/main', label: 'origin/main' });
   assert.strictEqual(b.parseBase({ head: 'main', originHead: '', refs: 'refs/heads/main\n', isAncestor: () => true }), null);
 
+  // The default branch's name, so a card on it can say there is nothing to compare with.
+  assert.strictEqual(b.defaultBranch({ originHead: 'refs/remotes/origin/develop', refs: '' }), 'develop');
+  assert.strictEqual(b.defaultBranch({ originHead: '', refs: 'refs/heads/master\n' }), 'master');
+  assert.strictEqual(b.defaultBranch({ originHead: '', refs: '' }), null);
+  assert.strictEqual(b.branchOf({ head: 'main', base: null, commits: [], known: () => true, runs: [], now: 0, onDefault: true }).onDefault, true);
+
   // Commits and the features on the branch: a feature counts only through a commit that is not docs.
   const commits = b.parseLog('1760430000\tfeat(lnw-export): a\n1760420000\tdocs(ristretto): strata\n1760410000\tfix(board): b\n1760400000\tdocs(lnw-export): manual checks passed\n\n');
   assert.deepStrictEqual(commits[0], { at: 1760430000000, subject: 'feat(lnw-export): a' });

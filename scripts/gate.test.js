@@ -154,6 +154,8 @@ assert.strictEqual(fs.readFileSync(path.join(dir, '.ristretto', 'gate-stalled'),
 r = gate(dir, 'verify');
 assert.strictEqual(r.status, 1, 'a hung gate in verify must exit 1');
 assert.ok(r.stdout.includes('test ✗'), 'verify must mark the hung gate failed in its summary');
+// A hung gate is not a red gate: the board must read the verdict as unverified (final review I4).
+assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.ristretto', 'suite.json'), 'utf8')).verdict, 'unverified', 'a hang is recorded as unverified, never red');
 
 // 14. THE REGRESSION TEST. A gate that runs far longer than its silence budget but keeps
 //     printing is working, not hung, and must be left alone to finish. A duration cap would

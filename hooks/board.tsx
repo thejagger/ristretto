@@ -5,7 +5,7 @@ import type { Board, BoardBranch, BoardBrew, BoardDomain, BoardFile, BoardLive, 
 import { EMPTY_BOARD, bandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
 import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
 import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
-import { baseArgs, branchOf, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
+import { baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
 import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock } from './board-svg.mjs'
 import { buttonKeeper } from './board-keep.mjs'
@@ -227,7 +227,8 @@ async function refreshBranch($: EngineInterface) {
       const id = isDocs(c.subject) ? null : featureIdOf(c.subject)
       if (id && !rows.has(id) && !archived.has(id) && (await $.fs.exists(await repo($, `docs/ristretto/plans/archived/${id}.md`)))) archived.add(id)
     }
-    const next = branchOf({ head, base, commits, known: (id: string) => rows.has(id) || archived.has(id), runs: await read($, runs), now: await $.clock.now() })
+    const onDefault = head === defaultBranch({ originHead, refs })
+    const next = branchOf({ head, base, commits, known: (id: string) => rows.has(id) || archived.has(id), runs: await read($, runs), now: await $.clock.now(), onDefault })
     { const v = next; if (!same(await read($, branch), v)) { await update($, branch, () => v); await stamp($) } }
   } catch {
     // The next turn tries again.
@@ -727,7 +728,10 @@ function bandLine(els: any, b: any, nowMs: number, toggle: any) {
 
 async function drawPane($: any, e: any) {
   const els = $.ui.resolve(e) as any
-  const { Box, Text, Button, Svg, Client } = els
+  const { Box, Text, Button, Svg } = els
+  // A press area is a Client: the desktop and the terminal draw it; VS Code resolves one but
+  // drops it, so there a row presses by its Button.
+  const Client = e.surface === 'desktop' || e.surface === 'terminal' ? els.Client : undefined
   if (!themeKnown) await readTheme($)
   const rich = !!Svg
   const canPress = e.surface !== 'mobile' && (!!Client || !!Button)
@@ -1041,16 +1045,6 @@ async function drawPane($: any, e: any) {
   // gate line when red, Role / Model / Time, the rest of this brew, and the tally as the footer.
   function brewingCard(c: any) {
     const lane = c.inset
-    if (!lane) return card('brewing', [foldTitle('brewing', c.title, null), ...titleGap('bw-g0'), note('bw-text', c.text ?? 'starting')])
-    const step = lane.status
-    const summary = (
-      <Text wrap="truncate-end">{[
-        <Text key="i">{lane.id}</Text>,
-        <Text key="s" {...(lane.red ? { color: 'error' } : { color: 'claude' })}>{` ${lane.red ? 'gate red' : step}`}</Text>,
-      ]}</Text>
-    )
-    const head = foldTitle('brewing', c.title, summary)
-    if (isFolded('brewing')) return card('brewing', [head])
     const restRight = (r: any) => (
       <Box flexDirection="row" alignItems="center">
         <Text {...toneOf(r.tone)} wrap="truncate-end">{r.detail}</Text>
@@ -1060,11 +1054,34 @@ async function drawPane($: any, e: any) {
     const t = c.tally
     const foot = t && (
       <Box key="bw-foot" flexDirection="row">
-        <Text dimColor>{'brew '}</Text>
+        <Text dimColor>{'brew\u00a0'}</Text>
         {minEl(c.clock, 'brew', { dimColor: true })}
-        <Text dimColor wrap="truncate-end">{` · ${t.brewed} of ${t.total} brewed${t.blocked ? ` · ${t.blocked} blocked` : ''}${t.toGo ? ` · ${t.toGo} to go` : ''}`}</Text>
+        <Text dimColor wrap="truncate-end">{`\u00a0· ${t.brewed} of ${t.total} brewed${t.blocked ? ` · ${t.blocked} blocked` : ''}${t.toGo ? ` · ${t.toGo} to go` : ''}`}</Text>
       </Box>
     )
+    // The rest of this brew and its tally: drawn between features too, and after a restart
+    // mid-brew before the next brief names the feature at work.
+    const rest = [
+      c.rows.length > 0 && strip(10, 'bw-g4'),
+      ...c.rows.map((r: any) => lrow(r, { right: restRight(r), shrink: true })),
+      (c.more > 0 || c.moreBrewed > 0) && more('brew-more', [c.more > 0 ? `+${c.more} queued` : '', c.moreBrewed > 0 ? `+${c.moreBrewed} brewed` : ''].filter(Boolean).join(' · '), { kind: 'queue' }),
+      !!foot && strip(8, 'bw-g6'),
+      foot,
+    ]
+    if (!lane) {
+      const head = foldTitle('brewing', c.title, <Text dimColor wrap="truncate-end">{c.text ?? 'starting'}</Text>)
+      if (isFolded('brewing')) return card('brewing', [head])
+      return card('brewing', [head, ...titleGap('bw-g0'), note('bw-text', c.text ?? 'starting'), ...rest])
+    }
+    const step = lane.status
+    const summary = (
+      <Text wrap="truncate-end">{[
+        <Text key="i">{lane.id}</Text>,
+        <Text key="s" {...(lane.red ? { color: 'error' } : { color: 'claude' })}>{`\u00a0${lane.red ? 'gate red' : step}`}</Text>,
+      ]}</Text>
+    )
+    const head = foldTitle('brewing', c.title, summary)
+    if (isFolded('brewing')) return card('brewing', [head])
     const open = () => go({ kind: 'feature', id: lane.id })
     return card('brewing', [
       head,
@@ -1087,13 +1104,10 @@ async function drawPane($: any, e: any) {
       ),
       lane.roles.length > 0 && strip(8, 'bw-g3'),
       lane.roles.length > 0 && roleTable('bw-roles', lane.roles),
-      c.rows.length > 0 && strip(10, 'bw-g4'),
-      ...c.rows.map((r: any) => lrow(r, { right: restRight(r), shrink: true })),
-      (c.more > 0 || c.moreBrewed > 0) && more('brew-more', [c.more > 0 ? `+${c.more} queued` : '', c.moreBrewed > 0 ? `+${c.moreBrewed} brewed` : ''].filter(Boolean).join(' · '), { kind: 'queue' }),
-      !!foot && strip(8, 'bw-g6'),
-      foot,
+      ...rest,
     ])
   }
+
 
   function needsCard(c: any) {
     const head = foldTitle('needs', 'Needs you', <Text color="permission">{`${c.rows.length}`}</Text>)
