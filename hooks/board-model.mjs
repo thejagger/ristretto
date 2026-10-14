@@ -619,3 +619,138 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
     needYou: needsYou.length,
   };
 }
+
+// The effort bar for a run (spec 5): plan · code · review · close (shot has no plan), the
+// phases before the current one done. Code sits mid-phase (no unit record, spec 0.3 #11); review
+// moves by round, 3 for brew and 2 for pull and shot; a fix round stays in review. Progress moves
+// only with the phase or round, never with the clock.
+const AT = { planning: 'plan', coding: 'code', fixing: 'review', review: 'review', closing: 'close' };
+export function effortOf(live, command) {
+  const names = command === 'shot' ? ['code', 'review', 'close'] : ['plan', 'code', 'review', 'close'];
+  const phase = live?.phase ?? null;
+  const at = AT[phase] ? names.indexOf(AT[phase]) : -1;
+  const round = Math.max(1, live?.round || 0);
+  const max = command === 'brew' ? 3 : 2;
+  const progress = (name) => {
+    if (name !== 'review') return 0.5;
+    const p = phase === 'fixing' ? (round - 0.25) / max : (round - 0.5) / max;
+    return Math.min(0.95, Math.max(0.05, p));
+  };
+  const step = phase === 'review' ? (round > 1 ? `review r${round}` : 'review')
+    : phase === 'fixing' ? `fix r${round}`
+      : AT[phase] ?? (phase || 'starting');
+  const done = phase === 'interrupted' ? -1 : at;
+  return {
+    phases: names.map((name, i) => (i === at && phase !== 'interrupted'
+      ? { name, state: 'current', progress: progress(name) }
+      : { name, state: i < done ? 'done' : 'todo' })),
+    red: !!live?.gate?.red,
+    step,
+  };
+}
+
+// The role table: each role's time, the running one live (measured to the drawing's stamp).
+export function rolesOf(roles, id, drawnAt) {
+  return (roles?.[id] ?? []).map((r) => ({
+    role: r.role,
+    model: r.model,
+    time: { ms: Math.max(0, (r.endedAt ?? drawnAt) - r.startedAt), live: r.endedAt === null || r.endedAt === undefined },
+    state: r.endedAt === null || r.endedAt === undefined ? 'current' : 'done',
+  }));
+}
+
+// The role a main-loop phase change starts in pull or shot (spec 4.8); brew's roles all arrive
+// as spawns, so it has none here.
+const MAIN_ROLE = { coding: 'implementer', fixing: 'fixer', closing: 'closer' };
+export function mainRoleOf(before, after) {
+  if (!after || !after.id || after.command === 'brew' || !MAIN_ROLE[after.phase]) return null;
+  if (before && before.id === after.id && before.phase === after.phase) return null;
+  return { id: after.id, role: MAIN_ROLE[after.phase], round: after.round || 0 };
+}
+
+// The Brewing card (spec 4.6, section 0): the feature at work, then the rest of this brew. With
+// the snapshot the board took when brew started, the tally (brewed + blocked + to go = total, the
+// current feature one to go); without it (a brew the board did not see start) the rest comes from
+// Up next. A pull or shot is the feature alone. `opts.run` is the run in progress (its start).
+export function brewingOf(board, live, opts = {}) {
+  if (!live) return null;
+  const rows = board.rows;
+  const drawnAt = opts.drawnAt ?? 0;
+  const statusOf = new Map(rows.map((r) => [r.id, r.status]));
+  const ctx = { plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf };
+  const brew = live.command === 'brew';
+  const current = live.id ? rows.find((r) => r.id === live.id) ?? { id: live.id, title: '', status: 'in-progress' } : null;
+  const effort = effortOf(live, live.command);
+  const snap = brew ? opts.snapshot ?? null : null;
+  const runOf = mergeRuns((opts.runs ?? []).filter((r) => !snap || r.startedAt >= snap.startedAt));
+
+  const inset = current && {
+    id: current.id,
+    title: plain(current.title || ''),
+    glyph: effort.red ? 'gate-red' : 'running',
+    status: effort.step,
+    red: effort.red,
+    effort,
+    roles: rolesOf(opts.roles, current.id, drawnAt),
+    gate: effort.red ? { red: true, text: 'gate red' } : null,
+    elapsed: { ms: Math.max(0, drawnAt - (opts.run && opts.run.id === current.id ? opts.run.startedAt : live.since)), live: live.phase !== 'interrupted' },
+  };
+
+  const queued = (ids) => ids.map((id, i) => ({
+    key: `q-${id}`, glyph: i === 0 ? 'next' : 'planned', id, detail: i === 0 ? 'next' : 'queued', tone: i === 0 ? 'default' : 'dim', open: featureOpen(id),
+  }));
+  const free = (r) => waitingOn(ctx.plans[r.id], statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
+  let tally = null;
+  let rest = [];
+  let more = 0;
+  let moreBrewed = 0;
+  if (snap) {
+    const inBrew = new Set(snap.ids);
+    const reruns = new Set(snap.reruns ?? []);
+    const others = rows.filter((r) => inBrew.has(r.id) && r.id !== live.id);
+    const brewed = others.filter((r) => (reruns.has(r.id) ? r.status === 'done' : ['done', 'needs-human', 'needs-review'].includes(r.status)));
+    const blocked = others.filter((r) => r.status === 'blocked');
+    const blockedIds = new Set(blocked.map((r) => r.id));
+    const deps = (r) => ctx.plans[r.id]?.depends ?? [];
+    const waitsBlocked = (r) => deps(r).find((d) => blockedIds.has(d) || (!inBrew.has(d) && !SATISFIES.has(statusOf.get(d))));
+    const pending = others.filter((r) => r.status === 'planned' || (reruns.has(r.id) && r.status === 'needs-human'));
+    const toGo = pending.filter((r) => !waitsBlocked(r));
+    const stuck = pending.filter((r) => waitsBlocked(r));
+    tally = { brewed: brewed.length, blocked: blocked.length, toGo: toGo.length + (current ? 1 : 0), total: 0 };
+    tally.total = tally.brewed + tally.blocked + tally.toGo;
+    // In brew's order: what waits on nothing first, then what waits on rows still in this brew.
+    const order = [...toGo.filter(free), ...toGo.filter((r) => !free(r))].map((r) => r.id);
+    const byEnd = (a, b) => (runOf.get(b.id)?.endedAt ?? 0) - (runOf.get(a.id)?.endedAt ?? 0);
+    const brewedShown = brewed.slice().sort(byEnd).slice(0, 3);
+    rest = [
+      ...queued(order.slice(0, 3)),
+      ...brewedShown.map((r) => ({
+        key: `brewed-${r.id}`, glyph: r.status, id: r.id, detail: 'brewed', tone: 'dim',
+        meta: runOf.has(r.id) ? duration(runOf.get(r.id).ms) : '', open: featureOpen(r.id),
+      })),
+      ...blocked.map((r) => ({ key: `brew-blocked-${r.id}`, glyph: 'blocked', id: r.id, detail: `blocked · ${blockedWords(r)}`, tone: 'error', open: featureOpen(r.id) })),
+      ...stuck.map((r) => ({ key: `brew-waits-${r.id}`, glyph: 'planned', id: r.id, detail: `waits on ${waitsBlocked(r)}`, tone: 'dim', open: featureOpen(r.id) })),
+    ];
+    more = Math.max(0, order.length - 3);
+    moreBrewed = Math.max(0, brewed.length - 3);
+  } else if (brew) {
+    const order = rows.filter((r) => r.status === 'planned' && r.id !== live.id && free(r)).map((r) => r.id);
+    rest = queued(order.slice(0, 3));
+    more = Math.max(0, order.length - 3);
+  }
+  return {
+    kind: 'brewing',
+    title: brew ? 'Brewing' : 'Pulling',
+    red: effort.red,
+    lanes: false,
+    tally,
+    clock: snap ? { ms: Math.max(0, drawnAt - snap.startedAt), live: true } : null,
+    inset,
+    text: inset ? null : effort.step,
+    laneRows: [],
+    freeSlot: null,
+    rows: rest,
+    more,
+    moreBrewed,
+  };
+}

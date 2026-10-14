@@ -713,5 +713,87 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/"action"/.test(JSON.stringify(m.stateOf(board, null, false, opts))));
   }
 
+  // 21. v3: the feature at work, its effort, its roles, and this brew's tally.
+  {
+    const L = (o) => ({ command: 'pull', id: 'f', phase: 'coding', round: 0, since: 0, gate: null, armed: true, ...o });
+    const states = (e) => e.phases.map((p) => (p.state === 'current' ? `${p.name}:${p.progress}` : `${p.name}:${p.state}`));
+
+    // Effort: phases before the current one done; code sits mid-phase (no unit record, spec 0.3 #11).
+    let e = m.effortOf(L({}), 'pull');
+    assert.deepStrictEqual(states(e), ['plan:done', 'code:0.5', 'review:todo', 'close:todo']);
+    assert.deepStrictEqual([e.step, e.red], ['code', false]);
+    e = m.effortOf(L({ command: 'shot' }), 'shot');
+    assert.deepStrictEqual(e.phases.map((p) => p.name), ['code', 'review', 'close'], 'shot has no plan');
+    // A fix round stays in review, so the thumb never jumps back to code.
+    e = m.effortOf(L({ phase: 'fixing', round: 1 }), 'pull');
+    assert.deepStrictEqual([e.phases[2].state, e.step], ['current', 'fix r1']);
+    e = m.effortOf(L({ phase: 'review', round: 2, command: 'brew' }), 'brew');
+    assert.deepStrictEqual([e.step, e.phases[2].progress], ['review r2', 0.5], 'brew reviews up to 3 rounds');
+    e = m.effortOf(L({ gate: { since: 0, red: true } }), 'pull');
+    assert.strictEqual(e.red, true);
+    e = m.effortOf(L({ phase: 'interrupted' }), 'pull');
+    assert.ok(e.phases.every((p) => p.state !== 'current'));
+    assert.strictEqual(e.step, 'interrupted');
+
+    // Roles: who works, on which model, for how long; the running one is live.
+    const roles = { f: [
+      { role: 'planner', model: 'Opus 5.5', startedAt: 1000, endedAt: 61000 },
+      { role: 'implementer', model: 'Sonnet 5.5', startedAt: 61000, endedAt: null },
+    ] };
+    assert.deepStrictEqual(m.rolesOf(roles, 'f', 121000), [
+      { role: 'planner', model: 'Opus 5.5', time: { ms: 60000, live: false }, state: 'done' },
+      { role: 'implementer', model: 'Sonnet 5.5', time: { ms: 60000, live: true }, state: 'current' },
+    ]);
+    assert.deepStrictEqual(m.rolesOf({}, 'f', 0), []);
+    // A main-loop phase change in pull or shot names the role that starts; brew's roles are spawns.
+    assert.deepStrictEqual(m.mainRoleOf(L({ phase: 'planning' }), L({ phase: 'coding' })), { id: 'f', role: 'implementer', round: 0 });
+    assert.deepStrictEqual(m.mainRoleOf(L({ phase: 'review', round: 1 }), L({ phase: 'fixing', round: 1 })), { id: 'f', role: 'fixer', round: 1 });
+    assert.deepStrictEqual(m.mainRoleOf(L({ phase: 'review' }), L({ phase: 'closing' })), { id: 'f', role: 'closer', round: 0 });
+    assert.strictEqual(m.mainRoleOf(L({ phase: 'coding' }), L({ phase: 'coding' })), null);
+    assert.strictEqual(m.mainRoleOf(L({ command: 'brew', phase: 'planning' }), L({ command: 'brew', phase: 'coding' })), null);
+
+    // This brew: brewed + blocked + to go = total; the current feature is one to go.
+    const R = (id, status, extra = {}) => ({ flight: '', id, title: `${id} title`, tier: 'normal', plan: '', commit: '', touched: [], status, reason: '', ...extra });
+    const board = {
+      name: 'r', format: { project: null, plugin: '' }, error: null,
+      rows: [R('a', 'done'), R('b', 'needs-review'), R('c', 'in-progress'), R('d', 'blocked', { reason: 'waiting on Anatol: x' }), R('e', 'planned'), R('f2', 'planned'), R('g', 'planned'), R('h', 'planned'), R('w', 'planned'), R('old', 'done')],
+    };
+    const plans = { w: { depends: ['d'], blockers: [], findings: [] } };
+    const live = L({ command: 'brew', id: 'c', phase: 'coding' });
+    const snapshot = { startedAt: 1000, ids: ['a', 'b', 'c', 'd', 'e', 'f2', 'g', 'h', 'w'], reruns: [] };
+    const runs = [{ id: 'a', startedAt: 2000, endedAt: 50000, ms: 48000, phases: {} }, { id: 'b', startedAt: 50000, endedAt: 90000, ms: 40000, phases: {} }];
+    const opts = { snapshot, runs, roles: { c: roles.f }, run: { id: 'c', startedAt: 90000 }, plans, checks: {}, drawnAt: 150000 };
+    let w = m.brewingOf(board, live, opts);
+    assert.strictEqual(w.title, 'Brewing');
+    assert.deepStrictEqual(w.tally, { brewed: 2, blocked: 1, toGo: 5, total: 8 });
+    assert.strictEqual(w.tally.brewed + w.tally.blocked + w.tally.toGo, w.tally.total);
+    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.elapsed], ['c', 'code', { ms: 60000, live: true }]);
+    assert.deepStrictEqual(w.clock, { ms: 149000, live: true }, 'the brew runs from its snapshot');
+    assert.strictEqual(w.inset.roles.length, 2);
+    // Rest rows: next, two queued, the brewed (newest first), every blocked, what waits on a blocked one.
+    assert.deepStrictEqual(w.rows.map((r) => [r.id, r.detail]), [
+      ['e', 'next'], ['f2', 'queued'], ['g', 'queued'], ['b', 'brewed'], ['a', 'brewed'], ['d', 'blocked · waits on Anatol'], ['w', 'waits on d'],
+    ]);
+    assert.deepStrictEqual(w.rows.find((r) => r.id === 'a').meta, '48s');
+    assert.strictEqual(w.more, 1, 'one more queued');
+    assert.strictEqual(w.inset.gate, null, 'the gate line only when red');
+    w = m.brewingOf(board, { ...live, gate: { since: 0, red: true } }, opts);
+    assert.deepStrictEqual([w.red, w.inset.gate.red], [true, true]);
+
+    // Review Focus 3: a brew the board did not see start — no tally, the rest from Up next.
+    w = m.brewingOf(board, live, { ...opts, snapshot: null });
+    assert.strictEqual(w.tally, null);
+    assert.deepStrictEqual(w.rows.map((r) => r.id), ['e', 'f2', 'g']);
+    assert.strictEqual(w.clock, null);
+    // A pull is the feature alone.
+    w = m.brewingOf(board, L({ id: 'c' }), { ...opts, snapshot: null });
+    assert.deepStrictEqual([w.title, w.rows.length, w.tally], ['Pulling', 0, null]);
+    // Between features (or starting) nothing is at work yet.
+    w = m.brewingOf(board, L({ command: 'brew', id: null, phase: 'starting' }), opts);
+    assert.deepStrictEqual([w.inset, w.text], [null, 'starting']);
+    assert.strictEqual(m.brewingOf(board, null, opts), null);
+    assert.ok(!/"action"/.test(JSON.stringify(m.brewingOf(board, live, opts))));
+  }
+
   console.log('board-model.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
