@@ -22,7 +22,7 @@ Read `docs/ristretto/roadmap.md`; take it at its word, don't second-guess it aga
 - **`done`** → stop, tell the user, cite the Updated date / commit. Do not re-implement.
 - **`blocked`** → surface the recorded reason, ask whether to proceed anyway — the block may have been resolved outside the roadmap.
 - **`needs-human`** → the code is already built and committed; read its section in `docs/ristretto/manual-checks.md`. Every `proves` line ticked `- [x]` → this is a check re-run: read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself to prove the pending criteria and close it — its **check re-run** rule: add, never rewrite the build's record. Still unticked lines → print them and stop.
-- **`needs-review`** → `brew` built and committed it green but left findings open. Read `## Open findings` and any `decision taken:` line in `## Evidence` of `docs/ristretto/plans/archived/<FEATURE-ID>.md`; show them and ask which to fix. On your ruling, work them on a branch as an ordinary change (steps 6–12 below, treating the findings as the implementer's input), then rewrite `## Open findings` to only what remains — clearing it closes the row `done`. Findings you decide against are deleted with a one-line note why.
+- **`needs-review`** → `brew` built and committed it green but left findings open. Read `## Open findings` and any `decision taken:` line in `## Evidence` of `docs/ristretto/plans/archived/<FEATURE-ID>.md`; show them and ask which to fix. On your ruling, work them as an ordinary change (steps 6–12 below, treating the findings as the implementer's input) — on the current branch when it already holds the feature (`git log --format=%s <default branch>..HEAD` lists a non-`docs` `<type>(<FEATURE-ID>):` subject), otherwise on `feature/<FEATURE-ID>`, then rewrite `## Open findings` to only what remains — clearing it closes the row `done`. Findings you decide against are deleted with a one-line note why.
 - **`next`** → the top `planned` row whose `Depends:` are all satisfied. `done`, `needs-human`, and `needs-review` all satisfy a dependency — their code is built, committed, and gated, only a step or an opinion is outstanding. Only `blocked` withholds. If every `planned` row is blocked, stop and say what each is waiting on. A named ID (not `next`) with an unfinished `Depends:` → warn and ask before proceeding.
 
 ## 2. Read the plan
@@ -51,7 +51,7 @@ Exit 1 only if it cannot write its marker — stop and report if so.
 
 ## 6. Branch
 
-Create and switch to `feature/<FEATURE-ID>`, or reuse it if you're already there. Never push, never set an upstream.
+Create and switch to `feature/<FEATURE-ID>`, or reuse it if you're already there — except a needs-review fix whose branch already holds the feature (step 1): stay there. Never push, never set an upstream.
 
 ## 7. Plan against the current code
 

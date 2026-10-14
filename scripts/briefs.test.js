@@ -166,6 +166,10 @@ assert.ok(/gate\.js" arm/.test(pull) && /gate\.js" disarm/.test(pull), 'pull mus
 assert.ok(/gate\.js" state/.test(pull), 'pull must run the state pre-flight');
 assert.ok(!/\.ristretto\/gate-retries/.test(pull), 'pull must not know gate.js state filenames any more');
 assert.ok(!/`easy`\s*→|Tier.*easy.*→/.test(pull), 'pull is the normal path — no tier branch');
+// Judging a needs-review row stays on the branch that already holds the feature's commit: the
+// board is branch-first, and a fix landing on feature/<ID> leaves the holding branch held forever.
+assert.ok(/needs-review[\s\S]*on the current branch when it already holds/.test(pull), 'pull must judge needs-review on the branch that holds the feature');
+assert.ok(/Create and switch to `feature\/<FEATURE-ID>`[^\n]*except a needs-review/.test(pull), 'step 6 must say a needs-review fix stays on its branch');
 
 // 16. shot is the easy path against an existing plan — it no longer writes one.
 const shot = read('commands/shot.md');
