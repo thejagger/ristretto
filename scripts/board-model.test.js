@@ -534,9 +534,17 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/\b(commitArgs|addArgs|confirmIn|removeIn|restoreIn|lockOf|signatureOf|pendingOf)\b/.test(tsx), 'the board confirms, removes and commits nothing');
     const rd = tsx.slice(tsx.indexOf('async function refreshDomain'));
     assert.ok(!/'git'/.test(rd.slice(0, rd.indexOf('\nasync function', 10))), 'facts are read from the files alone');
-    assert.ok(/\bfacts: `<path/.test(tsx) && tsx.includes("'fact-conflict': `<path"), 'facts have their own icon');
+    // Rendering rules 1 and 2 (spec 0.2): one timer, the poll, and no clock read while drawing —
+    // the engine redraws a drawing that read the clock, and every redraw rebuilds every image.
+    const drawing = tsx.slice(tsx.indexOf('function bandLine'));
+    assert.ok(!/\$\.clock\.now\(\)/.test(drawing.replace(/const go = [\s\S]*?\}\)\(\)\n/, '').replace(/run: \(\) => void \(async \(\) => \{[\s\S]*?\}\)\(\),/g, '')), 'no $.clock.now() while drawing; handlers stamp drawnAt');
+    assert.strictEqual((tsx.match(/\$\.clock\.every\(/g) || []).length, 1, 'one timer: the 5 s poll');
+    assert.ok(!/advanceClock|key: 'tick'/.test(tsx), 'no clock tick');
+    // The marks live in board-svg.mjs now: facts have their own, never the person's.
+    const svgSrc = fs.readFileSync(path.join(ROOT, 'hooks', 'board-svg.mjs'), 'utf8');
+    assert.ok(/\bfacts: \(\) => BOOK\(/.test(svgSrc) && /'fact-conflict': \(\) => `\$\{BOOK\(/.test(svgSrc), 'facts have their own icon');
     assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
-    assert.ok(tsx.includes('section.conflicts'), 'conflict rows are drawn');
+    assert.ok(/c\.kind === 'needs'/.test(tsx), 'the Needs you card (conflict rows among its rows) is drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
     assert.ok(/featureLogArgs\(id\)/.test(tsx) && /sumFiles\(/.test(tsx), 'the Files card finds a feature\'s commits by its ID');
     // Final review #5: the Commit cell is the roadmap's text, not a trusted argument.
@@ -545,7 +553,7 @@ const shown = (v) => JSON.stringify(v);
     // Live check 2026-10-13: the proof line truncates, so its column must be allowed to shrink
     // below that line's width — otherwise the criterion and the proof run out of the card.
     assert.ok(/<Box flexDirection="column" flexGrow=\{1\} flexShrink=\{1\} overflow="hidden">\s*<Text wrap="wrap">\{md\(a\.text/.test(tsx), 'an acceptance column shrinks to the card');
-    for (const title of ["'Acceptance'", "'Files'", "'Review'", "'Checks'"]) assert.ok(tsx.includes(title), `a ${title} card`);
+    for (const title of ['>Acceptance<', '>Files<', '>Review<', '>Checks<']) assert.ok(tsx.includes(title), `a ${title} card`);
     // The engine's JSX refuses a Button whose `plain` (or `dimColor`) is anything but true or absent
     // ("JSX element <Button key="✓"> plain is true or absent" — the facts page drew nothing).
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');

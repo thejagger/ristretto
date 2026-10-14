@@ -39,10 +39,19 @@ export type BoardLive = {
   gate: { since: number; red: boolean } | null
   armed: boolean
 }
-export type BoardPage = { kind: 'feature'; id: string } | { kind: 'domain' }
+export type BoardPage = { kind: 'feature'; id: string } | { kind: 'domain' } | { kind: 'history' } | { kind: 'queue' }
 export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean; conflict: { what: string; source: string; by: string } | null }
 export type BoardDomain = { tree: BoardFact[] }
 export type BoardFile = { path: string; add: number; del: number; bin: boolean }
+// The branch the session is on (board-branch.mjs): `ids` null when nothing can be scoped to it.
+export type BoardBranch = { name: string; base: string | null; ids: string[] | null; lastBrew: string }
+// The full-suite verdict as the Branch card reads it: green or red only while it proves the code there.
+export type BoardSuite = { state: 'green' | 'red' | 'unproven'; text: string; failing: string }
+// What brew set out to do, taken when the board saw it start (spec 4.6).
+export type BoardBrew = { startedAt: number; ids: string[]; reruns: string[] }
+export type BoardRole = { role: string; model: string; startedAt: number; endedAt: number | null }
+// The run in progress, as the drawing needs it: which feature, since when.
+export type BoardStarted = { id: string; startedAt: number }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -50,14 +59,21 @@ declare module 'claude-code' {
       board: Board
       live: BoardLive | null
       elsewhere: boolean
-      showDone: boolean
-      tick: number
       page: BoardPage | null
       run: BoardRun | null
       runs: BoardRecord[]
-      domain: BoardDomain      openFact: string | null
+      domain: BoardDomain
+      openFact: string | null
       files: Record<string, BoardFile[]>
       folders: Record<string, Record<string, boolean>>
+      paneOpen: boolean
+      branch: BoardBranch | null
+      suite: BoardSuite | null
+      brew: BoardBrew | null
+      roles: Record<string, BoardRole[]>
+      started: BoardStarted | null
+      drawnAt: number
+      folds: Record<string, boolean>
     }
   }
 }
