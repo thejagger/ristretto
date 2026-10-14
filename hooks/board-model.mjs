@@ -193,12 +193,6 @@ export function fold(live, obs, now) {
   }
 }
 
-// How many cells of a `width`-cell bar are filled for done/total, rounded to the nearest cell.
-export function bar(done, total, width) {
-  const filled = total > 0 ? Math.round((done / total) * width) : 0;
-  return { filled, empty: width - filled };
-}
-
 export function elapsed(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const pad = (n) => String(n).padStart(2, '0');
@@ -241,9 +235,6 @@ export function waitsOn(reason) {
   return m ? `waits on ${m[1]}` : plain(reason || '');
 }
 
-const SOLVE = (id) => ({ label: 'solve', command: 'ristretto:prep', args: `${id} deep`, chat: true });
-const SOLVE_FACTS = { label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true };
-
 // A feature that stopped on a fact in conflict names it as `domain/<file>.md: …` — first in the
 // reason (`blocked: domain/…`, common.md) or after the ID (`blocked — <ID> — domain/…`).
 export function factOf(reason) {
@@ -264,28 +255,6 @@ const LOOK = {
 
 const PREP = 'no roadmap here — /ristretto:prep starts one';
 
-function rowOf(row, ctx) {
-  const look = LOOK[row.status];
-  const plan = ctx.plans[row.id];
-  const waiting = row.status === 'planned' ? waitingOn(plan, ctx.statusOf) : [];
-  const fact = row.status === 'blocked' ? factOf(row.reason) : null;
-  const out = {
-    key: `row-${row.id}`,
-    id: row.id,
-    status: row.status,
-    mark: look.mark,
-    tone: look.tone,
-    tag: waiting.length > 0 ? 'waits on' : row.status === 'planned' && row.tier === 'easy' ? 'easy' : look.tag,
-    detail: row.status === 'blocked' ? (fact ? `waits on domain/${fact}` : waitsOn(row.reason)) : plain(row.reason || row.title),
-    waiting,
-  };
-  if (row.status === 'planned' && !ctx.busy && waiting.length === 0) {
-    out.action = { key: `start-${row.id}`, label: 'start', command: row.tier === 'easy' ? 'ristretto:shot' : 'ristretto:pull', args: row.id };
-  }
-  if (row.status === 'blocked' && !ctx.busy) out.action = { key: `solve-${row.id}`, ...(fact ? SOLVE_FACTS : SOLVE(row.id)) };
-  return out;
-}
-
 // What an opened row says: what it needs, what done means for it, and what happened.
 function detailsOf(row, plan, ctx) {
   const details = {
@@ -305,42 +274,11 @@ function detailsOf(row, plan, ctx) {
     // A done plan whose Evidence is prose proves its criteria, just not one by one.
     unitemised: row.status === 'done' && plan?.itemised === false,
   };
-  if (!ctx.busy && row.status === 'blocked') details.action = { key: `solve-${row.id}`, ...(factOf(row.reason) ? SOLVE_FACTS : SOLVE(row.id)) };
-  if (!ctx.busy && row.status === 'needs-review') details.action = { key: `judge-${row.id}`, label: 'judge', command: 'ristretto:pull', args: row.id };
   return details;
 }
 
-// The run card: what runs, where it stands, how long, and its gate. Steps follow the command —
-// shot has no planner — and an interrupted run shows none current and no clock.
-function nowOf(rows, live, now, elsewhere) {
-  if (!live) return elsewhere ? { key: 'now', text: 'a run is active in another session' } : null;
-  const row = live.id ? rows.find((r) => r.id === live.id) : null;
-  if (!row || !live.phase) {
-    const what = live.command ? ` — ${live.command}${live.id ? ` ${live.id}` : ''}, ${live.phase || 'starting'}` : '';
-    return { key: 'now', text: `a run is active${what}` };
-  }
-  const stopped = live.phase === 'interrupted';
-  const status = live.phase === 'review' ? `review r${live.round}` : live.phase;
-  const order = live.command === 'shot' ? ['code', 'review', 'close'] : ['plan', 'code', 'review', 'close'];
-  const at = { planning: 'plan', coding: 'code', fixing: 'code', review: 'review', closing: 'close' }[live.phase];
-  const current = at ? order.indexOf(at) : -1;
-  return {
-    key: 'now',
-    id: row.id,
-    detail: row.title,
-    status,
-    clock: stopped ? '' : elapsed(now - live.since),
-    steps: order.map((label, i) => ({
-      label: label === 'review' && i === current ? status : label,
-      state: current < 0 ? 'todo' : i < current ? 'done' : i === current ? 'current' : 'todo',
-    })),
-    gate: live.gate
-      ? live.gate.red ? { text: 'gate red', tone: 'error' } : { text: `gate running ${elapsed(now - live.gate.since)}`, tone: 'inactive' }
-      : null,
-  };
-}
-
-const BACK = (status) => (status === 'done' ? 'done' : status === 'planned' ? 'up next' : 'needs you');
+// Every page goes back to the board, by one label.
+const BACK = 'Board';
 
 function featurePage(row, ctx) {
   const look = LOOK[row.status];
@@ -354,7 +292,7 @@ function featurePage(row, ctx) {
     status: row.status,
     mark: look.mark,
     tone: look.tone,
-    back: BACK(row.status),
+    back: BACK,
     goal: plan?.goal ?? null,
     waitingOn: fact ? `domain/${fact}` : (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
     split: run ? splitOf(run) : null,
@@ -384,7 +322,7 @@ export function domainPage(domain) {
   const files = [...new Set(domain.tree.map((f) => f.file))].sort();
   return {
     kind: 'domain',
-    back: 'overview',
+    back: BACK,
     n: domain.tree.length,
     binding: domain.tree.filter((f) => f.state === 'confirmed').length,
     conflicts: domain.tree.filter((f) => f.conflict).length,
@@ -394,111 +332,6 @@ export function domainPage(domain) {
       rows: domain.tree.map((f, i) => ({ f, i })).filter(({ f }) => f.file === file)
         .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map(({ f }) => f),
     })),
-  };
-}
-
-// The band above the prompt: how far the roadmap is, what is blocked, and what runs now. No
-// band where there is no roadmap to speak of.
-export function bandOf(board, live, now, elsewhere = false) {
-  if (board.error || board.rows.length === 0) return null;
-  const count = (status) => board.rows.filter((r) => r.status === status).length;
-  const run = nowOf(board.rows, live, now, elsewhere);
-  return {
-    done: count('done'),
-    total: board.rows.length,
-    blocked: count('blocked'),
-    running: !run ? null : run.id ? { id: run.id, what: run.status, clock: run.clock } : { id: null, what: run.text, clock: '' },
-  };
-}
-
-// The pane as a view: a summary card, the run card, what needs a person, what is next, and
-// what happened, newest first. One row (`opts.open`) opens to its details. No action anywhere
-// while a run is active — this session's, or `elsewhere`, another's — so the pane can never
-// start a second run.
-export function view(board, live, now, elsewhere = false, opts = {}) {
-  if (board.error === 'no-roadmap' || board.error === 'no-table') return { kind: 'message', text: PREP };
-  if (board.error) return { kind: 'message', text: `roadmap unreadable (${board.error}) — /ristretto:status shows it as text` };
-
-  const rows = board.rows;
-  const busy = live !== null || elsewhere;
-  const statusOf = new Map(rows.map((r) => [r.id, r.status]));
-  const records = opts.runs ?? [];
-  const runOf = mergeRuns(records); // every run of a feature added up — a check re-run adds, never replaces
-  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
-  const domain = opts.domain ?? { tree: [] };
-  const page = opts.page?.kind === 'domain'
-    ? domainPage(domain)
-    : opts.page?.kind === 'feature' && rows.some((r) => r.id === opts.page.id)
-      ? featurePage(rows.find((r) => r.id === opts.page.id), ctx)
-      : null;
-  if (page) return { kind: 'page', page };
-  const count = (status) => rows.filter((r) => r.status === status).length;
-  const done = count('done');
-  // The cup only when nothing is left for a person either: a fact in conflict keeps the overview.
-  const conflicted = domain.tree.filter((f) => f.conflict);
-  if (rows.length > 0 && done === rows.length && !busy && !conflicted.length) return { kind: 'cup', total: rows.length };
-
-  const counts = [
-    ['needs-review', 'to review', 'warning'],
-    ['needs-human', 'waiting on you', 'permission'],
-    ['blocked', 'blocked', 'error'],
-  ].map(([status, text, tone]) => ({ status, n: count(status), text, tone }))
-    .filter((c) => c.n > 0)
-    .map(({ status, n, text, tone }) => ({ status, n, text: `${n} ${text}`, tone }));
-
-  const summary = { name: board.name || 'roadmap', done, total: rows.length, counts };
-  summary.segments = ['done', 'needs-review', 'needs-human', 'blocked', 'in-progress', 'planned', 'unknown']
-    .map((status) => ({ status, n: count(status), tone: LOOK[status].tone }))
-    .filter((s) => s.n > 0);
-  summary.facts = domain.tree.length ? { n: domain.tree.length, binding: domain.tree.filter((f) => f.state === 'confirmed').length } : null;
-  if (!busy && count('planned') > 0) summary.action = { key: 'brew-all', label: 'brew all', command: 'ristretto:brew', args: '' };
-
-  const notices = [];
-  const plugin = (/^(\d+\.\d+)/.exec(board.format.plugin) || [])[1];
-  if (plugin && board.format.project !== plugin) {
-    notices.push({ key: 'format', text: 'written for another ristretto format — the next prep/pull/brew brings it up to date' });
-  }
-
-  const running = live && live.id;
-  const open = (r) => r.status !== 'done' && r.status !== 'planned' && r.id !== running;
-  const next = (r) => r.status === 'planned' && r.id !== running;
-  // Inside each section rows group by flight, in roadmap order, so a long list reads in parts;
-  // rows without a flight come last, as in /ristretto:status.
-  const grouped = (picked) => [...new Set(picked.map((r) => r.flight))].sort((a, b) => (a === '') - (b === '')).map((flight) => ({
-    key: `flight-${flight || 'other'}`,
-    flight,
-    rows: picked.filter((r) => r.flight === flight).map((r) => rowOf(r, ctx)),
-  }));
-  const conflicts = conflicted.map((f) => ({
-    key: `fact-${f.file}-${f.title}`, file: f.file, title: f.title, what: f.conflict.what, binding: f.state === 'confirmed',
-    ...(busy ? {} : { action: { key: `solve-fact-${f.file}-${f.title}`, ...SOLVE_FACTS } }),
-  }));
-  const sections = [
-    { key: 'needs-you', title: 'needs you', groups: grouped(rows.filter(open)), ...(conflicts.length ? { conflicts } : {}) },
-    { key: 'up-next', title: 'up next', groups: grouped(rows.filter(next)) },
-  ].filter((section) => section.groups.length > 0 || section.conflicts);
-
-  // What happened, newest first: features with a measured run by when it ended, then the
-  // rest in reverse roadmap order (a later row is a later feature).
-  const finished = rows.filter((r) => r.status === 'done');
-  const measured = finished.filter((r) => runOf.has(r.id)).sort((a, b) => runOf.get(b.id).endedAt - runOf.get(a.id).endedAt);
-  const ordered = [...measured, ...finished.filter((r) => !runOf.has(r.id)).reverse()];
-  const shown = opts.showDone ? ordered : ordered.slice(0, 5);
-  return {
-    kind: 'board',
-    summary,
-    notices,
-    now: nowOf(rows, live, now, elsewhere),
-    sections,
-    done: finished.length === 0 ? null : {
-      count: finished.length,
-      rows: shown.map((r) => {
-        const run = runOf.get(r.id) ?? null;
-        return { ...rowOf(r, ctx), run, split: run ? splitOf(run) : null };
-      }),
-      more: ordered.length - shown.length,
-      toggle: { label: opts.showDone ? 'hide' : 'show all' },
-    },
   };
 }
 
@@ -603,6 +436,7 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
     })),
     eligible: eligible.length,
     more: Math.max(0, eligible.length - 5),
+    all: eligible.map((r) => r.id),
     waiting: planned.length - eligible.length,
   };
 
@@ -753,4 +587,118 @@ export function brewingOf(board, live, opts = {}) {
     more,
     moreBrewed,
   };
+}
+
+// Every done feature, newest first: the History page.
+export function historyPage(state) {
+  return { kind: 'history', back: BACK, n: state.done.all.length, rows: state.done.all };
+}
+
+// The queue: every feature that waits on nothing, in brew's order, then those that wait, grouped
+// by flight (rows without one last, as in /ristretto:status), each saying what it waits on.
+export function queuePage(board, state) {
+  const { ctx } = state;
+  const waiting = board.rows.filter((r) => r.status === 'planned' && !state.upNext.all.includes(r.id));
+  const flights = [...new Set(waiting.map((r) => r.flight))].sort((a, b) => (a === '') - (b === ''));
+  return {
+    kind: 'queue',
+    back: BACK,
+    eligible: state.upNext.all.map((id, i) => ({
+      key: `queue-${id}`, glyph: id === state.nextId ? 'next' : 'planned', id, detail: id === state.nextId ? 'next' : 'queued',
+      tone: id === state.nextId ? 'default' : 'dim', open: featureOpen(id),
+    })),
+    waiting: flights.map((flight) => ({
+      key: `flight-${flight || 'other'}`,
+      flight,
+      rows: waiting.filter((r) => r.flight === flight).map((r) => {
+        const on = waitingOn(ctx.plans[r.id], ctx.statusOf).map((w) => w.id);
+        const blocker = ctx.plans[r.id]?.blockers?.[0];
+        return {
+          key: `wait-${r.id}`, glyph: 'planned', id: r.id, tone: 'dim', open: featureOpen(r.id),
+          detail: on.length ? `waits on ${on.join(', ')}` : blocker ? `waits on ${plain(blocker)}` : 'waits',
+        };
+      }),
+    })),
+  };
+}
+
+// The Branch card (spec section 0): its features' state as a bar and the rows that hold it, the
+// suite and the last brew underneath. Never "ahead of" anything.
+function branchCard(state, branch, compact) {
+  const ids = state.branchIds;
+  const statusOf = state.ctx.statusOf;
+  const done = ids ? ids.filter((id) => statusOf.get(id) === 'done').length : 0;
+  const count = (glyph) => state.holders.filter((h) => h.glyph === glyph).length;
+  const ready = !!ids && ids.length > 0 && state.holders.length === 0 && state.suite.state === 'green';
+  const footer = !branch.base ? 'no main branch to compare with'
+    : !ids ? 'nothing on this branch yet'
+      : [state.suite.text, branch.lastBrew].filter(Boolean).join(' · ');
+  return {
+    kind: 'branch', compact, branch: branch.name, base: branch.base, scoped: !!ids,
+    features: ids ? ids.length : 0, done, holds: state.holders, ready, suite: state.suite, lastBrew: branch.lastBrew, footer,
+    bar: { done, review: count('needs-review'), human: count('needs-human') + count('blocked') + count('running') + count('suite-red') },
+  };
+}
+
+// The pane as a view (spec section 0): cards in the order of the state. Idle: Branch, Needs you,
+// Up next, Done, Domain facts. Running: Brewing, Branch (holders only), Needs you, Done (one line).
+// A page replaces the cards; every feature done and nothing for a person is the cup.
+export function view(board, live, elsewhere = false, opts = {}) {
+  if (board.error === 'no-roadmap' || board.error === 'no-table') return { kind: 'message', text: PREP };
+  if (board.error) return { kind: 'message', text: `roadmap unreadable (${board.error}) — /ristretto:status shows it as text` };
+
+  const rows = board.rows;
+  const state = stateOf(board, live, elsewhere, opts);
+  const domain = opts.domain ?? { tree: [] };
+  const page = opts.page?.kind;
+  if (page === 'domain') return { kind: 'page', page: domainPage(domain) };
+  if (page === 'history') return { kind: 'page', page: historyPage(state) };
+  if (page === 'queue') return { kind: 'page', page: queuePage(board, state) };
+  if (page === 'feature' && rows.some((r) => r.id === opts.page.id)) {
+    return { kind: 'page', page: featurePage(rows.find((r) => r.id === opts.page.id), state.ctx) };
+  }
+  const conflicted = domain.tree.filter((f) => f.conflict);
+  if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && !conflicted.length) return { kind: 'cup', total: rows.length };
+
+  const notices = [];
+  const plugin = (/^(\d+\.\d+)/.exec(board.format.plugin) || [])[1];
+  if (plugin && board.format.project !== plugin) {
+    notices.push({ key: 'format', text: 'written for another ristretto format — the next prep/pull/brew brings it up to date' });
+  }
+
+  const cards = [];
+  const needs = state.needsYou.length ? { kind: 'needs', rows: state.needsYou } : null;
+  const doneCard = (compact) => ({ kind: 'done', compact, recent: state.done.recent, n: state.done.here.length, total: state.done.total, rows: compact ? [] : state.done.here });
+  if (state.busy) {
+    cards.push(live
+      ? brewingOf(board, live, { ...opts, snapshot: opts.snapshot ?? null })
+      : { kind: 'brewing', title: 'Brewing', text: 'a run is active in another session', inset: null, tally: null, clock: null, laneRows: [], rows: [], more: 0, moreBrewed: 0, red: false, lanes: false, freeSlot: null });
+    if (opts.branch) cards.push(branchCard(state, opts.branch, true));
+    if (needs) cards.push(needs);
+    cards.push(doneCard(true));
+    return { kind: 'board', state: 'running', notices, cards };
+  }
+  if (opts.branch) cards.push(branchCard(state, opts.branch, false));
+  if (needs) cards.push(needs);
+  if (state.upNext.eligible + state.upNext.waiting > 0) cards.push({ kind: 'next', ...state.upNext });
+  if (state.done.total > 0) cards.push(doneCard(false));
+  if (domain.tree.length) {
+    cards.push({ kind: 'facts', n: domain.tree.length, binding: domain.tree.filter((f) => f.state === 'confirmed').length, conflicts: conflicted.length });
+  }
+  return { kind: 'board', state: 'idle', notices, cards };
+}
+
+// The band above the prompt: only the main thing (spec section 0). Running: the feature and its
+// step (`gate red` when red) on the effort chip, and who is needed. Idle: what is open and who is
+// needed, or `ready to ship`. Nothing where there is no roadmap to speak of.
+export function bandOf(board, live, elsewhere = false, opts = {}) {
+  if (board.error || board.rows.length === 0) return null;
+  const state = stateOf(board, live, elsewhere, opts);
+  if (live) {
+    const effort = effortOf(live, live.command);
+    return { running: { id: live.id, step: effort.red ? 'gate red' : effort.step, red: effort.red, effort: { phases: effort.phases, red: effort.red }, needYou: state.needYou } };
+  }
+  if (elsewhere) return { running: { id: null, step: 'a run is active in another session', red: false, effort: null, needYou: state.needYou } };
+  const ready = !!opts.branch && branchCard(state, opts.branch, false).ready;
+  return { idle: { open: state.open, needYou: state.needYou, ready } };
 }

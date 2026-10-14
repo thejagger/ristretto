@@ -191,52 +191,56 @@ const shown = (v) => JSON.stringify(v);
     }
   }
 
-  // 4. The view: only what a red run would mean to a user — the bar's arithmetic, which command
-  //    a button starts, that no button can start a second run, and what the run card says.
+  // 4. The view: what a red run would mean to a user — the text helpers, the cards in order, no
+  //    buttons anywhere, and what a run card says.
   {
-    assert.deepStrictEqual(m.bar(0, 0, 10), { filled: 0, empty: 10 });
-    assert.deepStrictEqual(m.bar(4, 10, 10), { filled: 4, empty: 6 });
-    assert.deepStrictEqual(m.bar(1, 3, 10), { filled: 3, empty: 7 }, 'proportional, rounded to the nearest cell');
-    assert.deepStrictEqual(m.bar(10, 10, 10), { filled: 10, empty: 0 });
     assert.deepStrictEqual([m.elapsed(45000), m.elapsed(362000), m.elapsed(3780000)], ['45s', '6m02s', '1h03m']);
     // A finished span drops the seconds the running clock keeps.
     assert.deepStrictEqual([m.duration(45000), m.duration(2160000), m.duration(3900000)], ['45s', '36m', '1h05m']);
     // Plan Markdown becomes styled segments; a row's one line drops the markers.
     assert.deepStrictEqual(m.inline('**Intake:** opens `x.ts` and **stays'), [{ text: 'Intake:', bold: true }, { text: ' opens ' }, { text: 'x.ts', code: true }, { text: ' and **stays' }]);
     assert.strictEqual(m.plain('waits on `modifiedSince` and **docs**'), 'waits on modifiedSince and docs');
+    assert.ok(!('bar' in m), 'the v2 cell bar is gone');
 
-    const row = (id, tier, status, reason = '') => ({ flight: '', id, title: id, tier, status, reason });
+    const row = (id, tier, status, reason = '') => ({ flight: '', id, title: id, tier, status, reason, commit: '', touched: [] });
     const board = { name: 'demo', rows: [row('a', 'easy', 'planned'), row('b', 'normal', 'planned'), row('c', 'normal', 'done'), row('k', 'normal', 'blocked', 'no source')], format: { project: '0.17', plugin: '0.17.0' }, error: null };
+    const branch = { name: 'brew/x', base: 'main', ids: ['c'], lastBrew: 'last brew today 13:13' };
+    const suite = { state: 'green', text: 'suite green', failing: '' };
 
-    assert.deepStrictEqual(startActions(m.view(board, null, 0)), [
-      { label: 'brew all', command: 'ristretto:brew', args: '' },
-      { label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true },
-      { label: 'start', command: 'ristretto:shot', args: 'a' },
-      { label: 'start', command: 'ristretto:pull', args: 'b' },
-    ], 'the tier picks the command');
+    // Idle: Branch, Needs you, Up next, Done; no actions anywhere.
+    let v = m.view(board, null, false, { branch, suite });
+    assert.deepStrictEqual([v.kind, v.state, v.cards.map((c) => c.kind)], ['board', 'idle', ['branch', 'needs', 'next', 'done']]);
+    assert.deepStrictEqual(startActions(v), [], 'the person acts in the chat');
+    assert.ok(!/"action"/.test(shown(v)));
+    const bc = v.cards[0];
+    assert.deepStrictEqual([bc.branch, bc.features, bc.done, bc.ready, bc.footer], ['brew/x', 1, 1, true, 'suite green · last brew today 13:13']);
+    assert.ok(!/ahead/.test(shown(v)), 'never "ahead of" anything');
+    assert.ok(/no source/.test(shown(v)), 'a blocked row shows why');
 
+    // Running: Brewing first, the Branch card compact, Done on one line.
     const running = m.fold(null, { kind: 'brief', role: 'reviewer', id: 'b' }, 0);
-    const v = m.view(board, running, 1000);
-    assert.deepStrictEqual(startActions(v), [], 'nothing can be started while a run is active');
-    assert.deepStrictEqual([v.now.id, v.now.status, v.now.clock], ['b', 'review r1', '1s'], 'the run card shows phase, round and time');
-    assert.deepStrictEqual(v.now.steps.map((x) => x.state), ['done', 'done', 'current', 'todo'], 'plan and code behind it, close ahead');
+    v = m.view(board, running, false, { branch, suite, drawnAt: 1000 });
+    assert.deepStrictEqual([v.state, v.cards.map((c) => c.kind)], ['running', ['brewing', 'branch', 'needs', 'done']]);
+    assert.deepStrictEqual([v.cards[1].compact, v.cards[3].compact, v.cards[3].rows], [true, true, []]);
+    const w = v.cards[0];
+    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.effort.phases.map((x) => x.state)], ['b', 'review', ['done', 'done', 'current', 'todo']], 'plan and code behind it, close ahead');
 
     const reloaded = m.fold(null, { kind: 'marker', state: 'mine' }, 0);
-    assert.deepStrictEqual(startActions(m.view(board, reloaded, 0)), [], 'an armed run with nothing seen yet hides the buttons too');
-    assert.ok(/a run is active/.test(shown(m.view(board, reloaded, 0))));
+    assert.strictEqual(m.view(board, reloaded, false, {}).cards[0].text, 'starting', 'an armed run with nothing seen yet');
 
-    assert.deepStrictEqual(m.view({ ...board, rows: [], error: 'no-roadmap' }, null, 0), { kind: 'message', text: 'no roadmap here — /ristretto:prep starts one' });
+    assert.deepStrictEqual(m.view({ ...board, rows: [], error: 'no-roadmap' }, null, false), { kind: 'message', text: 'no roadmap here — /ristretto:prep starts one' });
 
-    // Done rows fold into one line until asked for; what needs a person stays in view with its reason.
-    const folded = m.view(board, null, 0);
-    assert.deepStrictEqual([folded.done.count, folded.done.rows.length, folded.done.more], [1, 1, 0], 'up to five done rows show');
-    assert.ok(/no source/.test(shown(folded)), 'a blocked row shows why');
-    assert.ok(!folded.sections.some((sec) => sec.groups.some((g) => g.rows.some((r) => r.id === 'c'))), 'done rows are not in the open sections');
+    // No base: the card says so, nothing is scoped, every needs-* row needs you, Recently done.
+    v = m.view(board, null, false, { branch: { name: 'x', base: null, ids: null, lastBrew: '' }, suite });
+    assert.deepStrictEqual([v.cards[0].footer, v.cards[0].scoped, v.cards[0].ready], ['no main branch to compare with', false, false]);
+    assert.strictEqual(v.cards.find((c) => c.kind === 'done').recent, true);
+    // Not a git repo: no Branch card at all.
+    assert.strictEqual(m.view(board, null, false, {}).cards[0].kind, 'needs');
   }
 
   // 5. Final-review findings, each pinned where it was found.
   {
-    const row = (id, tier, status) => ({ flight: '', id, title: id, tier, status, reason: '' });
+    const row = (id, tier, status) => ({ flight: '', id, title: id, tier, status, reason: '', commit: '', touched: [] });
     const board = { name: 'demo', rows: [row('a', 'easy', 'planned'), row('c', 'normal', 'done')], format: { project: '0.17', plugin: '0.17.0' }, error: null };
 
     // The pane never opens unasked: the band above the prompt is the way to it (owner, 2026-10-12).
@@ -266,18 +270,18 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.fold(armed, { kind: 'marker', state: 'none' }, 4), null);
     assert.strictEqual(m.fold(armed, { kind: 'marker', state: 'other' }, 4), null);
 
-    // Another session's run: no buttons, one line, and no cup over it.
-    const elsewhere = m.view(board, null, 0, true);
-    assert.deepStrictEqual(startActions(elsewhere), []);
+    // Another session's run: one line, and no cup over it.
+    const elsewhere = m.view(board, null, true, {});
     assert.ok(/a run is active in another session/.test(shown(elsewhere)));
+    assert.strictEqual(elsewhere.cards[0].inset, null);
 
-    // Esc mid-run: the clock stops and the row says so instead of counting for hours.
+    // Esc mid-run: the clock stops and the card says so instead of counting for hours.
     const coding = m.fold(armed, { kind: 'brief', role: 'implementer', id: 'f-1' }, 10);
     const stopped = m.fold(coding, { kind: 'main-turn-end', interrupted: true }, 20);
     assert.strictEqual(stopped.phase, 'interrupted');
     const sheet = { ...board, rows: [...board.rows, row('f-1', 'normal', 'planned')] };
-    const card = m.view(sheet, stopped, 99999).now;
-    assert.deepStrictEqual([card.status, card.clock], ['interrupted', ''], 'no running clock on an interrupted run');
+    const inset = m.view(sheet, stopped, false, { drawnAt: 99999 }).cards[0].inset;
+    assert.deepStrictEqual([inset.status, inset.elapsed.live], ['interrupted', false], 'no running clock on an interrupted run');
     assert.strictEqual(m.fold(m.fold(live, { kind: 'command', command: 'shot', args: 'x' }, 0), { kind: 'main-turn-end', interrupted: true }, 1), null,
       'interrupted before arming is no run at all');
 
@@ -297,17 +301,17 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(pull.phase, 'starting', 'pull waits for its planner');
 
     // A roadmap with no table points at prep, like a missing one.
-    assert.deepStrictEqual(m.view({ ...board, rows: [], error: 'no-table' }, null, 0), { kind: 'message', text: 'no roadmap here — /ristretto:prep starts one' });
+    assert.deepStrictEqual(m.view({ ...board, rows: [], error: 'no-table' }, null, false), { kind: 'message', text: 'no roadmap here — /ristretto:prep starts one' });
 
     // Every row done while brew still proves the suite: the run stays visible, the cup waits.
     const allDone = { ...board, rows: [row('c', 'normal', 'done')] };
-    assert.strictEqual(m.view(allDone, null, 0).kind, 'cup');
+    assert.strictEqual(m.view(allDone, null, false).kind, 'cup');
     const proving = m.fold(null, { kind: 'command', command: 'brew', args: '' }, 0);
-    assert.strictEqual(m.view(allDone, proving, 0).kind, 'board', 'no cup while a run is active');
-    assert.strictEqual(m.view(allDone, null, 0, true).kind, 'board', 'nor while another session runs');
+    assert.strictEqual(m.view(allDone, proving, false).kind, 'board', 'no cup while a run is active');
+    assert.strictEqual(m.view(allDone, null, true).kind, 'board', 'nor while another session runs');
   }
 
-  // 6. Tessera's shape: blocked rows say why, and a long list reads by flight.
+  // 6. Tessera's shape: blocked rows say why, and the queue page reads by flight.
   {
     const roadmap = [
       '| Flight | Feature | Title | Tier | Status | Plan | Updated |',
@@ -335,18 +339,19 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.blockerOf('no blockers line at all'), null);
     assert.strictEqual(m.blockerOf('- Blockers:\r\n  - CRLF item\r\n'), 'CRLF item');
 
-    // Rows group by flight inside each section, in roadmap order.
-    const v = m.view({ name: 'tessera', ...r, format: { project: null, plugin: '' } }, null, 0);
-    const next = v.sections.find((sec) => sec.key === 'up-next');
-    assert.deepStrictEqual(next.groups.map((g) => [g.flight, g.rows.map((x) => x.id)]), [['lnw', ['lnw-core', 'lnw-checks']], ['mail', ['mail-outbound']]]);
-    assert.deepStrictEqual(v.sections.find((sec) => sec.key === 'needs-you').groups.map((g) => g.flight), ['nodes-sync']);
-    const loose = m.view({ name: 't', rows: [{ flight: '', id: 'rbac', title: 'x', tier: 'normal', plan: '', status: 'planned', reason: '' }, ...r.rows], format: { project: null, plugin: '' }, error: null }, null, 0);
-    assert.deepStrictEqual(loose.sections.find((sec) => sec.key === 'up-next').groups.map((g) => g.flight), ['lnw', 'mail', ''], 'rows without a flight come last, as in /ristretto:status');
+    // The queue page: what waits on nothing in brew's order, then what waits, by flight, rows
+    // without a flight last, as in /ristretto:status.
+    const plans = { 'lnw-checks': { depends: ['lnw-core'], blockers: [], findings: [] }, rbac: { depends: ['nodes-connector'], blockers: [], findings: [] } };
+    const rows = [{ flight: '', id: 'rbac', title: 'x', tier: 'normal', plan: '', status: 'planned', reason: '' }, ...r.rows];
+    const q = m.view({ name: 't', rows, format: { project: null, plugin: '' }, error: null }, null, false, { plans, page: { kind: 'queue' } }).page;
+    assert.deepStrictEqual([q.kind, q.back], ['queue', 'Board']);
+    assert.deepStrictEqual(q.eligible.map((x) => [x.id, x.detail]), [['lnw-core', 'next'], ['mail-outbound', 'queued']]);
+    assert.deepStrictEqual(q.waiting.map((g) => [g.flight, g.rows.map((x) => [x.id, x.detail])]), [['lnw', [['lnw-checks', 'waits on lnw-core']]], ['', [['rbac', 'waits on nodes-connector']]]]);
   }
 
-  // 7. The overview: what a row waits on, what an open row says, and what happened.
+  // 7. The overview: what a row waits on, what a page says, and what happened.
   {
-    const row = (id, status, extra = {}) => ({ flight: '', id, title: id, tier: 'normal', plan: `plans/${id}.md`, commit: '', status, reason: '', ...extra });
+    const row = (id, status, extra = {}) => ({ flight: '', id, title: id, tier: 'normal', plan: `plans/${id}.md`, commit: '', touched: [], status, reason: '', ...extra });
     const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [
       row('core', 'done', { commit: 'abc1234' }), row('old', 'done'), row('mid', 'done'),
       row('a', 'planned'), row('b', 'planned'), row('k', 'blocked', { reason: 'no API' }), row('rv', 'needs-review'),
@@ -362,41 +367,33 @@ const shown = (v) => JSON.stringify(v);
       { id: 'mid', startedAt: 0, endedAt: 100, ms: 100, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 1, ms: 60000, red: 0 }, status: 'done' },
       { id: 'core', startedAt: 200, endedAt: 900, ms: 700, tokens: { in: 1, out: 1, cache: 0 }, gates: { runs: 2, ms: 120000, red: 1 }, status: 'done' },
     ];
-    const v = m.view(board, null, 0, false, { plans, runs });
+    const v = m.view(board, null, false, { plans, runs });
 
     // Waiting: b depends on an unbuilt a and on a name not on the roadmap; a's dependency is done.
-    const next = v.sections.find((s) => s.key === 'up-next').groups.flatMap((g) => g.rows);
-    const b = next.find((x) => x.id === 'b');
-    assert.deepStrictEqual(b.waiting, [{ id: 'a', status: 'planned' }, { id: 'ghost', status: 'missing' }]);
-    assert.strictEqual(b.action, undefined, 'a waiting row cannot be started');
-    assert.strictEqual(b.tag, 'waits on');
-    assert.ok(next.find((x) => x.id === 'a').action, 'a row whose dependencies are built can');
-
-    // Status segments for the summary bar, in a fixed order, empty ones left out.
-    assert.deepStrictEqual(v.summary.segments.map((s) => [s.status, s.n]), [['done', 3], ['needs-review', 1], ['blocked', 1], ['planned', 2]]);
+    const next = v.cards.find((c) => c.kind === 'next');
+    assert.deepStrictEqual([next.rows.map((x) => x.id), next.waiting], [['a'], 1]);
 
     // What happened: newest run first, rows without a record after, in reverse roadmap order.
-    assert.deepStrictEqual(v.done.rows.map((x) => x.id), ['core', 'mid', 'old']);
-    assert.deepStrictEqual([v.done.rows[0].run.ms, v.done.rows[2].run], [700, null]);
+    const hist = m.view(board, null, false, { plans, runs, page: { kind: 'history' } }).page;
+    assert.deepStrictEqual(hist.rows.map((x) => x.id), ['core', 'mid', 'old']);
+    assert.deepStrictEqual([hist.rows[0].meta, hist.rows[2].meta], ['1s', '']);
     // Each done row carries its own time split — no comparison with other features.
-    assert.deepStrictEqual(v.done.rows.map((x) => x.split), [null, null, null], 'runs recorded without phases');
+    assert.deepStrictEqual(hist.rows.map((x) => x.split), [null, null, null], 'runs recorded without phases');
     runs[1] = { ...runs[1], phases: { plan: 100, code: 400, review: 200, close: 0 } };
-    const split = m.view(board, null, 0, false, { plans, runs }).done.rows[0].split;
+    const split = m.view(board, null, false, { plans, runs, page: { kind: 'history' } }).page.rows[0].split;
     assert.deepStrictEqual(split.map((x) => [x.phase, x.ms]), [['plan', 100], ['code', 400], ['review', 200]]);
-    assert.strictEqual(m.view(board, null, 0, false, { plans, runs }).done.usual, undefined, 'no usual, no comparison');
 
-    // Rows are one line: no details on the overview; a page opens one feature.
-    assert.ok(v.sections.every((s) => s.groups.every((g) => g.rows.every((x) => x.details === undefined && x.toggle === undefined))));
-    const opened = (id, busy = false) => m.view(board, null, 0, busy, { plans, runs, page: { kind: 'feature', id } });
+    // A page opens one feature; it goes back to the Board and offers nothing to press.
+    const opened = (id, busy = false) => m.view(board, null, busy, { plans, runs, page: { kind: 'feature', id } });
     assert.strictEqual(opened('a').kind, 'page');
     const da = opened('a').page.details;
     assert.deepStrictEqual([da.deps, da.acceptance[0].proof], [[{ id: 'core', status: 'done', ok: true }], null]);
     const pk = opened('k').page;
-    assert.deepStrictEqual([pk.back, pk.details.blockers.length, pk.details.action], ['needs you', 2, { key: 'solve-k', label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true }]);
+    assert.deepStrictEqual([pk.back, pk.details.blockers.length, pk.details.action], ['Board', 2, undefined]);
     const drv = opened('rv').page.details;
-    assert.deepStrictEqual([drv.findings, drv.action.command, drv.action.args], [['bug · x.php:1 · wrong'], 'ristretto:pull', 'rv']);
+    assert.deepStrictEqual([drv.findings, drv.action], [['bug · x.php:1 · wrong'], undefined]);
     const pcore = opened('core').page;
-    assert.deepStrictEqual([pcore.back, pcore.split.length], ['done', 3]);
+    assert.deepStrictEqual([pcore.back, pcore.split.length], ['Board', 3]);
     const dcore = pcore.details;
     assert.deepStrictEqual(dcore.acceptance.map((x) => x.proof), ['test_boot', null], 'each criterion with its proof');
     assert.deepStrictEqual([dcore.commit, dcore.run.gates.red, dcore.review], ['abc1234', 1, 'review: clean · rounds: 1']);
@@ -407,14 +404,8 @@ const shown = (v) => JSON.stringify(v);
     // immo-wert writes Plan cells repo-relative.
     assert.strictEqual(m.parseRoadmap(['| Feature | Status | Plan |', '|---|---|---|', '| x | planned | [plan](docs/ristretto/plans/x.md) |'].join('\n')).rows[0].plan, 'plans/x.md');
     assert.deepStrictEqual([dold.missing, dold.run], [true, null], 'no plan read: said so, nothing invented');
-    assert.strictEqual(m.view(board, null, 0, false, { plans, runs, page: { kind: 'feature', id: 'gone' } }).kind, 'board', 'a page whose feature is gone falls back to the overview');
-
-    // Solve on the overview's blocked row; nothing to press anywhere while a run is active (review focus 5).
-    const needs = v.sections.find((s) => s.key === 'needs-you').groups.flatMap((g) => g.rows);
-    assert.deepStrictEqual(needs.find((x) => x.id === 'k').action, { key: 'solve-k', label: 'solve', command: 'ristretto:prep', args: 'k deep', chat: true });
-    const busyView = m.view(board, null, 0, true, { plans, runs });
-    assert.deepStrictEqual(startActions(busyView), [], 'no action on the overview while busy');
-    assert.deepStrictEqual(startActions(opened('k', true)), [], 'no action on a page while busy');
+    assert.strictEqual(m.view(board, null, false, { plans, runs, page: { kind: 'feature', id: 'gone' } }).kind, 'board', 'a page whose feature is gone falls back to the overview');
+    assert.deepStrictEqual(startActions(opened('k', true)), [], 'no action on a page');
   }
 
   // 8. Who a blocked row waits on, and the domain facts row and page.
@@ -434,48 +425,29 @@ const shown = (v) => JSON.stringify(v);
       fact('trueNorth is magnetic on Android', 'unconfirmed', null, 'sensors.md'),
     ];
     const board = { ...m.EMPTY_BOARD, name: 'plane-spotter', rows: [{ flight: '', id: 'a', title: 'A', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' }], format: { project: '0.20', plugin: '0.20' } };
-    const v = m.view(board, null, 0, false, { domain: { tree } });
-    assert.deepStrictEqual(v.summary.facts, { n: 4, binding: 1 }, 'the summary carries the facts as one info line');
-    const needs = v.sections.find((s) => s.key === 'needs-you');
-    assert.deepStrictEqual(needs.conflicts, [{ key: 'fact-adsb-lol.md-Rate limits', file: 'adsb-lol.md', title: 'Rate limits', what: '429 now carries X-RateLimit-Limit', binding: false, action: { key: 'solve-fact-adsb-lol.md-Rate limits', label: 'solve', command: 'ristretto:prep', args: 'facts', chat: true } }]);
-    assert.strictEqual(needs.domain, undefined, 'no "to confirm" row any more');
-    const busy = m.view(board, null, 0, true, { domain: { tree } });
-    assert.strictEqual(busy.sections.find((s) => s.key === 'needs-you').conflicts[0].action, undefined, 'no solve while a run is active');
-    const calm = m.view(board, null, 0, false, { domain: { tree: tree.filter((f) => !f.conflict) } });
-    assert.strictEqual(calm.sections.find((s) => s.key === 'needs-you'), undefined, 'facts without a conflict need nobody');
-    assert.strictEqual(m.view(board, null, 0, false, { domain: { tree: [] } }).summary.facts, null, 'no facts: no line');
+    const v = m.view(board, null, false, { domain: { tree } });
+    assert.deepStrictEqual(v.cards.find((c) => c.kind === 'facts'), { kind: 'facts', n: 4, binding: 1, conflicts: 1 }, 'the facts as one line');
+    const needs = v.cards.find((c) => c.kind === 'needs');
+    assert.deepStrictEqual(needs.rows.map((r) => [r.id, r.detail, r.tone]), [['Rate limits', 'adsb-lol.md · in conflict', 'warning']]);
+    const calm = m.view(board, null, false, { domain: { tree: tree.filter((f) => !f.conflict) } });
+    assert.strictEqual(calm.cards.find((c) => c.kind === 'needs'), undefined, 'facts without a conflict need nobody');
+    assert.strictEqual(m.view(board, null, false, { domain: { tree: [] } }).cards.find((c) => c.kind === 'facts'), undefined, 'no facts: no line');
 
-    const pg = m.view(board, null, 0, false, { domain: { tree }, page: { kind: 'domain' } }).page;
-    assert.deepStrictEqual([pg.kind, pg.back, pg.n, pg.binding, pg.conflicts], ['domain', 'overview', 4, 1, 1]);
+    const pg = m.view(board, null, false, { domain: { tree }, page: { kind: 'domain' } }).page;
+    assert.deepStrictEqual([pg.kind, pg.back, pg.n, pg.binding, pg.conflicts], ['domain', 'Board', 4, 1, 1]);
     assert.deepStrictEqual(pg.groups.map((g) => [g.name, g.rows.map((f) => f.title)]), [
       ['adsb-lol', ['Rate limits', 'Licence', 'API terms']],
       ['sensors', ['trueNorth is magnetic on Android']],
     ], 'per file: conflicts first, then binding, then context');
     assert.ok(!('pending' in pg) && !('locked' in pg) && !('confirmed' in pg), 'nothing to confirm, commit or lock');
 
-    // A feature blocked on a fact in conflict waits on the fact file and is solved by prep facts.
+    // A feature blocked on a fact in conflict waits on the fact file.
     const blocked = { ...board, rows: [{ ...board.rows[0], status: 'blocked', reason: 'blocked: domain/adsb-lol.md: Rate limits is in conflict' }] };
-    const row = m.view(blocked, null, 0, false, { domain: { tree } }).sections.find((s) => s.key === 'needs-you').groups[0].rows[0];
-    assert.deepStrictEqual([row.detail, row.action.args], ['waits on domain/adsb-lol.md', 'facts']);
-    const bp = m.view(blocked, null, 0, false, { domain: { tree }, page: { kind: 'feature', id: 'a' } }).page;
-    assert.deepStrictEqual([bp.waitingOn, bp.details.action.args], ['domain/adsb-lol.md', 'facts']);
+    const row = m.view(blocked, null, false, { domain: { tree } }).cards.find((c) => c.kind === 'needs').rows[0];
+    assert.strictEqual(row.detail, 'waits on domain/adsb-lol.md');
+    const bp = m.view(blocked, null, false, { domain: { tree }, page: { kind: 'feature', id: 'a' } }).page;
+    assert.strictEqual(bp.waitingOn, 'domain/adsb-lol.md');
     assert.strictEqual(m.factOf('waiting on Anatol: the V1.2 doc'), null);
-  }
-
-  // Final review #1: every action on a drawing has its own key — the pane builds each button
-  // once per key, so two rows sharing `prep facts` must not share a button.
-  {
-    const fact = (title, file = 'a.md') => ({ file, title, text: 't', source: '', state: 'confirmed', by: '', conflict: { what: 'w', source: 's', by: 'b' } });
-    const row = (id, status, reason = '') => ({ flight: '', id, title: id, tier: 'normal', plan: '', commit: '', touched: [], status, reason });
-    const board = { ...m.EMPTY_BOARD, name: 'x', format: { project: '0.20', plugin: '0.20' },
-      rows: [row('a', 'blocked', 'blocked — domain/a.md: A is in conflict'), row('b', 'blocked', 'blocked — domain/a.md: B is in conflict'), row('c', 'blocked', 'waiting on Jakob: x'), row('d', 'planned'), row('e', 'planned')] };
-    const v = m.view(board, null, 0, false, { domain: { tree: [fact('A'), fact('B')] } });
-    const actions = [v.summary.action, ...v.sections.flatMap((s) => [...s.groups.flatMap((g) => g.rows.map((r) => r.action)), ...(s.conflicts ?? []).map((c) => c.action)])].filter(Boolean);
-    assert.strictEqual(actions.length, 8, 'brew all, three solves, two starts, two fact solves');
-    assert.ok(actions.every((a) => typeof a.key === 'string'), 'every action carries a key');
-    assert.strictEqual(new Set(actions.map((a) => a.key)).size, actions.length, `keys are unique: ${actions.map((a) => a.key).join(', ')}`);
-    const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
-    assert.ok(/held\(\s*action\.key/.test(tsx), 'the pane keeps a button per action key');
   }
 
   // The Files card: the commit's files when known, the plan's Files touched before.
@@ -490,7 +462,7 @@ const shown = (v) => JSON.stringify(v);
     // Files are read per feature (its commits by ID); ristretto's own docs ride along in the
     // feature commit now and are not what a code review reads.
     const bookkeeping = [{ path: 'docs/ristretto/roadmap.md', add: 1, del: 1, bin: false }, { path: 'docs/ristretto/plans/archived/d.md', add: 40, del: 0, bin: false }];
-    const page = (id, extra = {}) => m.view(board, null, 0, false, { page: { kind: 'feature', id }, files: { d: [...list, ...bookkeeping], n: bookkeeping }, ...extra }).page;
+    const page = (id, extra = {}) => m.view(board, null, false, { page: { kind: 'feature', id }, files: { d: [...list, ...bookkeeping], n: bookkeeping }, ...extra }).page;
     const d = page('d').files;
     assert.deepStrictEqual([d.planned, d.n, d.add, d.del], [false, 13, 26, 13]);
     assert.deepStrictEqual(d.rows.map((r) => r.name), ['lib/'], 'more than 12 files: only the top level shows');
@@ -499,9 +471,9 @@ const shown = (v) => JSON.stringify(v);
     const p = page('p').files;
     assert.deepStrictEqual([p.planned, p.rows.map((r) => r.name)], [true, ['lib/data/', 'pubspec.yaml']]);
     assert.strictEqual(page('n').files, null, 'nothing touched yet, no commit: no card');
-    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'commits not read yet: the plan meanwhile');
+    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'commits not read yet: the plan meanwhile');
     assert.strictEqual(page('n').files, null, 'only bookkeeping and nothing planned: no card');
-    assert.strictEqual(m.view(board, null, 0, false, { page: { kind: 'feature', id: 'd' }, files: { d: [] } }).page.files.planned, true, 'no commit found yet: the plan, not an empty card');
+    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' }, files: { d: [] } }).page.files.planned, true, 'no commit found yet: the plan, not an empty card');
   }
 
   // Final review #4: a feature blocked on a fact is recognised through the roadmap, whichever
@@ -516,11 +488,9 @@ const shown = (v) => JSON.stringify(v);
     const rows = m.parseRoadmap(text).rows;
     assert.deepStrictEqual(rows.map((r) => r.reason), ['domain/adsb-lol.md: Rate limits is in conflict', 'SPOT-3 — domain/sensors.md: trueNorth is in conflict', 'waiting on Jakob: the pass mark'], 'a leading ":" is dropped like a dash');
     assert.deepStrictEqual(rows.map((r) => m.factOf(r.reason)), ['adsb-lol.md', 'sensors.md', null]);
-    const v = m.view({ ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } }, null, 0, false, {});
-    const shownRows = v.sections.find((s) => s.key === 'needs-you').groups.flatMap((g) => g.rows);
-    assert.deepStrictEqual(shownRows.map((r) => [r.detail, r.action.args]), [
-      ['waits on domain/adsb-lol.md', 'facts'], ['waits on domain/sensors.md', 'facts'], ['waits on Jakob', 'c deep'],
-    ]);
+    const v = m.view({ ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } }, null, false, {});
+    const shownRows = v.cards.find((c) => c.kind === 'needs').rows;
+    assert.deepStrictEqual(shownRows.map((r) => r.detail), ['waits on domain/adsb-lol.md', 'waits on domain/sensors.md', 'waits on Jakob']);
   }
 
   // A check re-run adds to the build's numbers instead of replacing them.
@@ -532,9 +502,9 @@ const shown = (v) => JSON.stringify(v);
     const board = { ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } };
     const run =(startedAt, ms, phases) => ({ id: 'cam', command: 'pull', startedAt, endedAt: startedAt + ms, ms, status: 'done', tokens: { in: 10, out: 1, cache: 0 }, gates: { runs: 1, ms: 5, red: 0 }, phases });
     const runs = [run(0, 900000, { plan: 100000, code: 600000, review: 150000, close: 50000 }), run(2000000, 60000, { plan: 0, code: 0, review: 0, close: 60000 })];
-    const v = m.view(board, null, 0, false, { runs });
-    assert.deepStrictEqual([v.done.rows[0].run.ms, v.done.rows[0].run.runs], [960000, 2], 'the Done row shows both runs');
-    const p = m.view(board, null, 0, false, { runs, page: { kind: 'feature', id: 'cam' } }).page;
+    const v = m.view(board, null, false, { runs });
+    assert.strictEqual(v.cards.find((c) => c.kind === 'done').rows[0].meta, '16m', 'the Done row shows both runs');
+    const p = m.view(board, null, false, { runs, page: { kind: 'feature', id: 'cam' } }).page;
     assert.deepStrictEqual(p.split.map((s) => [s.phase, s.ms]), [['plan', 100000], ['code', 600000], ['review', 150000], ['close', 110000]]);
     assert.strictEqual(p.details.run.runs, 2);
   }
@@ -554,7 +524,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.formatOf(versionSrc), declared, 'formatOf reads the FORMAT version.js declares');
     assert.strictEqual(m.formatOf('no declaration here'), '', 'and nothing when there is none');
     const board = { name: 't', rows: [], format: { project: declared, plugin: m.formatOf(versionSrc) }, error: null };
-    assert.ok(!shown(m.view(board, null, 0)).includes('another ristretto format'), 'a project on the current format carries no notice');
+    assert.ok(!shown(m.view(board, null, false)).includes('another ristretto format'), 'a project on the current format carries no notice');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
     assert.ok(!tsx.includes('plugin.json'), 'board.tsx must not take the format from plugin.json');
     assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/version.js'), 'board.tsx reads the format from version.js');
@@ -584,22 +554,30 @@ const shown = (v) => JSON.stringify(v);
   // Final review I2, reworded: every feature done → the cup, unless a fact is in conflict.
   {
     const done = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'done', reason: '' }] };
-    assert.strictEqual(m.view(done, null, 0, false, {}).kind, 'cup');
+    assert.strictEqual(m.view(done, null, false, {}).kind, 'cup');
     const calm = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '', conflict: null };
-    assert.strictEqual(m.view(done, null, 0, false, { domain: { tree: [calm] } }).kind, 'cup', 'context facts do not hold the cup back');
-    const v = m.view(done, null, 0, false, { domain: { tree: [{ ...calm, conflict: { what: 'w', source: 's', by: 'b' } }] } });
+    assert.strictEqual(m.view(done, null, false, { domain: { tree: [calm] } }).kind, 'cup', 'context facts do not hold the cup back');
+    const v = m.view(done, null, false, { domain: { tree: [{ ...calm, conflict: { what: 'w', source: 's', by: 'b' } }] } });
     assert.strictEqual(v.kind, 'board', 'a conflict keeps the overview');
   }
 
-  // The band above the prompt: progress, what is blocked, what runs now — nothing else.
+  // The band above the prompt: only the main thing — what runs and its step, who is needed.
   {
-    const row = (id, status) => ({ flight: '', id, title: id, tier: 'normal', plan: '', commit: '', status, reason: '' });
+    const row = (id, status) => ({ flight: '', id, title: id, tier: 'normal', plan: '', commit: '', touched: [], status, reason: '' });
     const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [row('a', 'done'), row('b', 'blocked'), row('c', 'planned'), row('d', 'done')] };
-    assert.deepStrictEqual(m.bandOf(board, null, 0), { done: 2, total: 4, blocked: 1, running: null });
+    assert.deepStrictEqual(m.bandOf(board, null, false, {}), { idle: { open: 2, needYou: 1, ready: false } });
     const live = { command: 'pull', id: 'c', phase: 'coding', round: 0, since: 0, gate: null, armed: true };
-    assert.deepStrictEqual(m.bandOf(board, live, 240000).running, { id: 'c', what: 'coding', clock: '4m00s' });
-    assert.deepStrictEqual(m.bandOf(board, null, 0, true).running, { id: null, what: 'a run is active in another session', clock: '' });
-    assert.strictEqual(m.bandOf({ ...board, error: 'no-roadmap', rows: [] }, null, 0), null, 'no roadmap: no band');
+    const run = m.bandOf(board, live, false, {}).running;
+    assert.deepStrictEqual([run.id, run.step, run.red, run.needYou, run.effort.phases.length], ['c', 'code', false, 1, 4]);
+    assert.strictEqual(m.bandOf(board, { ...live, gate: { since: 0, red: true } }, false, {}).running.step, 'gate red');
+    assert.deepStrictEqual(m.bandOf(board, null, true, {}).running.step, 'a run is active in another session');
+    assert.ok(!/ahead|done|total|clock/.test(JSON.stringify(m.bandOf(board, null, false, {}))), 'no tally, no time, no ahead');
+    // Ready: everything on the branch done, nothing holds it, the suite green on this code.
+    const ready = { ...board, rows: [row('a', 'done'), row('c', 'planned')] };
+    const branch = { name: 'b', base: 'main', ids: ['a'], lastBrew: '' };
+    assert.strictEqual(m.bandOf(ready, null, false, { branch, suite: { state: 'green', text: 'suite green', failing: '' } }).idle.ready, true);
+    assert.strictEqual(m.bandOf(ready, null, false, { branch, suite: { state: 'unproven', text: 'suite unproven', failing: '' } }).idle.ready, false, 'never ready on an unproven suite');
+    assert.strictEqual(m.bandOf({ ...board, error: 'no-roadmap', rows: [] }, null, false, {}), null, 'no roadmap: no band');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
     assert.ok(/component: 'AbovePrompt'/.test(tsx) && /bandOf\(/.test(tsx), 'the band is drawn above the prompt');
     assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
