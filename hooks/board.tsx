@@ -820,12 +820,15 @@ async function drawPane($: any, e: any) {
   // A press area (board-press.tsx, a Client that draws one space and posts its clicks) laid over
   // an element: the whole line presses, with no highlight. Without a Client (VS Code) the caller
   // draws a Button instead; on mobile nothing presses.
+  // The terminal paints a Client's space over the cell beneath it (a title's first letter, a
+  // row's glyph): there the region draws nothing at all.
+  const blank = e.surface === 'terminal'
   const pressArea = (id: string, run: () => void) => {
     if (!canPress || !Client) return null
     pressRuns.set(id, run)
     return (
       <Box key={`pa-${id}`} position="absolute" top={0} left={0} right={0} bottom={0}>
-        <Client key={`pr-${id}`} module="./board-press.tsx" width="100%" height="100%" props={{ id: `run:${id}` }} />
+        <Client key={`pr-${id}`} module="./board-press.tsx" width="100%" height="100%" props={{ id: `run:${id}`, blank }} />
       </Box>
     )
   }
@@ -856,7 +859,7 @@ async function drawPane($: any, e: any) {
           {chev}
           {canPress && Client && (
             <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-              <Client key={`fold-${cardKey}`} module="./board-press.tsx" width="100%" height="100%" props={{ id: `fold:${cardKey}` }} />
+              <Client key={`fold-${cardKey}`} module="./board-press.tsx" width="100%" height="100%" props={{ id: `fold:${cardKey}`, blank }} />
             </Box>
           )}
         </Box>

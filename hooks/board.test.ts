@@ -204,6 +204,12 @@ describe('the overview', () => {
     // The terminal resolves an Svg but draws it as an empty box: marks must be glyphs there.
     expect(t).toMatch(/[✓◐○✕]/)
     expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
+    // A press area's space would cover the cell under it there (a title's first letter, a
+    // row's glyph): in the terminal every press area draws nothing; the desktop keeps its space.
+    const areas = await ui.findAll({ type: 'Client' })
+    expect(areas.length).toBeGreaterThan(0)
+    for (const a of areas) expect(a.props.props.blank).toBe(true)
+    for (const a of await (await mount($, 'desktop')).findAll({ type: 'Client' })) expect(a.props.props.blank).toBe(false)
   })
 })
 
