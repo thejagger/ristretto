@@ -45,7 +45,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(r.error, null);
     assert.strictEqual(r.format, '0.17');
     assert.deepStrictEqual(r.rows.map((x) => x.id), ['pw-foundation', 'nb-anmeldung', 'pw-galerie', 'pw-kalender']);
-    assert.deepStrictEqual(r.rows.map((x) => x.status), ['needs-review', 'done', 'planned', 'blocked']);
+    assert.deepStrictEqual(r.rows.map((x) => x.status), ['unknown', 'done', 'planned', 'blocked'], 'needs-review is no status since 0.22');
     assert.strictEqual(r.rows[0].flight, 'vs-ruprechtshofen');
     assert.strictEqual(r.rows[2].flight, '', 'a — flight is no flight');
     assert.strictEqual(r.rows[2].tier, 'easy');
@@ -58,15 +58,15 @@ const shown = (v) => JSON.stringify(v);
 
     const older = [
       '| Flight | Feature | Title | Status | Plan | Updated |',
-      '| — | fork-ecolaw-base | Fork into immo-wert | needs-human — compose + browser check pending, see manual-checks.md | x | 2026-08-25 |',
+      '| — | fork-ecolaw-base | Fork into immo-wert | blocked — compose + browser check pending | x | 2026-08-25 |',
       '| — | old-thing | Retired | done—**retired** | x | 2026-08-01 |',
       '| — | odd | Odd | parked | x | 2026-08-01 |',
     ].join('\n');
     const o = m.parseRoadmap(older);
     assert.strictEqual(o.format, null, 'an unstamped roadmap has no format');
-    assert.deepStrictEqual(o.rows.map((x) => x.status), ['needs-human', 'done', 'unknown']);
+    assert.deepStrictEqual(o.rows.map((x) => x.status), ['blocked', 'done', 'unknown']);
     assert.strictEqual(o.rows[0].tier, 'normal', 'no Tier column reads as normal');
-    assert.strictEqual(o.rows[0].reason, 'compose + browser check pending, see manual-checks.md');
+    assert.strictEqual(o.rows[0].reason, 'compose + browser check pending');
     assert.strictEqual(o.rows[2].reason, 'parked', 'an unknown status keeps its raw text');
 
     assert.strictEqual(m.parseRoadmap('# Ristretto Roadmap\n\nnothing yet\n').error, 'no-table');
@@ -365,7 +365,7 @@ const shown = (v) => JSON.stringify(v);
     const row = (id, status, extra = {}) => ({ flight: '', id, title: id, tier: 'normal', plan: `plans/${id}.md`, commit: '', touched: [], status, reason: '', ...extra });
     const board = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [
       row('core', 'done', { commit: 'abc1234' }), row('old', 'done'), row('mid', 'done'),
-      row('a', 'planned'), row('b', 'planned'), row('k', 'blocked', { reason: 'no API' }), row('rv', 'needs-review'),
+      row('a', 'planned'), row('b', 'planned'), row('k', 'blocked', { reason: 'no API' }), row('rv', 'done'),
     ] };
     const plans = {
       a: { acceptance: [{ auto: true, text: 'A works' }], depends: ['core'], blockers: [], evidence: [], review: null, gate: null, findings: [] },
@@ -554,7 +554,7 @@ const shown = (v) => JSON.stringify(v);
     // The marks live in board-svg.mjs now: facts have their own, never the person's.
     const svgSrc = fs.readFileSync(path.join(ROOT, 'hooks', 'board-svg.mjs'), 'utf8');
     assert.ok(/\bfacts: \(\) => BOOK\(/.test(svgSrc) && /'fact-conflict': \(\) => `\$\{BOOK\(/.test(svgSrc), 'facts have their own icon');
-    assert.ok(!/needs-human[^\n]*Domain facts|Domain facts[^\n]*needs-human/.test(tsx), 'the person icon is not the facts icon');
+    assert.ok(!/'person'[^\n]*Domain facts|Domain facts[^\n]*'person'/.test(tsx), 'the person icon is not the facts icon');
     assert.ok(/c\.kind === 'needs'/.test(tsx), 'the Needs you card (conflict rows among its rows) is drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
     assert.ok(/featureLogArgs\(id\)/.test(tsx) && /sumFiles\(/.test(tsx), 'the Files card finds a feature\'s commits by its ID');
@@ -626,8 +626,8 @@ const shown = (v) => JSON.stringify(v);
     const board = {
       name: 'roadmap', format: { project: null, plugin: '' }, error: null,
       rows: [
-        R('d-old', 'done'), R('d-here', 'done'), R('human-here', 'needs-human'), R('review-here', 'needs-review'),
-        R('human-away', 'needs-human'), R('blk', 'blocked', { reason: 'waiting on Anatol: the API doc' }),
+        R('d-old', 'done'), R('d-here', 'done'), R('human-here', 'done'), R('review-here', 'done'),
+        R('human-away', 'done'), R('blk', 'blocked', { reason: 'waiting on Anatol: the API doc' }),
         R('p1', 'planned'), R('p2', 'planned'), R('p3', 'planned'), R('p4', 'planned'), R('p5', 'planned'), R('p6', 'planned'),
         R('pw', 'planned'),
       ],
@@ -645,17 +645,19 @@ const shown = (v) => JSON.stringify(v);
     const by = (list, id) => list.find((r) => r.id === id);
 
     // Holders: what this branch's features still wait on, in their tone.
-    assert.deepStrictEqual(s.holders.map((h) => [h.id, h.detail, h.tone]), [
-      ['human-here', 'tick 1 check', 'permission'],
-      ['review-here', '2 findings · 2 checks', 'warning'],
+    assert.deepStrictEqual(s.holders.map((h) => [h.id, h.detail, h.tone, h.glyph]), [
+      ['human-here', '1 check open', 'permission', 'person'],
+      ['review-here', '2 findings · 2 checks open', 'permission', 'person'],
     ]);
+    const findingsOnly = m.stateOf(board, null, false, { ...opts, checks: { 'review-here': [] } });
+    assert.deepStrictEqual(['detail', 'tone', 'glyph'].map((k) => by(findingsOnly.holders, 'review-here')[k]), ['2 findings open', 'warning', 'findings']);
     assert.strictEqual(s.branchIds.length, 4);
     // The same kind of row off the branch, and a blocked row with no commit here, need you instead.
     assert.deepStrictEqual(s.needsYou.map((r) => r.id), ['human-away', 'blk']);
     assert.strictEqual(by(s.needsYou, 'blk').detail, 'waits on Anatol');
     assert.ok(!by(s.holders, 'blk'));
     assert.strictEqual(s.needYou, s.needsYou.length);
-    assert.strictEqual(s.open, 11, 'open = rows not done');
+    assert.strictEqual(s.open, 8, 'open = rows not done');
 
     // Up next: eligible planned rows in roadmap order, at most 5, the rest counted.
     assert.deepStrictEqual(s.upNext.rows.map((r) => [r.id, r.detail]), [['p1', 'next'], ['p2', 'queued'], ['p3', 'queued'], ['p4', 'queued'], ['p5', 'queued']]);
@@ -674,14 +676,14 @@ const shown = (v) => JSON.stringify(v);
     s = m.stateOf(board, null, false, { ...opts, suite: { state: 'unproven', text: 'suite unproven', failing: '' } });
     assert.strictEqual(s.holders.length, 2);
 
-    // A checks re-run is what brew takes first when it is higher on the roadmap.
+    // Every box ticked: the feature is plainly done. Nothing re-runs; brew's next is a planned row.
     const ticked = { ...checks, 'human-here': [{ done: true, text: 'x' }] };
     s = m.stateOf(board, null, false, { ...opts, checks: ticked });
-    assert.strictEqual(s.nextId, 'human-here');
-    assert.deepStrictEqual([by(s.holders, 'human-here').detail, by(s.holders, 'human-here').tag], ['checks ticked', 'next']);
-    assert.strictEqual(s.upNext.rows[0].detail, 'queued', 'the first planned row is not next while a re-run comes first');
+    assert.strictEqual(s.nextId, 'p1');
+    assert.ok(!by(s.holders, 'human-here'));
+    assert.deepStrictEqual(s.done.here.map((r) => r.id), ['d-here', 'human-here']);
 
-    // A blocked feature whose code is on the branch (a failed check re-run) holds it.
+    // A blocked feature whose code is on the branch holds it.
     s = m.stateOf(board, null, false, { ...opts, branch: { ...branch, ids: [...branch.ids, 'blk'] } });
     assert.deepStrictEqual([by(s.holders, 'blk').detail, by(s.holders, 'blk').tone], ['blocked · waits on Anatol', 'error']);
     assert.ok(!by(s.needsYou, 'blk'));
@@ -708,6 +710,35 @@ const shown = (v) => JSON.stringify(v);
 
     // No buttons anywhere: the person acts in the chat.
     assert.ok(!/"action"/.test(JSON.stringify(m.stateOf(board, null, false, opts))));
+  }
+
+  // 20b. A done feature still asks a person while its plan has an open box; there is no status for it.
+  {
+    const R = (id, status) => ({ flight: '', id, title: `${id} title`, tier: 'normal', plan: `plans/${id}.md`, commit: '', status, reason: '' });
+    const board = { name: 'r', format: { project: null, plugin: '' }, error: null, rows: [R('a', 'done'), R('b', 'done')] };
+    const at = (opts) => m.stateOf(board, null, false, { suite: { state: 'green', text: '', failing: '' }, domain: { tree: [] }, ...opts });
+
+    // doneWithOpenCheckNeedsYou
+    let s = at({ checks: { a: [{ done: false, text: 'x', how: 'y' }, { done: true, text: 'z', how: '' }] } });
+    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail, r.glyph]), [['a', '1 check open', 'person']]);
+    assert.deepStrictEqual(s.done.all.map((r) => r.id), ['b'], 'a feature that waits on you is not under Done');
+    assert.strictEqual(s.open, 0, 'it is still done: it is not open work');
+
+    // doneWithOpenDecisionNeedsYou
+    const decisions = { a: [{ done: null, text: 'prep ruling' }, { done: false, text: 'q1 → r1' }, { done: false, text: 'q2 → r2' }] };
+    s = at({ decisions });
+    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '2 decisions open']]);
+    s = at({ decisions, checks: { a: [{ done: false, text: 'x', how: '' }] } });
+    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '1 check · 2 decisions open']]);
+    s = at({ decisions, branch: { name: 'x', base: 'main', ids: ['a'], lastBrew: '' } });
+    assert.deepStrictEqual(s.holders.map((r) => [r.id, r.detail, r.tone]), [['a', '2 decisions open', 'permission']], 'on the branch it holds the branch');
+
+    // doneCleanIsDone: ticked checks and confirmed or prep decisions leave nothing to do.
+    s = at({ checks: { a: [{ done: true, text: 'x', how: '' }] }, decisions: { a: [{ done: true, text: 'q → r' }, { done: null, text: 'p' }] } });
+    assert.deepStrictEqual([s.needsYou, s.done.all.map((r) => r.id)], [[], ['b', 'a']]);
+    // The feature page carries the plan's decisions with their boxes.
+    const page = m.view(board, null, false, { decisions, page: { kind: 'feature', id: 'a' } }).page;
+    assert.deepStrictEqual(page.details.decisions, decisions.a);
   }
 
   // 21. v3: the feature at work, its effort, its roles, and this brew's tally.
@@ -753,11 +784,11 @@ const shown = (v) => JSON.stringify(v);
     const R = (id, status, extra = {}) => ({ flight: '', id, title: `${id} title`, tier: 'normal', plan: '', commit: '', touched: [], status, reason: '', ...extra });
     const board = {
       name: 'r', format: { project: null, plugin: '' }, error: null,
-      rows: [R('a', 'done'), R('b', 'needs-review'), R('c', 'in-progress'), R('d', 'blocked', { reason: 'waiting on Anatol: x' }), R('e', 'planned'), R('f2', 'planned'), R('g', 'planned'), R('h', 'planned'), R('w', 'planned'), R('old', 'done')],
+      rows: [R('a', 'done'), R('b', 'done'), R('c', 'in-progress'), R('d', 'blocked', { reason: 'waiting on Anatol: x' }), R('e', 'planned'), R('f2', 'planned'), R('g', 'planned'), R('h', 'planned'), R('w', 'planned'), R('old', 'done')],
     };
     const plans = { w: { depends: ['d'], blockers: [], findings: [] } };
     const live = L({ command: 'brew', id: 'c', phase: 'coding' });
-    const snapshot = { startedAt: 1000, ids: ['a', 'b', 'c', 'd', 'e', 'f2', 'g', 'h', 'w'], reruns: [] };
+    const snapshot = { startedAt: 1000, ids: ['a', 'b', 'c', 'd', 'e', 'f2', 'g', 'h', 'w'] };
     const runs = [{ id: 'a', startedAt: 2000, endedAt: 50000, ms: 48000, phases: {} }, { id: 'b', startedAt: 50000, endedAt: 90000, ms: 40000, phases: {} }];
     const opts = { snapshot, runs, roles: { c: roles.f }, run: { id: 'c', startedAt: 90000 }, plans, checks: {}, drawnAt: 150000 };
     let w = m.brewingOf(board, live, opts);

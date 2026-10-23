@@ -7,7 +7,7 @@ import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
 import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
 import { baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
-import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock } from './board-svg.mjs'
+import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock, statusGlyph } from './board-svg.mjs'
 import { buttonKeeper } from './board-keep.mjs'
 import { parseChecks, parseDecisions, parsePlan } from './board-plan.mjs'
 import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
@@ -113,10 +113,9 @@ async function refreshBoard($: EngineInterface) {
     }
     const mtime = (await $.fs.stat(await repo($, ROADMAP))).mtimeMs
     const parsed = parseRoadmap(String(await $.fs.read(await repo($, ROADMAP))))
-    // Every plan's manual checks and decisions (a done row may still wait on a person), and
-    // what each open plan says, plus the opened row's plan whatever its status. A plan that
-    // cannot be read is simply absent. A blocked row with no reason in the roadmap says why
-    // from its plan's Blockers.
+    // What every plan says, its manual checks and decisions with it: a done row may still wait
+    // on a person or carry open findings. A plan that cannot be read is simply absent. A blocked
+    // row with no reason in the roadmap says why from its plan's Blockers.
     const shownPage = await read($, page)
     const opened = shownPage?.kind === 'feature' ? shownPage.id : null
     const plans: Record<string, BoardPlan> = {}
@@ -128,7 +127,7 @@ async function refreshBoard($: EngineInterface) {
         const text = String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`)))
         checks[row.id] = parseChecks(text) as Board['checks'][string]
         decisions[row.id] = parseDecisions(text) as Board['decisions'][string]
-        if (row.status !== 'done' || row.id === opened) plans[row.id] = parsePlan(text) as BoardPlan
+        plans[row.id] = parsePlan(text) as BoardPlan
       } catch {
         // The opened row says its plan was not found.
       }
@@ -326,7 +325,7 @@ async function settleBrew($: EngineInterface, after: BoardLive | null, obs: any)
     return
   }
   if (after.command === 'brew' && obs.kind === 'brief' && !snap.ids.includes(obs.id)) {
-    const next = { ...snap, ids: [...snap.ids, obs.id], reruns: [...snap.reruns, obs.id] }
+    const next = { ...snap, ids: [...snap.ids, obs.id] }
     { const v = next; if (!same(await read($, brew), v)) { await update($, brew, () => v); await stamp($) } }
     if (brewKey) await $.store.set(brewKey, next)
   }
@@ -500,7 +499,7 @@ export const register: Register = on => {
     try {
       const boardValue = await read($, board)
       const b = bandOf(boardValue, await read($, live), await read($, elsewhere), {
-        branch: await read($, branch), suite: await read($, suite), plans: boardValue.plans, checks: boardValue.checks, domain: await read($, domain),
+        branch: await read($, branch), suite: await read($, suite), plans: boardValue.plans, checks: boardValue.checks, decisions: boardValue.decisions, domain: await read($, domain),
       })
       if (!b) return next(e)
       const els = $.ui.resolve(e) as any
@@ -535,11 +534,10 @@ export const register: Register = on => {
     const hit = /^ristretto:(pull|shot|brew)$/.exec(e.command)
     if (hit) {
       try {
-        // brew's set as it starts: every planned row and every check re-run waiting (spec 4.6).
+        // brew's set as it starts: every planned row (spec 4.6).
         if (hit[1] === 'brew') {
           const b = await read($, board)
-          const reruns = b.rows.filter(r => r.status === 'needs-human' && (b.checks[r.id] ?? []).length > 0 && (b.checks[r.id] ?? []).every(c => c.done)).map(r => r.id)
-          const snap = { startedAt: await $.clock.now(), ids: [...b.rows.filter(r => r.status === 'planned').map(r => r.id), ...reruns], reruns }
+          const snap = { startedAt: await $.clock.now(), ids: b.rows.filter(r => r.status === 'planned').map(r => r.id) }
           { const v = snap; if (!same(await read($, brew), v)) { await update($, brew, () => v); await stamp($) } }
           if (brewKey) await $.store.set(brewKey, snap)
         }
@@ -676,16 +674,15 @@ const CUP_TEXT = ['   ) )  ( (', '.__________.', '|          |]', '|          |'
 // Glyphs where a surface draws no SVG (the terminal): one character per mark, its tone a theme key.
 const GLYPH: Record<string, [string, string]> = {
   planned: ['○', 'inactive'], next: ['○', 'text'], queued: ['○', 'inactive'], running: ['●', 'claude'], lane: ['◉', 'claude'],
-  blocked: ['✕', 'error'], 'needs-review': ['◐', 'warning'], 'needs-human': ['◐', 'permission'], done: ['✓', 'success'], ready: ['✓', 'success'],
+  blocked: ['✕', 'error'], findings: ['◐', 'warning'], person: ['◐', 'permission'], done: ['✓', 'success'], ready: ['✓', 'success'],
   'suite-ok': ['✓', 'success'], 'gate-red': ['✕', 'error'], 'suite-red': ['✕', 'error'], facts: ['·', 'inactive'], 'fact-conflict': ['!', 'warning'],
 }
 const TONE: Record<string, any> = { permission: { color: 'permission' }, warning: { color: 'warning' }, error: { color: 'error' }, dim: { dimColor: true }, default: {} }
 const toneOf = (t?: string) => TONE[t ?? 'dim'] ?? TONE.dim
 const STATUS: Record<string, [string, string]> = {
-  planned: ['planned', 'dim'], 'in-progress': ['in progress', 'claude'], blocked: ['blocked', 'error'], 'needs-human': ['needs a person', 'permission'],
-  'needs-review': ['needs review', 'warning'], done: ['done', 'success'], unknown: ['unknown', 'dim'],
+  planned: ['planned', 'dim'], 'in-progress': ['in progress', 'claude'], blocked: ['blocked', 'error'],
+  done: ['done', 'success'], unknown: ['unknown', 'dim'],
 }
-const GLYPH_OF: Record<string, string> = { planned: 'planned', 'in-progress': 'running', blocked: 'blocked', 'needs-human': 'needs-human', 'needs-review': 'needs-review', done: 'done', unknown: 'planned' }
 // The pane's cells to CSS pixels: an estimate on the low side, so a bar drawn this wide never
 // overflows its slot and gets scaled (the pixels would blur).
 const pxFor = (cells: number) => Math.max(120, Math.min(1400, Math.floor(cells * 7.4)))
@@ -766,6 +763,7 @@ async function drawPane($: any, e: any) {
     page: canPress ? await read($, page) : null,
     plans: boardValue.plans,
     checks: boardValue.checks,
+    decisions: boardValue.decisions,
     files: await read($, files),
     folders: opened,
     runs: await read($, runs),
@@ -1026,7 +1024,7 @@ async function drawPane($: any, e: any) {
       : <Text dimColor wrap="truncate-end">{c.holds.length ? `${c.holds.length} hold it` : c.footer}</Text>
     const head = foldTitle('branch', 'Branch', summary)
     if (isFolded('branch')) return card('branch', [head])
-    const hex = (x: any) => (x.glyph === 'needs-review' ? LEGEND.review : x.glyph === 'needs-human' ? LEGEND.human : undefined)
+    const hex = (x: any) => (x.glyph === 'findings' ? LEGEND.review : x.glyph === 'person' ? LEGEND.human : undefined)
     const holders = c.holds.map((x: any) => lrow(x, { hex: hex(x), right: detailEl(x), shrink: true }))
     if (c.compact) {
       return card('branch', [head, ...titleGap('bn-g0'), ...(c.ready ? [headline('bn-ready', <Text color="success">ready to ship</Text>)] : holders.length ? holders : [note('bn-none', c.footer)])])
@@ -1203,13 +1201,15 @@ async function drawPane($: any, e: any) {
   function featureCards(p: any): any[] {
     const d = p.details
     const [said, tone] = STATUS[p.status] ?? ['unknown', 'dim']
+    // The agent's decisions carry a box; a prep ruling (done null) is not a question.
+    const boxed = d.decisions.filter((x: any) => x.done !== null)
+    const asks = d.checks.some((x: any) => !x.done) || boxed.some((x: any) => !x.done)
     const hint = p.status === 'blocked' ? `settle it in the chat: /ristretto:prep ${p.id} deep`
-      : p.status === 'needs-review' ? `judge it in the chat: /ristretto:pull ${p.id}`
-        : p.status === 'needs-human' && d.checks.length && d.checks.every((x: any) => x.done) ? `checks ticked: /ristretto:pull ${p.id} runs them again`
-          : null
+      : asks ? `say 'manual checks done' or 'decisions ok' in the chat`
+        : null
     const head = card('f-head', [
       <Box key="id" flexDirection="row" alignItems="center" gap={1}>
-        <Box flexShrink={0}>{markEl(GLYPH_OF[p.status] ?? 'planned')}</Box>
+        <Box flexShrink={0}>{markEl(statusGlyph(p.status))}</Box>
         <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text bold wrap="truncate-end">{p.id}</Text></Box>
       </Box>,
       p.title !== '' && note('title', plain(p.title)),
@@ -1259,7 +1259,7 @@ async function drawPane($: any, e: any) {
       ...spaced('acc', d.acceptance.map((a: any, i: number) => (
         <Box key={`acc-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
           <Box flexShrink={0} width={2}>
-            {a.proof ? markEl('done') : a.auto ? <Text dimColor>{`${i + 1}.`}</Text> : markEl('needs-human')}
+            {a.proof ? markEl('done') : a.auto ? <Text dimColor>{`${i + 1}.`}</Text> : markEl('person')}
           </Box>
           {/* The proof line truncates: without overflow hidden its full width sets the column's, and the text runs out of the card. */}
           <Box flexDirection="column" flexGrow={1} flexShrink={1} overflow="hidden">
@@ -1313,7 +1313,7 @@ async function drawPane($: any, e: any) {
       d.findings.length > 0 && strip(6, 'fr-g1'),
       ...spaced('fnd', d.findings.map((f: string, i: number) => (
         <Box key={`fnd-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
-          <Box flexShrink={0}>{markEl('needs-review')}</Box>
+          <Box flexShrink={0}>{markEl('findings')}</Box>
           <Box flexShrink={1}><Text wrap="wrap">{md(f, `fnd-${i}`)}</Text></Box>
         </Box>
       ))),
@@ -1321,22 +1321,24 @@ async function drawPane($: any, e: any) {
       (d.run || d.commit) && note('rc', [d.run && `${p.split ? '' : `${duration(d.run.ms)} · `}${count(d.run.tokens.in + d.run.tokens.out)} tok`, d.commit && `commit ${d.commit}`].filter(Boolean).join('  ·  ')),
     ])
 
-    const ticked = d.checks.filter((x: any) => x.done).length
-    const checks = d.checks.length > 0 && card('f-checks', [
-      headline('fc', <Text bold color={ticked === d.checks.length ? 'success' : 'permission'}>Checks</Text>, <Text dimColor>{`${ticked} of ${d.checks.length}`}</Text>),
+    // Manual checks and the agent's decisions: the plan's open boxes, ticked by the person's word.
+    const boxes = [...d.checks, ...boxed.map((x: any) => ({ ...x, text: `decision · ${x.text}` }))]
+    const ticked = boxes.filter((x: any) => x.done).length
+    const checks = boxes.length > 0 && card('f-checks', [
+      headline('fc', <Text bold color={ticked === boxes.length ? 'success' : 'permission'}>Checks</Text>, <Text dimColor>{`${ticked} of ${boxes.length}`}</Text>),
       strip(4, 'fc-g0'),
-      ...spaced('chk', d.checks.map((x: any, i: number) => (
+      ...spaced('chk', boxes.map((x: any, i: number) => (
         <Box key={`chk-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
-          <Box flexShrink={0}>{markEl(x.done ? 'done' : 'needs-human')}</Box>
+          <Box flexShrink={0}>{markEl(x.done ? 'done' : 'person')}</Box>
           <Box flexShrink={1}><Text wrap="wrap" {...(x.done ? { dimColor: true } : {})}>{md(x.text, `chk-${i}`, x.done ? { dimColor: true } : {})}</Text></Box>
         </Box>
       ))),
       strip(6, 'fc-g1'),
-      note('fc-note', 'ticked in docs/ristretto/manual-checks.md · the board never ticks', { color: 'subtle' }),
+      note('fc-note', "say 'manual checks done' or 'decisions ok' in chat · the board never ticks", { color: 'subtle' }),
     ])
 
     // What waits on the person comes right after the head.
-    const home = p.status === 'blocked' ? blockers : p.status === 'needs-review' ? review : p.status === 'needs-human' ? checks : null
+    const home = p.status === 'blocked' ? blockers : asks ? checks : d.findings.length > 0 ? review : null
     return [head, home, acceptance, filesCard, ...[blockers, review, checks].filter(x => x && x !== home)].filter(Boolean)
   }
 

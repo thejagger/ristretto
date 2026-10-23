@@ -13,17 +13,18 @@ const THEME_KEYS = new Set(['text', 'subtle', 'inactive', 'claude', 'error', 'su
 
 const ROADMAP = [
   '# Ristretto Roadmap',
+  '<!-- ristretto-format: 0.22 -->',
   '',
-  '| Flight | Feature | Title | Tier | Status | Plan | Updated | Files touched | Commit |',
-  '|---|---|---|---|---|---|---|---|---|',
-  '| a | d-old | An old one | normal | done | | 2026-10-01 | | |',
-  '| a | d-here | Done here | normal | done | | 2026-10-14 | | |',
-  '| a | human-here | Needs a person | normal | needs-human | | 2026-10-14 | | |',
-  '| a | review-here | Needs a look | normal | needs-review | plans/archived/review-here.md | 2026-10-14 | | |',
-  '| b | blk | Blocked one | normal | blocked | | 2026-10-14 | | |',
-  '| b | p1 | Planned 1 | normal | planned | | | | |',
-  '| b | p2 | Planned 2 | normal | planned | | | | |',
-  '| b | pw | Waits on blk | normal | planned | plans/pw.md | | | |',
+  '| Flight | Feature | Title | Tier | Status |',
+  '|---|---|---|---|---|',
+  '| a | d-old | An old one | normal | done |',
+  '| a | d-here | Done here | normal | done |',
+  '| a | human-here | Needs a person | normal | done |',
+  '| a | review-here | Needs a look | normal | done |',
+  '| b | blk | Blocked one | normal | blocked |',
+  '| b | p1 | Planned 1 | normal | planned |',
+  '| b | p2 | Planned 2 | normal | planned |',
+  '| b | pw | Waits on blk | normal | planned |',
   '',
   '- **blk** — waiting on Anatol: the API doc',
 ].join('\n')
@@ -36,9 +37,9 @@ function world(): World {
     files: {
       '.git/logs/refs/heads/main': 'one move\n',
       'docs/ristretto/roadmap.md': ROADMAP,
-      'docs/ristretto/plans/archived/review-here.md': '## Open findings\n\n- one\n- two\n',
+      'docs/ristretto/plans/human-here.md': '- Acceptance:\n  - [x] [human] a\n  - [ ] [human] b\n',
+      'docs/ristretto/plans/review-here.md': '- Acceptance:\n  - [ ] [human] x\n  - [ ] [human] y\n\n## Open findings\n\n- one\n- two\n',
       'docs/ristretto/plans/pw.md': '- Depends: blk\n',
-      'docs/ristretto/manual-checks.md': '## human-here\n- [x] a\n- [ ] b\n\n## review-here\n- [ ] x\n- [ ] y\n',
       '.ristretto/suite.json': JSON.stringify({ verdict: 'green', head: 'c'.repeat(40), tree: 'a'.repeat(40), at: 1, gates: 'test ✓', failing: '' }),
     },
     git: {
@@ -121,7 +122,7 @@ describe('the overview', () => {
     await start($, on)
     const ui = await mount($)
     const t = await texts(ui)
-    for (const w of ['Branch', 'brew/x', '3 features', 'tick 1 check', '2 findings · 2 checks', 'suite green', 'last commit', 'Needs you', 'blk', 'waits on Anatol',
+    for (const w of ['Branch', 'brew/x', '3 features', '1 check open', '2 findings · 2 checks open', 'suite green', 'last commit', 'Needs you', 'blk', 'waits on Anatol',
       'Up next', 'p1', 'next', 'p2', 'queued', '1 waiting on others', 'Done', '1 on this branch', '2 in all', 'History']) {
       expect(t).toContain(w)
     }
@@ -200,7 +201,7 @@ describe('the overview', () => {
     const ui = await mount($, 'terminal')
     const t = await texts(ui)
     expect(t).toContain('brew/x')
-    expect(t).toContain('tick 1 check')
+    expect(t).toContain('1 check open')
     // The terminal resolves an Svg but draws it as an empty box: marks must be glyphs there.
     expect(t).toMatch(/[✓◐○✕]/)
     expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
@@ -264,7 +265,10 @@ describe('between features', () => {
 describe('the edges', () => {
   test('the terminal draws no emoji: the band starts with its counts, the cup is drawn in text', async ($, on) => {
     const w = world()
-    w.files['docs/ristretto/roadmap.md'] = ROADMAP.split('\n').map(l => l.replace(/\| (needs-human|needs-review|blocked|planned) \|/, '| done |')).join('\n')
+    w.files['docs/ristretto/roadmap.md'] = ROADMAP.split('\n').map(l => l.replace(/\| (blocked|planned) \|$/, '| done |')).join('\n')
+    // Every box ticked and no finding left: nothing asks a person.
+    w.files['docs/ristretto/plans/human-here.md'] = '- Acceptance:\n  - [x] [human] a\n'
+    w.files['docs/ristretto/plans/review-here.md'] = '- Acceptance:\n  - [x] [human] x\n'
     await start($, on, w)
     const term = await band($, 'terminal')
     expect(await texts(term)).not.toContain('☕')
@@ -319,7 +323,7 @@ describe('the band', () => {
     await start($, on)
     const ui = await band($)
     const t = await texts(ui)
-    expect(t).toContain('6 open')
+    expect(t).toContain('4 open')
     expect(t).toContain('1 need you')
     expect(t).not.toMatch(/ahead|\d+\/\d+/)
     expect((await ui.findAll({ type: 'Button' })).length).toBe(1)

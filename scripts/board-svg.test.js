@@ -11,12 +11,18 @@ const { pathToFileURL } = require('url');
   const s = await import(pathToFileURL(file).href);
 
   // Marks: every kind draws, 14×14, deterministic, small.
-  for (const k of ['planned', 'next', 'queued', 'running', 'lane', 'merge-queued', 'gate-red', 'needs-human', 'needs-review', 'blocked', 'done', 'ready', 'facts', 'fact-conflict', 'suite-ok', 'suite-red']) {
+  for (const k of ['planned', 'next', 'queued', 'running', 'lane', 'merge-queued', 'gate-red', 'person', 'findings', 'blocked', 'done', 'ready', 'facts', 'fact-conflict', 'suite-ok', 'suite-red']) {
     const a = s.mark(k);
     assert.strictEqual(a, s.mark(k), k);
     assert.deepStrictEqual(s.dims(a), { width: 14, height: 14 }, k);
     assert.ok(a.length < 4000, k);
+    assert.ok(s.MARKS.includes(k), `${k} is a mark of its own, not the fallback`);
   }
+
+  // fourStatusesOnly: a row's status draws as one of four marks; anything else is a bug upstream.
+  assert.deepStrictEqual(['planned', 'in-progress', 'blocked', 'done', 'unknown'].map(s.statusGlyph), ['planned', 'running', 'blocked', 'done', 'planned']);
+  assert.throws(() => s.statusGlyph('needs-human'), /needs-human/);
+  assert.throws(() => s.statusGlyph('needs-review'), /needs-review/);
   assert.deepStrictEqual(s.dims(s.chev12('down')), { width: 12, height: 12 });
   assert.notStrictEqual(s.chev12('down'), s.chev12('right'));
   assert.ok(s.square('#199E70').includes('#199E70'));

@@ -221,14 +221,6 @@ export function parseDecisions(text) {
   return out;
 }
 
-// What a plan still asks of a person: open manual checks and unconfirmed decisions.
-export function openBoxes(text) {
-  return {
-    checks: parseChecks(text).filter((c) => !c.done).length,
-    decisions: parseDecisions(text).filter((d) => d.done === false).length,
-  };
-}
-
 // What a plan still waits on: dependencies that are not built, as `pull next` reads them.
 export const SATISFIES = new Set(['done']);
 export function waitingOn(plan, statusOf) {

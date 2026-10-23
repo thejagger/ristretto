@@ -5,7 +5,7 @@ import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
 import { mergeRuns, splitOf } from './board-runs.mjs';
 import { OPEN_UP_TO, rowsOf, treeOf } from './board-files.mjs';
 
-export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
+export const STATUSES = ['planned', 'in-progress', 'blocked', 'done'];
 
 export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null, plans: {}, checks: {}, decisions: {} };
 
@@ -31,7 +31,7 @@ export function markerState(owner, idleMs, sessionId) {
   return owner === sessionId ? 'mine' : 'other';
 }
 
-// `needs-human — compose pending` → needs-human + 'compose pending'; `done—**retired**` → done.
+// `blocked — no API docs` → blocked + 'no API docs'; `done—**retired**` → done.
 function statusOf(cell) {
   const token = (/^[a-z-]+/.exec(cell) || [''])[0];
   const status = STATUSES.includes(token) ? token : 'unknown';
@@ -238,8 +238,6 @@ const LOOK = {
   planned: { mark: '○', tone: 'inactive', tag: '' },
   'in-progress': { mark: '●', tone: 'claude', tag: 'in progress' },
   blocked: { mark: '✕', tone: 'error', tag: 'blocked' },
-  'needs-human': { mark: '◐', tone: 'permission', tag: 'waiting on you' },
-  'needs-review': { mark: '◐', tone: 'warning', tag: 'review' },
   done: { mark: '✓', tone: 'success', tag: '' },
   unknown: { mark: '?', tone: 'inactive', tag: '' },
 };
@@ -255,8 +253,9 @@ function detailsOf(row, plan, ctx) {
     }) : [],
     acceptance: plan ? plan.acceptance.map((a, i) => ({ ...a, proof: row.status === 'done' ? proofFor(plan, i + 1) : null })) : [],
     blockers: row.status === 'blocked' && plan ? plan.blockers : [],
-    findings: row.status === 'needs-review' && plan ? plan.findings : [],
-    checks: row.status === 'needs-human' ? ctx.checks[row.id] ?? [] : [],
+    findings: plan ? plan.findings : [],
+    checks: ctx.checks[row.id] ?? [],
+    decisions: ctx.decisions[row.id] ?? [],
     review: plan ? plan.review : null,
     gate: plan ? plan.gate : null,
     commit: row.commit || null,
@@ -333,16 +332,18 @@ export function domainPage(domain) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const featureOpen = (id) => ({ kind: 'feature', id });
 
-// What a needs-* feature still waits on, in words: `tick 2 checks`, `2 findings · 1 check`.
-function waitsWords(row, ctx) {
-  const list = ctx.checks[row.id];
-  const unticked = (list ?? []).filter((c) => !c.done).length;
-  if (row.status === 'needs-human') {
-    if (!list || !list.length) return 'needs a check';
-    return unticked ? `tick ${plural(unticked, 'check')}` : 'checks ticked';
-  }
-  const f = ctx.plans[row.id]?.findings?.length || 1;
-  return `${plural(f, 'finding')}${unticked ? ` · ${plural(unticked, 'check')}` : ''}`;
+// What a done feature still asks of a person, read from its plan: open findings, open manual
+// checks, unconfirmed decisions. Derived when shown, never stored as a status. null: nothing.
+function waitsOf(row, ctx) {
+  if (row.status !== 'done') return null;
+  const findings = ctx.plans[row.id]?.findings?.length ?? 0;
+  const checks = (ctx.checks[row.id] ?? []).filter((c) => !c.done).length;
+  const decisions = (ctx.decisions[row.id] ?? []).filter((d) => d.done === false).length;
+  if (!findings && !checks && !decisions) return null;
+  // A box a person ticks or confirms first; findings alone are a look, not an answer.
+  const person = checks > 0 || decisions > 0;
+  const words = [[findings, 'finding'], [checks, 'check'], [decisions, 'decision']].filter(([n]) => n).map(([n, w]) => plural(n, w));
+  return { detail: `${words.join(' · ')} open`, glyph: person ? 'person' : 'findings', tone: person ? 'permission' : 'warning' };
 }
 
 const blockedWords = (row) => {
@@ -350,14 +351,11 @@ const blockedWords = (row) => {
   return fact ? `waits on domain/${fact}` : waitsOn(row.reason);
 };
 
-// The feature brew takes first: the topmost planned row that waits on nothing, or a needs-human
-// row whose checks are all ticked (a check re-run), in roadmap order (brew.md "Pick").
+// The feature brew takes first: the topmost planned row that waits on nothing, in roadmap order.
 function nextPick(rows, ctx, running) {
   for (const r of rows) {
     if (r.id === running) continue;
     if (r.status === 'planned' && waitingOn(ctx.plans[r.id], ctx.statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length)) return r.id;
-    const list = ctx.checks[r.id];
-    if (r.status === 'needs-human' && list && list.length && list.every((c) => c.done)) return r.id;
   }
   return null;
 }
@@ -375,7 +373,7 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
   const running = live && live.id;
   const statusOf = new Map(rows.map((r) => [r.id, r.status]));
   const runOf = mergeRuns(opts.runs ?? []);
-  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
+  const ctx = { busy, plans: opts.plans ?? {}, checks: opts.checks ?? {}, decisions: opts.decisions ?? {}, statusOf, runOf, files: opts.files ?? {}, folders: opts.folders ?? {} };
   const branchIds = opts.branch?.ids ?? null;
   const onBranch = (id) => !!branchIds && branchIds.includes(id);
   const nextId = nextPick(rows, ctx, running);
@@ -389,26 +387,25 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
     }
     for (const r of rows) {
       if (!onBranch(r.id) || r.id === running) continue;
-      const hold = (detail, tone) => holders.push({
-        key: `hold-${r.id}`, glyph: r.status === 'in-progress' ? 'running' : r.status, id: r.id, detail, tone,
+      const hold = (detail, tone, glyph = r.status === 'in-progress' ? 'running' : r.status) => holders.push({
+        key: `hold-${r.id}`, glyph, id: r.id, detail, tone,
         open: featureOpen(r.id), ...(r.id === nextId ? { tag: 'next' } : {}),
       });
-      if (r.status === 'needs-human') hold(waitsWords(r, ctx), 'permission');
-      else if (r.status === 'needs-review') hold(waitsWords(r, ctx), 'warning');
+      const waits = waitsOf(r, ctx);
+      if (waits) hold(waits.detail, waits.tone, waits.glyph);
       else if (r.status === 'blocked') hold(`blocked · ${blockedWords(r)}`, 'error');
       else if (r.status === 'in-progress') hold('in progress · no run', 'dim');
     }
   }
 
-  // What needs a person but does not hold this branch: blocked rows without code here, needs-*
-  // rows built elsewhere (or every one, with no scope), and facts in conflict.
+  // What needs a person but does not hold this branch: blocked rows without code here, done rows
+  // with open boxes or findings built elsewhere (or every one, with no scope), facts in conflict.
   const needsYou = [];
   for (const r of rows) {
     if (onBranch(r.id) || r.id === running) continue;
+    const waits = waitsOf(r, ctx);
     if (r.status === 'blocked') needsYou.push({ key: `need-${r.id}`, glyph: 'blocked', id: r.id, detail: blockedWords(r), tone: 'dim', open: featureOpen(r.id) });
-    else if (r.status === 'needs-human' || r.status === 'needs-review') {
-      needsYou.push({ key: `need-${r.id}`, glyph: r.status, id: r.id, detail: waitsWords(r, ctx), tone: 'dim', open: featureOpen(r.id), ...(r.id === nextId ? { tag: 'next' } : {}) });
-    }
+    else if (waits) needsYou.push({ key: `need-${r.id}`, glyph: waits.glyph, id: r.id, detail: waits.detail, tone: 'dim', open: featureOpen(r.id) });
   }
   for (const f of (opts.domain ?? { tree: [] }).tree.filter((x) => x.conflict)) {
     needsYou.push({ key: `fact-${f.file}-${f.title}`, glyph: 'fact-conflict', id: f.title, detail: `${f.file} · in conflict`, tone: 'warning', open: { kind: 'domain' } });
@@ -430,7 +427,7 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
   };
 
   // Done: newest first, a measured run by when it ended, the rest by roadmap order reversed.
-  const finished = rows.filter((r) => r.status === 'done');
+  const finished = rows.filter((r) => r.status === 'done' && !waitsOf(r, ctx));
   const measured = finished.filter((r) => runOf.has(r.id)).sort((a, b) => runOf.get(b.id).endedAt - runOf.get(a.id).endedAt);
   const ordered = [...measured, ...finished.filter((r) => !runOf.has(r.id)).reverse()];
   const here = branchIds ? ordered.filter((r) => onBranch(r.id)) : ordered.slice(0, 5);
@@ -500,7 +497,7 @@ export function brewingOf(board, live, opts = {}) {
   const rows = board.rows;
   const drawnAt = opts.drawnAt ?? 0;
   const statusOf = new Map(rows.map((r) => [r.id, r.status]));
-  const ctx = { plans: opts.plans ?? {}, checks: opts.checks ?? {}, statusOf };
+  const ctx = { plans: opts.plans ?? {}, checks: opts.checks ?? {}, decisions: opts.decisions ?? {}, statusOf };
   const brew = live.command === 'brew';
   const current = live.id ? rows.find((r) => r.id === live.id) ?? { id: live.id, title: '', status: 'in-progress' } : null;
   const effort = effortOf(live, live.command);
@@ -529,14 +526,13 @@ export function brewingOf(board, live, opts = {}) {
   let moreBrewed = 0;
   if (snap) {
     const inBrew = new Set(snap.ids);
-    const reruns = new Set(snap.reruns ?? []);
     const others = rows.filter((r) => inBrew.has(r.id) && r.id !== live.id);
-    const brewed = others.filter((r) => (reruns.has(r.id) ? r.status === 'done' : ['done', 'needs-human', 'needs-review'].includes(r.status)));
+    const brewed = others.filter((r) => r.status === 'done');
     const blocked = others.filter((r) => r.status === 'blocked');
     const blockedIds = new Set(blocked.map((r) => r.id));
     const deps = (r) => ctx.plans[r.id]?.depends ?? [];
     const waitsBlocked = (r) => deps(r).find((d) => blockedIds.has(d) || (!inBrew.has(d) && !SATISFIES.has(statusOf.get(d))));
-    const pending = others.filter((r) => r.status === 'planned' || (reruns.has(r.id) && r.status === 'needs-human'));
+    const pending = others.filter((r) => r.status === 'planned');
     const toGo = pending.filter((r) => !waitsBlocked(r));
     const stuck = pending.filter((r) => waitsBlocked(r));
     tally = { brewed: brewed.length, blocked: blocked.length, toGo: toGo.length + (current ? 1 : 0), total: 0 };
@@ -616,8 +612,9 @@ export function queuePage(board, state) {
 function branchCard(state, branch, compact) {
   const ids = state.branchIds;
   const statusOf = state.ctx.statusOf;
-  const done = ids ? ids.filter((id) => statusOf.get(id) === 'done').length : 0;
   const count = (glyph) => state.holders.filter((h) => h.glyph === glyph).length;
+  // Done and asking nothing: a done feature with an open box is counted where it holds the branch.
+  const done = ids ? ids.filter((id) => statusOf.get(id) === 'done').length - count('person') - count('findings') : 0;
   const ready = !!ids && ids.length > 0 && state.holders.length === 0 && state.suite.state === 'green';
   const footer = !branch.base ? (branch.onDefault ? `on ${branch.name} · nothing to compare with` : 'no main branch to compare with')
     : !ids ? 'nothing on this branch yet'
@@ -625,7 +622,7 @@ function branchCard(state, branch, compact) {
   return {
     kind: 'branch', compact, branch: branch.name, base: branch.base, scoped: !!ids,
     features: ids ? ids.length : 0, done, holds: state.holders, ready, suite: state.suite, lastBrew: branch.lastBrew, footer,
-    bar: { done, review: count('needs-review'), human: count('needs-human') + count('blocked') + count('running') + count('suite-red') },
+    bar: { done, review: count('findings'), human: count('person') + count('blocked') + count('running') + count('suite-red') },
   };
 }
 

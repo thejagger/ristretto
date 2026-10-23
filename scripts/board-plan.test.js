@@ -158,8 +158,6 @@ const { pathToFileURL } = require('url');
     { done: false, text: 'which client? → the bare one' },
     { done: true, text: 'pin resvg? → yes' },
   ]);
-  assert.deepStrictEqual(p.openBoxes(boxed), { checks: 1, decisions: 1 });
-  assert.deepStrictEqual(p.openBoxes('# x\n'), { checks: 0, decisions: 0 });
   assert.deepStrictEqual(p.parseDecisions('- Decisions: —\n- Blockers: —\n'), []);
 
   // parsesCrlfPlan: the same plan with Windows line endings reads the same.

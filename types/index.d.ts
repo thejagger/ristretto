@@ -1,4 +1,4 @@
-export type BoardStatus = 'planned' | 'in-progress' | 'blocked' | 'needs-human' | 'needs-review' | 'done' | 'unknown'
+export type BoardStatus = 'planned' | 'in-progress' | 'blocked' | 'done' | 'unknown'
 export type BoardRow = { flight: string; id: string; title: string; tier: 'easy' | 'normal'; plan: string; commit: string; status: BoardStatus; reason: string }
 export type Board = {
   name: string
@@ -49,7 +49,7 @@ export type BoardBranch = { name: string; base: string | null; ids: string[] | n
 // The full-suite verdict as the Branch card reads it: green or red only while it proves the code there.
 export type BoardSuite = { state: 'green' | 'red' | 'unproven'; text: string; failing: string }
 // What brew set out to do, taken when the board saw it start (spec 4.6).
-export type BoardBrew = { startedAt: number; ids: string[]; reruns: string[] }
+export type BoardBrew = { startedAt: number; ids: string[] }
 export type BoardRole = { role: string; model: string; startedAt: number; endedAt: number | null }
 // The run in progress, as the drawing needs it: which feature, since when.
 export type BoardStarted = { id: string; startedAt: number }

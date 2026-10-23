@@ -66,8 +66,10 @@ const SHAPES = {
   lane: () => `${BREATH}<circle class="h" cx="7" cy="7" r="4.6" fill="${HUE.claude}" opacity=".25"/><circle cx="7" cy="7" r="5.6" fill="none" stroke="${HUE.claude}" stroke-width="1.5"/><circle cx="7" cy="7" r="2.6" fill="${HUE.claude}"/>`,
   'merge-queued': () => `<circle cx="7" cy="7" r="5.6" fill="none" stroke="${HUE.claude}" stroke-width="1.5"/><path d="M7 10V4.4M4.6 6.6L7 4.2l2.4 2.4" fill="none" stroke="${HUE.claude}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   blocked: () => `<path d="M4.6 1h4.8L13 4.6v4.8L9.4 13H4.6L1 9.4V4.6z" fill="${HUE.error}"/><rect x="3.8" y="6.2" width="6.4" height="1.6" rx=".4" fill="${HUE.white}"/>`,
-  'needs-review': () => `<path d="M7 1.3l6 11.2H1z" fill="${HUE.warning}" stroke="${HUE.warning}" stroke-width="1" stroke-linejoin="round"/><rect x="6.35" y="4.8" width="1.3" height="4" rx=".5" fill="${HUE.white}"/><circle cx="7" cy="10.4" r=".8" fill="${HUE.white}"/>`,
-  'needs-human': () => `<circle cx="7" cy="4.4" r="2.6" fill="${HUE.permission}"/><path d="M1.8 13c0-3 2.3-4.8 5.2-4.8s5.2 1.8 5.2 4.8z" fill="${HUE.permission}"/>`,
+  // A done feature with open review findings.
+  findings: () => `<path d="M7 1.3l6 11.2H1z" fill="${HUE.warning}" stroke="${HUE.warning}" stroke-width="1" stroke-linejoin="round"/><rect x="6.35" y="4.8" width="1.3" height="4" rx=".5" fill="${HUE.white}"/><circle cx="7" cy="10.4" r=".8" fill="${HUE.white}"/>`,
+  // A done feature that waits on a person: an open manual check or an unconfirmed decision.
+  person: () => `<circle cx="7" cy="4.4" r="2.6" fill="${HUE.permission}"/><path d="M1.8 13c0-3 2.3-4.8 5.2-4.8s5.2 1.8 5.2 4.8z" fill="${HUE.permission}"/>`,
   done: () => TICK(HUE.success),
   ready: () => TICK(HUE.success),
   'suite-ok': () => TICK(HUE.success),
@@ -83,6 +85,15 @@ const SHAPES = {
   plan: () => `<g fill="none" stroke="${HUE.inactive}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.6a1.2 1.2 0 0 1 1.2-1.2h4.2L11 4v7.4a1.2 1.2 0 0 1-1.2 1.2H4.2A1.2 1.2 0 0 1 3 11.4z"/><path d="M5.2 6.4h3.6M5.2 8.6h3.6M5.2 10.6h2"/></g>`,
 };
 export const MARKS = Object.keys(SHAPES);
+
+// A roadmap row's status as its mark. There are four statuses (and 'unknown' for a cell the
+// parser could not read); anything else reaching here is a bug upstream, so it says so.
+const STATUS_GLYPH = { planned: 'planned', 'in-progress': 'running', blocked: 'blocked', done: 'done', unknown: 'planned' };
+export function statusGlyph(status) {
+  const glyph = STATUS_GLYPH[status];
+  if (!glyph) throw new Error(`no such status: ${status} (planned · in-progress · blocked · done)`);
+  return glyph;
+}
 
 export function mark(kind, { size = 14 } = {}) {
   const body = (SHAPES[kind] ?? SHAPES.planned)();
