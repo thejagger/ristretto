@@ -14,10 +14,10 @@ Each input is one of: a **tracked feature** (has an ID like `BREW-224` — keep 
 ## 0. Check the project's format version — before anything else
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → follow what it printed. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## Setup
 
@@ -25,25 +25,21 @@ Work against the project roadmap at `docs/ristretto/`. Create these if missing �
 
 - `docs/ristretto/roadmap.md`
 - `docs/ristretto/plans/`
-- `docs/ristretto/plans/archived/`
 
-If `roadmap.md` is new, start it with this table:
+If `roadmap.md` is new, start it with exactly this — the roadmap holds order and status, nothing else; row order is build order:
 
 ```
 # Ristretto Roadmap
-<!-- ristretto-format: x.y -->
+<!-- ristretto-format: 0.22 -->
 
-| Flight | Feature | Title | Tier | Status | Plan | Updated | Files touched | Commit |
-|--------|---------|-------|------|--------|------|---------|----------------|--------|
+| Flight | Feature | Title | Tier | Status |
+|--------|---------|-------|------|--------|
 ```
 
-Don't write the stamp by hand — create the roadmap, then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" stamp`, which fills in the version this plugin actually is. A hand-typed version is a guess, and a wrong one sends the next command into a migration the project doesn't need.
-
-Status values: `planned` · `in-progress` · `blocked` · `needs-human` · `needs-review` · `done`.
+Status values: `planned` · `in-progress` · `blocked` · `done`, and no others.
 Tier values: `easy` · `normal`. `normal` is the default and is what every feature got before 0.16.
-`blocked` is set by `pull`/`brew` when a feature can't proceed without a **decision** — the row carries a one-line reason. Re-prepping a `blocked` feature (refining its plan to resolve the reason) flips it back to `planned`.
-`needs-human` means the opposite kind of stuck: the spec is fine and the code is built, but the repo gave the agent **no path to something a criterion needs** (see *Manual checks* below). It is a closing status, not a blocking one.
-`needs-review` is the third kind: the code is built, committed and gated **green**, but review findings are still open after three rounds. Nothing is wrong with the spec and nothing is unreachable — a reviewer simply still objects, and a person should judge it. Also a closing status. Only `brew` writes it; `pull` runs with you present, so it surfaces the findings to you instead.
+`blocked` is set by `pull`/`brew` when a feature can't proceed — the row carries a one-line reason. Re-prepping a `blocked` feature (refining its plan to resolve the reason) flips it back to `planned`.
+`done` means built, committed and green. Whatever is left for a person — an open manual check, a decision the agent took that waits for the user's word, open review findings — is a box or a section in the plan, never a status.
 Flight: a short kebab slug grouping related features, or `—` for a standalone feature.
 
 ## Research — once per input, never per child
@@ -88,7 +84,7 @@ When inputs belong together — a split of one feature, or several features that
 
 When one resulting feature can't start until another lands, record it with **`Depends:`** (the prerequisite feature IDs) on the dependent plan. When two are independent and could be worked side by side, note it with **`Parallel-with:`**. Both default to `—` (no constraint). These are honest notes about the graph — `pull next` reads `Depends:` to avoid pulling a feature whose foundation isn't built yet; `Parallel-with:` is informational. ristretto stays one-feature-at-a-time; you're recording order, not running waves.
 
-A `Depends:` is satisfied by a prerequisite that is `done`, `needs-human` **or** `needs-review` — all three have their code built and their `Provides:` present; what is outstanding is a step someone must run or an opinion someone must judge, not missing code. Only `blocked` holds dependents back.
+A `Depends:` is satisfied by a prerequisite that is `done` — its code is built and its `Provides:` present, even while a box in its plan still waits on a person.
 
 Keep it light: only add `Depends:` where a real prerequisite exists. Most features depend on nothing.
 
@@ -136,13 +132,13 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    **Then give every criterion a proof method — there are exactly two, and "none" is not one of them.**
 
    - **`[auto]`** — a test, a gate, or a measurement the agent can run proves it. The default, and the right answer far more often than it first looks.
-   - **`[human]`** — **ristretto has no way to reach the thing this criterion is about.** Every `[human]` criterion gets a matching line in `Manual-Checks:` naming what was out of reach.
+   - **`[human]`** — **ristretto has no way to reach the thing this criterion is about.** Every `[human]` criterion is its own open box, `- [ ] [human]`, with a `how:` line under it.
 
    **`[human]` is a statement about reach, never about subject matter.** "It involves a database", "it involves a screen", "it involves an external service" — those are subjects, and the subject decides nothing. The only question is whether a path exists from this repo to that thing. A migration the project's own dev stack applies — docker-compose, a `migrate` script, a test harness that migrates on boot — is reachable: the agent runs it, and the criterion is `[auto]`. The same migration against a hosted console with no credentials anywhere in the environment is not reachable, and that is a real `[human]`. Two features touching the same schema in two repos get different answers, and that is correct.
 
    **Assume reach until you have a concrete reason to believe otherwise.** Name the reason in the check — which credential, which console, which device. If you cannot name what specifically was out of reach, it wasn't; it was a test nobody wanted to write. A repo whose migrations, fixtures, generated files and services all live in its compose file has close to zero `[human]` criteria in it, whatever its features touch.
 
-   **Nothing about production is ever a criterion.** This is a development loop. A rollout step, a prod backfill, a flag enabled for real users, a key rotated in a live system — these are not acceptance criteria, they do not go in `Manual-Checks:`, and they are not ristretto's business. If a criterion can only be proven in production, it is written wrong: rewrite it against dev, or it is a `Blockers:` line.
+   **Nothing about production is ever a criterion.** This is a development loop. A rollout step, a prod backfill, a flag enabled for real users, a key rotated in a live system — these are not acceptance criteria, they never get a box, and they are not ristretto's business. If a criterion can only be proven in production, it is written wrong: rewrite it against dev, or it is a `Blockers:` line.
 
    **Something to look at is `[human]` only when the repo gives the agent no way to drive it.** If the project has a browser driver, a widget test, a snapshot harness — use it; "does the dropdown open" is then an ordinary `[auto]` criterion and writing it off as human is just an untested feature with a note attached. Where there is genuinely no way to render the thing, prefer reasoning about the markup and the component over deferring to a person. What survives is the narrow residue — a physical device, a real payment terminal, a rendering only a person can judge — and it should feel like a rare exception, because it is.
 
@@ -151,25 +147,24 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 3. **Write `docs/ristretto/plans/<FEATURE-ID>.md`**:
 
    ```
-   # <FEATURE-ID> — <title>
+   # <FEATURE-ID>
 
    ## Spec
    - Source: <tracked ID, parent ID, or "idea">
-   - Flight: <slug, or —>
    - Goal: one line.
    - Why: <outcome> · noticed by: <signal> — or —
 
    ## Contract
    - Acceptance:
      - [auto] <criterion a test, gate, or measurement proves>
-     - [human] <criterion whose subject this repo gives the agent no path to>
+     - [ ] [human] <criterion whose subject this repo gives the agent no path to>
+       how: <what was out of reach · what a person has to do>
    - Provides: <public surface this feature exposes, at type level —
        `sendOtp(phone: string): Promise<OtpToken>` — or — >
    - Consumes: <surface from Depends: features this one calls, same form, or — >
-   - Decisions: <resolved question -> the ruling, one line each>
+   - Decisions:
+     - <resolved question> → <the ruling>
    - Units: <the 2-6 units of work inside this feature, one line each, or — >
-   - Manual-Checks: <proves · which criterion · what was out of reach · what to do,
-       one line each, or — >
    - Blockers: <what could not be made checkable -> who/what can answer, or — >
 
    ## Approach
@@ -177,31 +172,31 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    - Likely touchpoints: src/... (orientation, NOT exact edits)
    - Depends: <IDs, or —>
    - Parallel-with: <IDs, or —>
-
-   status: planned
    ```
+
+   The title and the flight live in the roadmap row only, and the status too: nothing in the plan repeats them. A ruling prep settles is a plain `Decisions:` item, never a box — a box under `Decisions:` is a decision an agent took during a build, waiting for the user's word.
 
 4. **Fill `Units:` whenever the feature needs more than one red→green cycle** — 2–6 lines, each an independently testable deliverable inside this one feature. Only a genuinely single-cycle feature gets `—`.
 
    **This is the opposite default from "Decompose only when there's a real seam" above, and the two must not be confused.** Splitting one input into several *roadmap features* is discouraged — it multiplies git-tracking IDs. Naming the *units of work inside one feature* is encouraged and costs nothing: same ID, same plan, same branch, same commit. `Units:` is what `pull`'s planner expands into per-unit file paths, signatures, and tests; a feature that arrives with `Units: —` when it plainly has several is the single most common cause of a thin build plan and inaccurate code.
 
-5. **Fill `Manual-Checks:` — exactly one line for every `[human]` criterion, and nothing else.** Each line is:
+5. **Give every `[human]` criterion its `how:` line — and nothing else gets one.** The line is:
 
-   `proves · <the criterion it proves> · <what was out of reach> · <what a person has to do>`
+   `how: <what was out of reach> · <what a person has to do>`
 
-   Every line is the *only* proof of one `[human]` criterion and names it. There is no second kind of line: if it does not prove a criterion, it does not belong on this list. The code is still written, gated, reviewed and committed; that one criterion just isn't proven until a person ticks the box.
+   The box is the *only* proof of that criterion. There is no second kind of check: if it does not prove a criterion, it is not a check. The code is still written, gated, reviewed and committed; that one criterion just isn't proven until the user says in chat that the manual checks are done.
 
-   **The list has no rollout lane.** There is nowhere here to record a prod backfill, a key rotation, or a flag enabled for real users, because ristretto never asks anyone to do those — see the production rule above. A `Manual-Checks:` that mentions production is a defect in this command, not a service to the reader.
+   **There is no rollout lane.** There is nowhere to record a prod backfill, a key rotation, or a flag enabled for real users, because ristretto never asks anyone to do those — see the production rule above. A `how:` that mentions production is a defect in this command, not a service to the reader.
 
    **In roast mode, push the other way.** For every `[human]` a feature arrives with, ask what specifically is out of reach and whether this repo really has no path to it — the dev stack that already applies migrations, the driver that can already press the button. Most survive that question as `[auto]`. This is the reverse of what this rule used to say, and deliberately: an unproven criterion is a cost the loop absorbs, while a false check is a cost the human pays, and the second one is the one that made people stop reading the list.
 
-   Don't put the SQL or the command here; `Manual-Checks:` names the step. The exact thing to run is written by `pull`/`brew` into `docs/ristretto/manual-checks.md`, against the code as it actually ends up.
+   Don't put the SQL or the command here; `how:` names the step. `pull`/`brew` sharpen it into the exact thing to run, against the code as it actually ends up.
 
    `pull`/`brew` may also find that something prep thought was out of reach is not — the planner reads HEAD and finds the compose service or the test driver. Dropping a check for that reason is expected, not a prep failure. Adding one is expected too, on the same evidence, and in both directions the planner's finding wins: it looked at the code.
 
-6. **Check `Consumes:` against `Provides:`.** When feature B lists A in `Depends:`, B's `Consumes:` must be a subset of A's `Provides:`. Check this at prep time and say so if it isn't — a mismatch here is the cheapest bug you will ever fix. Read A's plan wherever it lives, `plans/` or `plans/archived/`.
+6. **Check `Consumes:` against `Provides:`.** When feature B lists A in `Depends:`, B's `Consumes:` must be a subset of A's `Provides:`. Check this at prep time and say so if it isn't — a mismatch here is the cheapest bug you will ever fix. A's plan is `plans/<A>.md`, built or not.
 
-7. **Add or update one row** in `roadmap.md` for the feature — fill the `Flight` cell with its slug (or `—`), and the `Tier` cell with `normal` or `easy`. `pull`/`brew` fill `Files touched` at close; leave it `—` here. `Commit` stays `—` for good: a feature's commits are found by `<type>(<ID>):` in their subjects. Fill every cell the header declares; a row short one cell shifts every column after it, and the next reader takes a status for a tier.
+7. **Add or update one row** in `roadmap.md` for the feature — fill the `Flight` cell with its slug (or `—`), and the `Tier` cell with `normal` or `easy`. The roadmap holds no plan link, date, file list or hash: the plan is always `plans/<ID>.md`, and git holds the rest — a feature's commits are found by `<type>(<ID>):` in their subjects. Fill every cell, all five; a row short one cell shifts every column after it, and the next reader takes a status for a tier.
 
    **`easy` is a claim about the contract, not about the ticket.** It means: this contract is already concrete enough that a planner subagent would add nothing to it — the file paths, the real names and signatures, and the shape of the tests that prove each criterion are all decided here. A feature is not `easy` because it feels small or sounds quick; it is `easy` because its contract is finished. That makes the label checkable by reading the contract, rather than a feeling about the ticket.
 
@@ -230,7 +225,7 @@ A yes rewrites that entry's marker to `confirmed — <git config user.name>, <YY
 ## Hard rules
 
 - **A `planned` feature that blocks on a decision is a prep failure, and belongs to this command.** Not to `brew` — `brew` did the only correct thing left to it. The plan went out saying every decision was made when one was not, and the cost lands hours later on an unattended run that had to stop. When you see a row blocked for a missing decision, read it as a defect report against this command: the question existed at prep time, and something here did not go looking for it. The sibling sweep in roast mode is what stops the common case; treat any block that gets past it as evidence that sweep needs to be wider, not as ordinary traffic.
-- **`planned` means every decision is already made.** This is the load-bearing rule of the whole plugin. `brew` runs unattended and must never stop on a planned feature — so a feature is only `planned` when nothing is left for a human to *decide*: every criterion checkable and classified, every ruling in `Decisions:`, `Provides:` filled. If a decision is missing, the feature is `blocked` and says which decision — it does not go out as `planned` and get discovered at 3am. **A `brew` that stops to ask a question is a prep bug, not a brew bug.** Work left for a human to *do or look at* is not a decision and does not block: that is `[human]` + `Manual-Checks:`, and it closes as `needs-human`.
+- **`planned` means every decision is already made.** This is the load-bearing rule of the whole plugin. `brew` runs unattended and must never stop on a planned feature — so a feature is only `planned` when nothing is left for a human to *decide*: every criterion checkable and classified, every ruling in `Decisions:`, `Provides:` filled. If a decision is missing, the feature is `blocked` and says which decision — it does not go out as `planned` and get discovered at 3am. **A `brew` that stops to ask a question is a prep bug, not a brew bug.** Work left for a human to *do or look at* is not a decision and does not block: that is a `[human]` box with its `how:` line, and the feature still closes as `done`.
 - **`## Approach` is the part that rots — keep it to one screen.** `## Contract` is drift-free by construction and should be as deep as the feature deserves: a criterion, a signature, or a decision is true regardless of what the code looks like on the day it's pulled. Thin contracts are the single largest cause of inaccurate implementation. Depth here is not ceremony.
 - **The repo's house rules constrain the plan.** Read `CLAUDE.md` / `AGENTS.md` before writing the `## Approach`, and don't route around a documented constraint — if the house rules rule out the obvious approach, plan the one they allow, or record the conflict in `Blockers:`. Still no code; a documented constraint is part of the destination, not turn-by-turn directions. ristretto only ever *reads* those files and never writes to them.
 - **No code** still holds everywhere: no code blocks, no line edits, no shell commands. A type-level signature in `Provides:`/`Consumes:` is a contract, not code — it names what exists, never how it works. You are batch-planning; by the time `pull` runs, the code will have moved, and `pull` expands the contract into real directions against HEAD.

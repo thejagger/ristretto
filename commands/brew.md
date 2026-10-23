@@ -17,21 +17,21 @@ Arguments: $ARGUMENTS  (add `easy` to force every feature through the easy path 
 
 - **Rewrites nothing** — `Tier` cells stay exactly as `prep` set them; an experiment must never quietly become a data change.
 - **Implementer on the capable model**, same as any easy feature — see Models below.
-- **Escalation recorded, ignored.** The ratchet in `briefs/implementer.md` still fires, but a forced-easy run has no `escalate:` — it writes `would-escalate: <trigger>` and builds anyway. Tell it this is a forced-easy run.
-- **Labelled forever, never on the row** — the closer records `tier: easy (forced)` and every `would-escalate:` line in `## Evidence`; nothing edits `Tier`.
+- **Escalation recorded, ignored.** The ratchet in `briefs/implementer.md` still fires, but a forced-easy run has no `escalate:` — it names the trigger as `forced past: <trigger>` and builds anyway. Tell it this is a forced-easy run.
+- **Labelled forever, never on the row** — the closer records `tier: easy (forced)` in `## Evidence`; nothing edits `Tier`.
 - **Gates and review untouched** — worst case, more blocks and rounds, the measurement itself, not unproven code.
 
 ## 0. Check the project's format version
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → follow what it printed. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Read the roadmap
 
-Read `docs/ristretto/roadmap.md` — the one file you read yourself. Missing → tell the user to run `/ristretto:prep` first, stop. No feature *eligible* (below) → print the empty-pot cup and stop, naming what's `blocked` and why, and separately which `needs-human` / `needs-review` rows wait on the user.
+Read `docs/ristretto/roadmap.md` — the one file you read yourself. Missing → tell the user to run `/ristretto:prep` first, stop. No feature *eligible* (below) → print the empty-pot cup and stop, naming what's `blocked` and why, and separately which `done` features still have open boxes or findings in their plans.
 
 ```
       ) )
@@ -85,15 +85,15 @@ Create and switch to `feature/brew-<YYYY-MM-DD>`, or reuse it if already there. 
 
 ## The loop
 
-A feature is **eligible** when `planned`, all `Depends:` satisfied, `Blockers:` is `—`. **`Depends:` is satisfied by `done`, `needs-human`, or `needs-review`** — all three have code built, committed, gated green; only a console step or an opinion remains. Only `blocked` withholds. Also eligible: a `needs-human` row whose `manual-checks.md` boxes are now all ticked — a **check re-run**.
+A feature is **eligible** when `planned`, all `Depends:` satisfied, `Blockers:` is `—`. **`Depends:` is satisfied by `done`** — built, committed, gated green, even with a box in its plan still open. `blocked` withholds.
 
 While an eligible feature exists:
 
-1. **Pick** the topmost eligible feature (re-read the roadmap each pass, subagents update it). A check re-run needs only the closer, cheap model: un-skip the tests naming its ticked checks, run them, on green replace the pending lines with real proof and flip the row `done`, on red set `blocked` with that reason. Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it. Record the result (step 7), next feature.
+1. **Pick** the topmost eligible feature (re-read the roadmap each pass, subagents update it).
 2. **Read the `Tier` cell — first token only** (a polluted `normal easy` cell reads as `normal`). `easy` on the command line overrides the cell for every feature.
    - `easy` → no planner, dispatch the implementer directly, capable model:
      > IMPLEMENTER for ristretto feature **<FEATURE-ID>** — easy path (**forced-easy run** if `easy` was passed).
-     > Contract: `docs/ristretto/plans/<FEATURE-ID>.md` — no build plan, expand it inline. (Forced-easy: record `would-escalate:`, never `escalate:`.)
+     > Contract: `docs/ristretto/plans/<FEATURE-ID>.md` — no build plan, expand it inline. (Forced-easy: name it `forced past:`, never `escalate:`.)
      > Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
    - `normal` (or no cell) → dispatch the planner first, capable model:
      > PLANNER for ristretto feature **<FEATURE-ID>**.
@@ -107,7 +107,7 @@ While an eligible feature exists:
 3. **Act on the implementer's result.**
    - `blocked: <reason>` → row `blocked`, next feature; the roadmap is yours, never the implementer's.
    - `escalate: <trigger>` (easy only, never forced-easy) → dispatch the planner (above), then a fresh implementer off its plan, cheap model; closer flips `Tier` to `normal` and records `escalated from easy: <trigger>`.
-   - `ready:` or `needs-human:` → review.
+   - `ready:` → review. Keep every `decided:` line the planner and the implementer returned, for the closer.
 4. **Review**, unless the diff is trivial (< 15 lines, no new logic) — capable model:
    > REVIEWER for ristretto feature **<FEATURE-ID>**.
    > Diff: <files touched / branch vs merge-base>
@@ -119,14 +119,14 @@ While an eligible feature exists:
      > Findings: <the reviewer's block/note/lean list, verbatim>
      > Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
 
-     A fixer's `blocked:` is handled like an implementer's, unless it turns on a decision the plan never made — see `decision taken:` below. Otherwise a fresh reviewer, round 2, scoped as in `pull`: round-1 blocks plus any new block in files the fixer touched — elsewhere reported, not a new round; no new notes/leans. Clean → closer, `done`, `review: resolved`.
-   - **Round 3**, if blocks remain: a fresh implementer one model tier up, given the plan, the open findings, the diff, and which criterion has failed review twice — never the failed diffs, which anchor it. If the findings turn on a decision the plan never made, take the recommended reading, implement it, record `decision taken: <question> → <ruling> — not in the contract`, carried into the result line. One final scoped re-review; clean → `done` · `review: resolved`.
-   - **Still open after round 3** → closer, status `needs-review`, findings copied verbatim. Never `git restore` — `gate.js state` first: PROVEN GREEN means finished work, an open opinion, not a failure. Downstream features keep brewing; name every one built on that foundation in the report.
+     A fixer's `blocked:` is handled like an implementer's, unless it turns on a decision the plan never made — see round 3 below. Otherwise a fresh reviewer, round 2, scoped as in `pull`: round-1 blocks plus any new block in files the fixer touched — elsewhere reported, not a new round; no new notes/leans. Clean → closer, `done`, `review: resolved`.
+   - **Round 3**, if blocks remain: a fresh implementer one model tier up, given the plan, the open findings, the diff, and which criterion has failed review twice — never the failed diffs, which anchor it. If the findings turn on a decision the plan never made, take the recommended reading, implement it, and keep it as `decided: <question> → <ruling>` for the closer, which writes it into the plan as an open box. One final scoped re-review; clean → `done` · `review: resolved`.
+   - **Still open after round 3** → closer, status `done`, findings copied verbatim under `## Open findings`. Never `git restore` — `gate.js state` first: PROVEN GREEN means finished work, an open opinion, not a failure. Downstream features keep brewing; name every one built on that foundation in the report.
 6. **Dispatch the closer**, cheap model, told the status and the verdict fields its Evidence line needs — you tracked them; it never guesses:
-   > CLOSER for ristretto feature **<FEATURE-ID>** — close **<done | needs-human | needs-review>**.
-   > Record: review <clean | notes-only | resolved | needs-review> · rounds <n> · open <b> block, <n> note, <l> lean · trimmed <t>; <open findings / decision taken: / would-escalate: / escalated from easy:, as applicable>
+   > CLOSER for ristretto feature **<FEATURE-ID>** — close **done**.
+   > Record: review <clean | notes-only | resolved | findings open> · rounds <n> · open <b> block, <n> note, <l> lean · trimmed <t>; <open findings / decided: lines / escalated from easy:, as applicable>
    > Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it.
-7. **Record the result, print nothing else.** `☕ <FEATURE-ID> brewed (n/m)`, `🔧 <FEATURE-ID> brewed, needs a human check — <check> (n/m)`, `👀 <FEATURE-ID> brewed, needs review — <count> finding(s) open (n/m)`, or `⛔ <FEATURE-ID> blocked — <reason> (n/m)`. `n` is features finished in any terminal state, up by one each line; `m` is every `planned` row when the loop started, fixed. A round-3 decision adds `· decision taken: <ruling>`. **That line, a blocker, and the final report are the whole of what the main chat gets** — nothing about which subagent runs or which round.
+7. **Record the result, print nothing else.** `☕ <FEATURE-ID> brewed (n/m)`, `🔧 <FEATURE-ID> brewed — <n> check(s), <m> decision(s) open (n/m)`, `👀 <FEATURE-ID> brewed — <count> finding(s) open (n/m)`, or `⛔ <FEATURE-ID> blocked — <reason> (n/m)`. `n` is features finished in any terminal state, up by one each line; `m` is every `planned` row when the loop started, fixed. **That line, a blocker, and the final report are the whole of what the main chat gets** — nothing about which subagent runs or which round.
 8. **Hygiene.** `git status --short` must be clean before the next feature starts — dirty means a subagent died mid-work; handle it via "When a subagent dies" below (`gate.js state` before any restore), then delete any leftover `.ristretto/build/<FEATURE-ID>.md` for a row that blocked.
 9. Next eligible feature.
 
@@ -141,7 +141,7 @@ Not the user. A killed, disconnected, or malformed-result subagent looks like an
 1. `git status --short` — the only evidence of what it managed.
 2. **Clean tree**, closer died → first `git log --oneline -1`: already names this feature's commit → it committed and only failed to report; record that result, move on. Otherwise (any role) → dispatch the same brief again, once, fresh context.
 3. **Dirty tree** → one fresh subagent, same brief, plus: reconcile the partial work a previous attempt left against the build plan, finish the feature, verify all of it as your own.
-4. **A second death ends it.** First `gate.js state` — PROVEN GREEN → closer commits it `needs-review`, never discard. Otherwise `git restore` the tracked files, delete the untracked ones it created, row `blocked` ("implementation aborted twice — no verifiable result"), next feature. Never a third attempt.
+4. **A second death ends it.** First `gate.js state` — PROVEN GREEN → closer commits it `done` with what is unresolved under `## Open findings`, never discard. Otherwise `git restore` the tracked files, delete the untracked ones it created, row `blocked` ("implementation aborted twice — no verifiable result"), next feature. Never a third attempt.
 
 Print `⛔ <FEATURE-ID> blocked — subagent died twice`. Deaths across *different* features name an environment problem in the report — diagnosing it isn't this run's job.
 
@@ -159,12 +159,12 @@ Runs on every stop, not just a clean finish — a blocked feature, a death, a be
    node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" disarm
    ```
    Removes the markers and retry/stall state, never `.ristretto/build/`. Keep a build plan for a feature planned but not implemented, and say so — a re-plan from HEAD would otherwise silently redo paid-for work.
-3. **Report — read off the archived plans, never off memory.** Read the roadmap rows this run touched and the `## Evidence` of every archived plan — the record, written at the time with the diff in hand. Cover: the full-suite verdict; features brewed, with hashes; `needs-human` rows with their checks; `needs-review` rows with their findings, any `decision taken:`, and every feature built on that foundation; `blocked` rows with their spec gaps; each feature's review verdict, rounds, and open counts; how many ran `easy`, how many escalated, the `would-escalate:` ratio; the branch; subagent suggestions (report only, never fix or add to the roadmap).
+3. **Report — read off the plans, never off memory.** Read the roadmap rows this run touched and the plan of every feature it closed — the record, written at the time with the diff in hand. Cover: the full-suite verdict; features brewed, with hashes; open manual checks; decisions taken (each an open box in its plan); open findings, and every feature built on that foundation; `blocked` rows with their spec gaps; each feature's review verdict, rounds, and open counts; how many ran `easy`, how many escalated, how many forced runs went past a trigger; the branch; subagent suggestions (report only, never fix or add to the roadmap).
 
-   Outstanding manual checks:
+   Open boxes:
    ```
-   🔧 3 manual checks waiting — docs/ristretto/manual-checks.md
-      run them, tick the boxes, then /ristretto:brew again to verify what was pending.
+   🔧 3 checks · 2 decisions open — in the plans of a, b
+      say "manual checks done" or "decisions ok" once they are.
    ```
 
    Every eligible feature brewed with zero blocks and the full suite green → lead with `☕ perfectly dialed in — every spec held end to end.` Never when anything blocked or the suite is red; outstanding manual checks don't disqualify it.
@@ -177,4 +177,4 @@ Runs on every stop, not just a clean finish — a blocked feature, a death, a be
    `----------'
    ALL BREWED — roadmap clear ☕
    ```
-   Otherwise the little cup and `☕ pot empty — N blocked feature(s) waiting on you.` (`needs-human` and `needs-review` get their own lines above, not this count.)
+   Otherwise the little cup and `☕ pot empty — N blocked feature(s) waiting on you.` (open boxes and findings get their own lines above, not this count.)

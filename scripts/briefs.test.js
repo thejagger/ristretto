@@ -59,8 +59,8 @@ for (const fp of FINGERPRINTS) {
 //     layout removed: the checks file, the archive, the two extra statuses, the dropped columns
 //     and fields, and the Evidence lines a decision used to hide in.
 const STALE = ['manual-checks.md', 'plans/archived', 'needs-human', 'needs-review', 'Files touched',
-               'Manual-Checks:', 'decision taken:', 'would-escalate:'];
-const LAYOUT_FILES = [...BRIEFS];
+               'Manual-Checks:', 'decision taken:', 'would-escalate:', 'version.js', 'format-migration.md'];
+const LAYOUT_FILES = [...BRIEFS, ...fs.readdirSync(path.join(ROOT, 'commands')).filter((c) => c.endsWith('.md')).map((c) => `commands/${c}`), 'README.md'];
 const stale = LAYOUT_FILES.flatMap((f) => STALE.filter((p) => read(f).includes(p)).map((p) => `${f}: ${p}`));
 assert.deepStrictEqual(stale, [], `the 0.22 layout removed these, still named in:\n  ${stale.join('\n  ')}`);
 
@@ -70,9 +70,9 @@ for (const c of COMMANDS) {
   assert.ok(words(read(c)) < 2500, `${c} is ${words(read(c))} words — a command is a flow, not a brief`);
 }
 
-// 4. Every command reads the version check and hands off to briefs by path.
+// 4. Every command runs the format check and hands off to briefs by path.
 for (const c of COMMANDS) {
-  assert.ok(/version\.js" check/.test(read(c)), `${c} must run the version check`);
+  assert.ok(/migrate\.js" check/.test(read(c)), `${c} must run the format check`);
 }
 
 // 5. Every brief is reachable: each one is named by at least one command or by common.md.
@@ -179,10 +179,9 @@ assert.ok(/gate\.js" arm/.test(pull) && /gate\.js" disarm/.test(pull), 'pull mus
 assert.ok(/gate\.js" state/.test(pull), 'pull must run the state pre-flight');
 assert.ok(!/\.ristretto\/gate-retries/.test(pull), 'pull must not know gate.js state filenames any more');
 assert.ok(!/`easy`\s*→|Tier.*easy.*→/.test(pull), 'pull is the normal path — no tier branch');
-// Judging a needs-review row stays on the branch that already holds the feature's commit: the
-// board is branch-first, and a fix landing on feature/<ID> leaves the holding branch held forever.
-assert.ok(/needs-review[\s\S]*on the current branch when it already holds/.test(pull), 'pull must judge needs-review on the branch that holds the feature');
-assert.ok(/Create and switch to `feature\/<FEATURE-ID>`[^\n]*except a needs-review/.test(pull), 'step 6 must say a needs-review fix stays on its branch');
+// A done feature is never re-built: pull names its commit and what its plan still leaves open.
+assert.ok(/\*\*`done`\*\* → stop[^\n]*\[ \] \[human\][^\n]*Do not re-implement/.test(pull), 'pull on a done row lists its open boxes and stops');
+assert.ok(/`ready:` → continue to review\. Keep every `decided:/.test(pull), 'pull hands the decisions to the closer');
 
 // 16. shot is the easy path against an existing plan — it no longer writes one.
 const shot = read('commands/shot.md');
@@ -225,10 +224,10 @@ assert.ok(!/PROJECT IS NEWER/.test(read('commands/prep.md')), 'prep.md must not 
 assert.ok(!/prep \+ pull/i.test(read('commands/help.md')), 'help.md must not describe shot as "prep + pull"');
 assert.ok(!/prep \+ pull/i.test(read('README.md')), 'README.md must not describe shot as "prep + pull"');
 
-// 23. README's Depends: sentence names all three closing statuses, needs-review included.
+// 23. README's Depends: sentence: only `done` satisfies, open boxes and all.
 const readmeDepSentence = (read('README.md').match(/A prerequisite counts as finished[^.]*\./) || [''])[0];
-assert.ok(/needs-review/.test(readmeDepSentence) && /needs-human/.test(readmeDepSentence) && /`done`/.test(readmeDepSentence),
-  'README dependency sentence must name done, needs-human, and needs-review');
+assert.ok(/`done`/.test(readmeDepSentence) && /box/.test(readmeDepSentence),
+  'README dependency sentence must say done satisfies, even with a box still open');
 
 // 24. grind researches once: it checks staleness, guards the domain store around the run, and
 //     dispatches the researcher by path. It is no longer read-only, but writes only research.

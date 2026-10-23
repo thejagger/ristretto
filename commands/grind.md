@@ -11,7 +11,7 @@ Match the feature's language (German input → German output).
 
 ## 0. Format
 
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check`. Exit 1 → print one line, `⚙ this project was written for an older ristretto format — the next prep/pull/brew will bring it up to date`, and carry on: research does not depend on the roadmap's shape. Exit 3 → `⚙ this install is older than the project's format — update the plugin`, and stop.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check`. Exit 1 → print one line, `⚙ this project was written for an older ristretto format — the next prep/pull/brew will bring it up to date`, and carry on: research does not depend on the roadmap's shape. Exit 3 → `⚙ this install is older than the project's format — update the plugin`, and stop.
 
 ## 1. Research — once
 
@@ -49,7 +49,7 @@ This is the whole point of the command. Don't rubber-stamp. Call out vague accep
 - *Ready*: clear goal, at least 2–3 meaningful ACs, no blocking unknowns, dependencies identified, fits one sprint (≤ 13).
 - *Not Ready*: list the questions to ask in refinement — including every blocking item under the research's `## Open` — and what has to change to reach Ready. **Name the specific `Contract` fields that can't be filled yet** — `Acceptance` (no checkable criterion), `Provides` (the public surface isn't decided), `Decisions` (an open ruling) — so the output drops straight into `/ristretto:prep <feature> deep` as an agenda.
 
-Call out **manual checks** in *Problems & risks* wherever the feature implies one: a schema change, a migration, a secret or env var, a switch in a third-party console. These don't make a feature Not Ready — they belong in `Contract.Manual-Checks` and get built around — but a refinement session is the cheapest place to notice that someone will need database access on the day it ships.
+Call out **manual checks** in *Problems & risks* wherever the feature implies one: a schema change, a migration, a secret or env var, a switch in a third-party console. These don't make a feature Not Ready — they become `[human]` boxes in the plan and get built around — but a refinement session is the cheapest place to notice that someone will need database access on the day it ships.
 
 Acknowledge what was given versus what you inferred, and flag any inferred acceptance criteria as inferred.
 

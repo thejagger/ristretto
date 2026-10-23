@@ -10,20 +10,18 @@ Target: $ARGUMENTS  (a feature ID, or `next` = the top `planned` row in the road
 ## 0. Check the format version
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → follow what it printed. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Resolve the target — trust the roadmap
 
 Read `docs/ristretto/roadmap.md`; take it at its word, don't second-guess it against the code.
 
-- **`done`** → stop, tell the user, cite the Updated date / commit. Do not re-implement.
+- **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes, unconfirmed `Decisions:` boxes, `## Open findings`. Do not re-implement.
 - **`blocked`** → surface the recorded reason, ask whether to proceed anyway — the block may have been resolved outside the roadmap.
-- **`needs-human`** → the code is already built and committed; read its section in `docs/ristretto/manual-checks.md`. Every `proves` line ticked `- [x]` → this is a check re-run: read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself to prove the pending criteria and close it — its **check re-run** rule: add, never rewrite the build's record. Still unticked lines → print them and stop.
-- **`needs-review`** → `brew` built and committed it green but left findings open. Read `## Open findings` and any `decision taken:` line in `## Evidence` of `docs/ristretto/plans/archived/<FEATURE-ID>.md`; show them and ask which to fix. On your ruling, work them as an ordinary change (steps 6–12 below, treating the findings as the implementer's input) — on the current branch when it already holds the feature (`git log --format=%s <default branch>..HEAD` lists a non-`docs` `<type>(<FEATURE-ID>):` subject), otherwise on `feature/<FEATURE-ID>`, then rewrite `## Open findings` to only what remains — clearing it closes the row `done`. Findings you decide against are deleted with a one-line note why.
-- **`next`** → the top `planned` row whose `Depends:` are all satisfied. `done`, `needs-human`, and `needs-review` all satisfy a dependency — their code is built, committed, and gated, only a step or an opinion is outstanding. Only `blocked` withholds. If every `planned` row is blocked, stop and say what each is waiting on. A named ID (not `next`) with an unfinished `Depends:` → warn and ask before proceeding.
+- **`next`** → the top `planned` row whose `Depends:` are all satisfied. Only `done` satisfies a dependency; `blocked` withholds. If every `planned` row is blocked, stop and say what each is waiting on. A named ID (not `next`) with an unfinished `Depends:` → warn and ask before proceeding.
 
 ## 2. Read the plan
 
@@ -51,7 +49,7 @@ Exit 1 only if it cannot write its marker — stop and report if so.
 
 ## 6. Branch
 
-Create and switch to `feature/<FEATURE-ID>`, or reuse it if you're already there — except a needs-review fix whose branch already holds the feature (step 1): stay there. Never push, never set an upstream.
+Create and switch to `feature/<FEATURE-ID>`, or reuse it if you're already there. Never push, never set an upstream.
 
 ## 7. Plan against the current code
 
@@ -67,7 +65,7 @@ Dispatch a **planner** subagent — fresh context, capable model:
 
 Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself.
 
-`blocked: <reason>` → set the roadmap row `blocked` with that reason, disarm (step 12), stop. `ready:` or `needs-human:` → continue to review.
+`blocked: <reason>` → set the roadmap row `blocked` with that reason, disarm (step 12), stop. `ready:` → continue to review. Keep every `decided: <question> → <ruling>` line the planner and the implementer returned: the closer writes each into the plan as an open box.
 
 ## 9. Prove the whole repo
 
@@ -91,11 +89,11 @@ Dispatch a **reviewer** subagent — fresh context, capable model:
 - `review: blocking (n)` → fix every block (read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself as the fixer, findings in hand instead of a build plan; clear notes and leans in the same pass unless a fix is riskier than the win, and say which you left). Then dispatch a **second, fresh** reviewer — round 2 only — to verify the round-1 blocks and any new block the fixes introduced in files the fixer touched; a block elsewhere is reported, not a new round.
 - Blocks still open after round 2 → hard stop: do **not** commit. Surface the findings to the user and leave the work in the tree — never `git restore` it, the gates are green and only an opinion is unresolved. Disarm (step 12) and stop.
 
-  **`pull` stops here where `brew` would close `needs-review`, and the difference is you** — a question asked now is answered in seconds.
+  **`pull` stops here where `brew` would close with the findings left open, and the difference is you** — a question asked now is answered in seconds.
 
 ## 11. Close
 
-Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself. If `nocommit` was passed, skip the commit and say the changes are left uncommitted for the user to commit themselves; everything else in the brief — `Provides:`, `## Evidence`, archiving, the roadmap row — still applies.
+Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself. If `nocommit` was passed, skip the commit and say the changes are left uncommitted for the user to commit themselves; everything else in the brief — `Provides:`, the decisions you were handed, `## Evidence`, the roadmap row — still applies.
 
 ## 12. Disarm
 
@@ -107,11 +105,13 @@ Always — on a normal close, a `blocked:` stop, or an open-findings stop.
 
 ## When done
 
-Print a short summary: what changed, which criteria are satisfied, the review verdict (including any `lean` findings deliberately left open), the branch and commit (or that it's left uncommitted), and confirm the plan was archived and the roadmap updated. If manual checks are outstanding, list them and point at `docs/ristretto/manual-checks.md`:
+Print a short summary: what changed, which criteria are satisfied, the review verdict (including any `lean` findings deliberately left open), the branch and commit (or that it's left uncommitted), and confirm the plan was closed and the roadmap updated. If the plan has open boxes — manual checks or decisions taken during the build — list them from the plan:
 
 ```
-🔧 1 manual check waiting — docs/ristretto/manual-checks.md
-   proves · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+🔧 1 check · 1 decision open — docs/ristretto/plans/<FEATURE-ID>.md
+   check · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+   decision · which client? → the bare one
+   say "manual checks done" or "decisions ok" once they are
 ```
 
 End with a little cup:

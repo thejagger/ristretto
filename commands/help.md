@@ -36,12 +36,10 @@ THE WORKFLOW
   4. /ristretto:status blocked      your refinement queue after a brew —
                                     each row names its spec gap. refine via
                                     prep (flips it back to planned), re-brew.
-     /ristretto:status checks          your do-it-yourself queue — the SQL, migrations
-                                    and secrets ristretto had no path to. tick the
-                                    box in docs/ristretto/manual-checks.md, re-brew.
-     /ristretto:status review          your judgement queue — built, committed and
-                                    green, but a reviewer still objects. read the
-                                    open findings, then /ristretto:pull <ID>.
+     /ristretto:status checks          your turn — built, committed and green, but
+                                    its plan still asks you: a manual check, a
+                                    decision an agent took, an open finding. say
+                                    "manual checks done" or "decisions ok" in chat.
 
 THE REST OF THE MENU
   /ristretto:shot <feature>         the easy path against a plan prep already
@@ -105,12 +103,12 @@ HOUSE RULES
     ONE thing: this repo gave the agent no path to it. a migration the dev
     stack applies is run; a screen the repo can drive is tested. only what
     survives that — a console with no credential, a device that isn't here —
-    becomes a line in docs/ristretto/manual-checks.md. never production.
-  • three closing queues, three remedies. a missing DECISION blocks (go refine
-    it) and is the ONLY status that holds dependents back. something genuinely
-    OUT OF REACH closes "needs-human" (go run it). review findings still open
-    after 3 rounds close "needs-review" (go judge it) — built, committed,
-    gated green, never deleted. dependent features brew on through all three;
+    becomes an open box in the feature's plan. never production.
+  • four statuses: planned · in-progress · blocked · done. "blocked" is the
+    ONLY one that holds dependents back. a feature is done once built,
+    committed and green; what it still asks a person — a manual check, a
+    decision an agent took, a finding still open after 3 rounds — is a box
+    or a section in its plan, never a status. dependent features brew on;
     nothing stalls a flight behind one alter table or one open opinion.
   • brew never stops the pot — 15 features means 15 attempted. where it must
     settle a question the contract left open it takes the recommended reading

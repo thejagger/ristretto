@@ -10,10 +10,10 @@ Target: $ARGUMENTS  (a feature ID; add `nocommit` to skip committing)
 ## 0. Check the format version
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → follow what it printed. Exit 3 → stop, report a stale install. Exit 2 → cannot tell, stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → stop, report a stale install. Exit 2 → cannot tell, stop.
 
 ## 1. Resolve the target
 
@@ -49,7 +49,7 @@ No build plan gets written: `briefs/implementer.md`'s easy path applies whenever
 
 - `blocked: <reason>` → set the roadmap row `blocked`, disarm, stop.
 - `escalate: <trigger>` → not finished by the easy path. Disarm, point the user at `/ristretto:pull <FEATURE-ID>` — never the reverse, never flip the roadmap `Tier` cell.
-- `ready:` or `needs-human:` → continue.
+- `ready:` → continue, keeping its `decided:` lines for the closer.
 
 ## 7. Prove the whole repo
 
@@ -81,11 +81,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" disarm
 
 ## When done
 
-Summarize: what changed, criteria satisfied, review verdict, branch and commit (or uncommitted), plan archived, roadmap updated. Manual checks outstanding → list them:
+Summarize: what changed, criteria satisfied, review verdict, branch and commit (or uncommitted), plan closed, roadmap updated. Open boxes in the plan → list them:
 
 ```
-🔧 1 manual check waiting — docs/ristretto/manual-checks.md
-   proves · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+🔧 1 check · 1 decision open — docs/ristretto/plans/<FEATURE-ID>.md
+   check · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+   decision · which client? → the bare one
+   say "manual checks done" or "decisions ok" once they are
 ```
 
 Cup:

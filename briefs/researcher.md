@@ -40,7 +40,7 @@ Candidates (proposals — a person picks or rewrites):
 
 ## As-is
 - Exists: <path> — <current behaviour>
-- Already settled: <ruling> — <archived plan or domain entry it comes from>
+- Already settled: <ruling> — <plan or domain entry it comes from>
 - Touches: <path> — <risk>
 
 ## Open

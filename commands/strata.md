@@ -12,10 +12,10 @@ Target: `$ARGUMENTS`  (`<range>` plus `--ticket ID`, `--mr`, `--fold`)
 ## 0. Check the format version — before anything else
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/version.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1, 2, or 3 → follow what it printed.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 2 or 3 → follow what it printed, stop.
 
 ## 1. Resolve the range
 
