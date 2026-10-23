@@ -34,4 +34,4 @@ dist/
 .ristretto/
 
 # Local working notes (superpowers specs/plans) — not part of the plugin
-docs/
+/docs/

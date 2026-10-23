@@ -530,15 +530,15 @@ const shown = (v) => JSON.stringify(v);
   // against plugin.json — on 0.21.0 with format 0.20 a current project would carry a notice
   // nothing could ever clear.
   {
-    const versionSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'version.js'), 'utf8');
+    const versionSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'migrate.js'), 'utf8');
     const declared = /const FORMAT = '(\d+\.\d+)';/.exec(versionSrc)[1];
-    assert.strictEqual(m.formatOf(versionSrc), declared, 'formatOf reads the FORMAT version.js declares');
+    assert.strictEqual(m.formatOf(versionSrc), declared, 'formatOf reads the FORMAT migrate.js declares');
     assert.strictEqual(m.formatOf('no declaration here'), '', 'and nothing when there is none');
     const board = { name: 't', rows: [], format: { project: declared, plugin: m.formatOf(versionSrc) }, error: null };
     assert.ok(!shown(m.view(board, null, false)).includes('another ristretto format'), 'a project on the current format carries no notice');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
     assert.ok(!tsx.includes('plugin.json'), 'board.tsx must not take the format from plugin.json');
-    assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/version.js'), 'board.tsx reads the format from version.js');
+    assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/migrate.js'), 'board.tsx reads the format from migrate.js');
     // The pane never draws an input field, and acts on domain files only through board-domain.
     assert.ok(!/\bInput\b/.test(tsx), 'no input fields in the pane');
     assert.ok(tsx.includes("from './board-domain.mjs'"), 'domain edits come from board-domain.mjs');

@@ -129,7 +129,7 @@ async function refreshBoard($: EngineInterface) {
     }
     let plugin = ''
     try {
-      plugin = formatOf(await $.fs.read(`${$.plugin.root}/scripts/version.js`))
+      plugin = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
     } catch {
       // Without the plugin's format the format line is skipped; the board itself still draws.
     }
