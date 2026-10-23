@@ -336,7 +336,9 @@ const featureOpen = (id) => ({ kind: 'feature', id });
 // checks, unconfirmed decisions. Derived when shown, never stored as a status. null: nothing.
 function waitsOf(row, ctx) {
   if (row.status !== 'done') return null;
-  const findings = ctx.plans[row.id]?.findings?.length ?? 0;
+  // A finding is `<tag> · <where> · <what>`. A note or a lean is recorded, not a person's turn,
+  // and an untagged line is prose around the findings.
+  const findings = (ctx.plans[row.id]?.findings ?? []).filter((f) => { const tag = /^(\w+)\s+·/.exec(f); return tag && !['note', 'lean'].includes(tag[1]); }).length;
   const checks = (ctx.checks[row.id] ?? []).filter((c) => !c.done).length;
   const decisions = (ctx.decisions[row.id] ?? []).filter((d) => d.done === false).length;
   if (!findings && !checks && !decisions) return null;

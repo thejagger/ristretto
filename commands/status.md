@@ -11,14 +11,14 @@ Filter (optional): $ARGUMENTS
 1. Read `docs/ristretto/roadmap.md`. If it doesn't exist, tell the user there's no roadmap yet and to run `/ristretto:prep` to start one, then stop.
 2. **Brew gauge.** Lead with a 10-segment gauge of done / total, filled proportionally (round to nearest segment), e.g.:
    `☕ [█████░░░░░] 5/10 brewed`
-   If any `done` feature's plan still has an open box or open findings, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`.
+   If any `done` feature's plan still has an open box or an open finding that is not a `note` or `lean`, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`.
 3. Print a one-line count summary: planned / in-progress / blocked / done.
 3a. **Domain facts in conflict.** If `docs/ristretto/domain/` holds entries with a `·` field starting `conflict`, print one line: `📖 <n> domain facts in conflict — /ristretto:prep facts`. Facts without a conflict are context; they are no to-do and get no line.
 4. Print the roadmap rows. If a filter was given, show only matching rows:
    - `open` → everything not `done`
    - `done` → only `done`
    - `blocked` → only `blocked`, each with its recorded reason — this is the **refinement queue** after a `brew` run
-   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open decisions first, marked `⚠` — a question an agent answered on its own authority is the thing most worth a human's eye; then its open `[ ] [human]` boxes with their `how:` lines; then its `## Open findings`, as "open findings". This is the **your-turn queue**: say "manual checks done" or "decisions ok" in the chat once they are.
+   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open decisions first, marked `⚠` — a question an agent answered on its own authority is the thing most worth a human's eye; then its open `[ ] [human]` boxes with their `how:` lines, and any open box under `## Manual checks (migrated)`; then its `## Open findings` other than `note` and `lean` items, as "open findings" — a note or a lean is recorded, never your turn. This is the **your-turn queue**: say "manual checks done" or "decisions ok" in the chat once they are.
    - `easy` → only rows whose `Tier` is `easy`
    - a feature ID → just that row
    - a flight slug → only rows in that flight

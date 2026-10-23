@@ -38,7 +38,7 @@ function world(): World {
       '.git/logs/refs/heads/main': 'one move\n',
       'docs/ristretto/roadmap.md': ROADMAP,
       'docs/ristretto/plans/human-here.md': '- Acceptance:\n  - [x] [human] a\n  - [ ] [human] b\n',
-      'docs/ristretto/plans/review-here.md': '- Acceptance:\n  - [ ] [human] x\n  - [ ] [human] y\n\n## Open findings\n\n- one\n- two\n',
+      'docs/ristretto/plans/review-here.md': '- Acceptance:\n  - [ ] [human] x\n  - [ ] [human] y\n\n## Open findings\n\n- block · a.js:1 · one\n- block · b.js:2 · two\n',
       'docs/ristretto/plans/pw.md': '- Depends: blk\n',
       '.ristretto/suite.json': JSON.stringify({ verdict: 'green', head: 'c'.repeat(40), tree: 'a'.repeat(40), at: 1, gates: 'test ✓', failing: '' }),
     },

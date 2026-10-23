@@ -155,6 +155,14 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual([p.parsePlan(boxed).gate, p.parsePlan(boxed).review],
     ['test ✓ · lint ✓', 'review: clean · rounds: 1 · open: 0 block, 0 note, 0 lean · trimmed: 0'], 'the 0.22 closer writes gates and review as Evidence items');
   assert.deepStrictEqual(p.parseChecks('- Acceptance:\n  - [auto] x\n'), []);
+  // migratedChecksCount: a check the migration could not pair with a criterion still counts.
+  assert.deepStrictEqual(p.parseChecks([
+    '- Acceptance:', '  - [auto] x', '', '## Manual checks (migrated)', '',
+    '- [ ] **proves** · Run the SQL in the Supabase console', '      on the dev project.', '- [x] Ran the redirect script.', '  - proves · a prep note, no box',
+  ].join('\r\n')), [
+    { done: false, text: 'Run the SQL in the Supabase console on the dev project.', how: '' },
+    { done: true, text: 'Ran the redirect script.', how: '' },
+  ]);
 
   // parsesPlanDecisions: a prep ruling has no box; the agent's has one, ticked once the user confirms.
   assert.deepStrictEqual(p.parseDecisions(boxed), [

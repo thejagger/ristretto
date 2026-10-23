@@ -103,11 +103,11 @@ const apiPlan = (...p) => read('api', 'docs', 'ristretto', 'plans', ...p);
   assert.ok(m.migratePlan(vsPlan('pw-frontend-templates'), ticked.get('pw-frontend-templates')).includes('  - [x] [human] Rendered pages'));
   // The **proves** · … · … · how shape; quotes and a trailing "(Manual-Checks)." do not stop the match.
   const intake = m.migratePlan(apiPlan('api-intake-creates-lnw.md'), apiChecks.get('api-intake-creates-lnw'));
-  assert.ok(intake.includes('„offene Probleme“ (Manual-Checks).\n    how: deploy (`docker compose up -d --build api` in ../platform), then compare the counts\n'), intake);
+  assert.ok(intake.includes("„offene Probleme“ (Manual-Checks).\n    how: hpc's real Eingang lives only in the dev stack's database · deploy (`docker compose up -d --build api` in ../platform), then compare the counts\n"), intake);
   assert.ok(intake.includes('  - [ ] [human] After deploying'));
-  // One human criterion, one check, worded differently: they are the same check.
+  // One human criterion, one check, worded differently but about the same thing: the same check.
   const eval_ = m.migratePlan(apiPlan('archived', 'mail-classify-eval.md'), apiChecks.get('mail-classify-eval'));
-  assert.ok(eval_.includes('**0 LNW missed**.\n    how: run `uv run python -m scripts.mail_classify_eval` in this repo and record the result\n'), eval_);
+  assert.ok(eval_.includes('**0 LNW missed**.\n    how: the real mails are personal data that no build may open · run `uv run python -m scripts.mail_classify_eval` in this repo and record the result\n'), eval_);
   assert.ok(eval_.includes('  - [x] [human] On the real set'));
   // A human criterion nobody wrote a check for is still a box, open.
   assert.ok(m.migratePlan('## Contract\n- Acceptance:\n  - [human] Looks right\n').includes('  - [ ] [human] Looks right\n'));
@@ -272,6 +272,85 @@ const apiPlan = (...p) => read('api', 'docs', 'ristretto', 'plans', ...p);
   for (const [file, text] of Object.entries(once)) {
     if (file.includes('/plans/')) assert.strictEqual(m.migratePlan(text), text, file);
     if (file.endsWith('roadmap.md')) assert.strictEqual(m.migrateRoadmap(text), text);
+  }
+}
+
+// Final review fixes, on entries shaped like real projects (multi fixture).
+const multiChecks = m.parseChecks(read('multi', 'docs', 'ristretto', 'manual-checks.md'));
+const multiPlan = (...p) => read('multi', 'docs', 'ristretto', 'plans', ...p);
+
+// decisionWrapsAreJoined: a decision taken over several lines is one box, flush or indented;
+// a wrapped would-escalate goes whole.
+{
+  const out = m.migratePlan(multiPlan('nb-anmeldung.md'));
+  assert.ok(out.includes([
+    '  - Keys are TANs.',
+    "  - [ ] whether to keep the duplicated auth preamble on the two endpoints that gate children's data or extract it -> extracted to NbApi::requireKey(), with the byte-identical 403 independently re-verified after the extraction",
+    '  - [ ] which client? → the bare one, because the contract names no other.',
+    '- Blockers: —',
+  ].join('\n')), out);
+  assert.ok(!/children's data or extract|the contract names no other\.\n|does not name/.test(out.split('- Blockers')[1]), 'no continuation is left behind');
+  assert.ok(out.includes('- Planner decisions:\n- Review history: one round.'));
+}
+
+// multiLineCheckKeepsSteps: a check that wraps keeps every step, in its lines, as the box's how.
+{
+  const out = m.migratePlan(multiPlan('archived', 'DKP-97.md'), multiChecks.get('DKP-97'));
+  assert.ok(out.includes([
+    '  - [ ] [human] The NGS screen documentation for the new screen exists and the de-AT strings shipped are reconciled against its CSV.',
+    '    how: the NGS knowledge base — no credentials in this repo ·',
+    '      1. Run the `create-ngs-doc` skill and paste the result into a new NGS',
+    '         article "Massenmanipulationen von Sendungen".',
+    '      2. Reconcile the shipped strings in `public/i18n/de-AT.json` against the CSV.',
+    '      _criterion:_ "The NGS screen documentation exists" · _test:_ `ships the de-AT wording (MC-1)` (skipped)',
+    '- Blockers: —',
+  ].join('\n')), out);
+  assert.ok(!out.includes('## Manual checks (migrated)'), 'everything was carried into the box');
+}
+
+// tickNeverByPosition / wrappedQuotedProvesMatches: a tick moves only to the criterion its check
+// names; an unrelated ticked check stays verbatim and the other criterion stays open.
+{
+  const out = m.migratePlan(multiPlan('archived', 'DKP-100.md'), multiChecks.get('DKP-100'));
+  assert.ok(out.includes('  - [x] [human] A signed-in approver sees the Freigabe button only with API level 6.\n    how: portal sign-in needs interactive oauth · sign in and look.\n      checked 2026-10-13 by the owner\n'), out);
+  assert.ok(out.includes('  - [ ] [human] The editor sees the new banner after a reload.\n- Blockers'), 'no tick by position');
+  assert.ok(out.includes('## Manual checks (migrated)\n\n- [x] Ran the redirect script on the dev DB.'), out);
+  // The reviewer's probe: one unrelated ticked check, one open criterion.
+  const probe = m.parseChecks('## x\n\n- [x] Ran the redirect script on the dev DB.\n').get('x');
+  const one = m.migratePlan('## Contract\n- Acceptance:\n  - [human] The editor sees the new banner after a reload.\n', probe);
+  assert.ok(one.startsWith('## Contract\n- Acceptance:\n  - [ ] [human] The editor sees the new banner after a reload.\n'), one);
+}
+
+// sectionProseIsKept: a note in a feature's section of manual-checks.md moves into its plan.
+{
+  const out = m.migratePlan(multiPlan('archived', 'DKP-100.md'), multiChecks.get('DKP-100'));
+  assert.ok(out.includes('_All checks run and confirmed passing by the user on 2026-10-13._'), out);
+}
+
+// statusWithReason: the first word is the status; a blocked or done reason stays, a needs-* one goes.
+{
+  const t = m.readTable(m.migrateRoadmap(read('multi', 'docs', 'ristretto', 'roadmap.md')));
+  assert.deepStrictEqual(t.rows.map((r) => r.Status), ['done', 'done', 'done — **retired**', 'blocked — no API docs']);
+}
+
+// noWordLost: every word of a feature's manual checks survives in its plan, on every fixture.
+for (const name of ['vs', 'api', 'multi']) {
+  const dir = copyFixture(name);
+  const checksText = read(name, 'docs', 'ristretto', 'manual-checks.md');
+  assert.strictEqual(run(dir, 'apply').code, 0);
+  const after = snapshot(dir);
+  const words = (s) => (s || '').split(/\s+/).filter((x) => x.length >= 4);
+  for (const [id, items] of m.parseChecks(checksText)) {
+    const plan = after[`docs/ristretto/plans/${id}.md`];
+    if (!plan) continue;
+    const flat = plan.replace(/\s+/g, ' ');
+    for (const k of items) {
+      // The proves text names the criterion, which the box already carries in its own words.
+      const named = new Set(words(k.proves));
+      for (const w of words(k.raw.replace(/^\s*-\s+\[[ xX]\]\s+/, '').replace(/\*\*proves\*\*|proves:/g, ''))) {
+        assert.ok(named.has(w) || flat.includes(w), `${name}: "${w}" from ${id}'s checks is lost`);
+      }
+    }
   }
 }
 

@@ -632,7 +632,7 @@ const shown = (v) => JSON.stringify(v);
         R('pw', 'planned'),
       ],
     };
-    const plans = { 'review-here': P({ findings: ['a', 'b'] }), pw: P({ depends: ['blk'] }) };
+    const plans = { 'review-here': P({ findings: ['block · a.js:1 · a', 'bug · b.js:2 · b'] }), pw: P({ depends: ['blk'] }) };
     const checks = {
       'human-here': [{ done: true, text: 'x' }, { done: false, text: 'y' }],
       'review-here': [{ done: false, text: 'x' }, { done: false, text: 'y' }],
@@ -732,6 +732,13 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '1 check · 2 decisions open']]);
     s = at({ decisions, branch: { name: 'x', base: 'main', ids: ['a'], lastBrew: '' } });
     assert.deepStrictEqual(s.holders.map((r) => [r.id, r.detail, r.tone]), [['a', '2 decisions open', 'permission']], 'on the branch it holds the branch');
+
+    // notesAndLeansAskNothing: a note or a lean is recorded, never a person's turn; anything else tagged is.
+    const findings = (list) => ({ a: { depends: [], blockers: [], findings: list } });
+    s = at({ plans: findings(['note · x.php:1 · fine', 'lean · y.php:2 · shorter', 'prose that wraps']) });
+    assert.deepStrictEqual(s.needsYou, [], 'notes and leans only');
+    s = at({ plans: findings(['bug · x.php:1 · wrong', 'lean · y.php:2 · shorter']) });
+    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail, r.glyph]), [['a', '1 finding open', 'findings']]);
 
     // doneCleanIsDone: ticked checks and confirmed or prep decisions leave nothing to do.
     s = at({ checks: { a: [{ done: true, text: 'x', how: '' }] }, decisions: { a: [{ done: true, text: 'q → r' }, { done: null, text: 'p' }] } });

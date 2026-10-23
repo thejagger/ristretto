@@ -187,13 +187,19 @@ export function proofFor(plan, n) {
 }
 
 // A plan's manual checks: each [human] criterion is a box, its steps on the `how:` line under it.
+// A check the 0.22 migration could not pair with a criterion sits as a box of its own under
+// `## Manual checks (migrated)`, and counts the same.
 export function parseChecks(text) {
   const out = [];
   let cur = null;
+  let migrated = false;
   for (const line of text.split(/\r?\n/)) {
+    if (/^##\s/.test(line)) migrated = line.trim() === '## Manual checks (migrated)';
+    const kept = migrated && /^-\s+\[([ xX])\]\s+(?:\*\*proves\*\*\s*·\s*)?(.*)$/.exec(line);
+    if (kept) { cur = { indent: 0, item: { done: kept[1] !== ' ', text: kept[2].trim(), how: '' } }; out.push(cur.item); continue; }
     const box = /^(\s*)-\s+\[([ xX])\]\s+\[human\]\s*(.*)$/.exec(line);
     if (box) { cur = { indent: box[1].length, item: { done: box[2] !== ' ', text: box[3].trim(), how: '' } }; out.push(cur.item); continue; }
-    if (!cur || !line.trim() || /^\s*/.exec(line)[0].length <= cur.indent) { cur = null; continue; }
+    if (!cur || !line.trim() || /^\s*/.exec(line)[0].length <= cur.indent || (migrated && /^\s*-\s/.test(line))) { cur = null; continue; }
     const how = /^\s+how:\s*(.*)$/.exec(line);
     if (how) cur.item.how = how[1].trim();
     else if (cur.item.how) cur.item.how += ` ${line.trim()}`;
