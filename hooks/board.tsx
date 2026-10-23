@@ -9,7 +9,7 @@ import { baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseL
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
 import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock } from './board-svg.mjs'
 import { buttonKeeper } from './board-keep.mjs'
-import { parseChecks, parsePlan } from './board-plan.mjs'
+import { parseChecks, parseDecisions, parsePlan } from './board-plan.mjs'
 import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
 
 // The roadmap board: a read-only view of docs/ristretto/roadmap.md, of the branch the session is
@@ -25,7 +25,6 @@ import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase,
 
 const PANE = 'ristretto-board'
 const ROADMAP = 'docs/ristretto/roadmap.md'
-const CHECKS = 'docs/ristretto/manual-checks.md'
 const MARKER = '.ristretto/pulling'
 const ORCHESTRATING = '.ristretto/orchestrating'
 const SUITE = '.ristretto/suite.json'
@@ -63,7 +62,7 @@ const drawnAt = atom({ plugin: 'ristretto', key: 'drawnAt' } as const, 0)
 const folds = atom({ plugin: 'ristretto', key: 'folds' } as const, {} as Record<string, boolean>)
 
 let roadmapMtime = -1
-let checksMtime = -1
+let plansSig = ''
 let timers: { cancel: () => void }[] = []
 let storeKey = ''
 let brewKey = ''
@@ -94,6 +93,17 @@ async function closePane($: EngineInterface) {
   await update($, paneOpen, () => false)
 }
 
+// The plans' mtimes in roadmap order: a box ticked in a plan redraws the board.
+async function planSig($: EngineInterface, rows: { plan: string }[]) {
+  const parts: string[] = []
+  for (const row of rows) {
+    if (!row.plan) continue
+    const p = await repo($, `docs/ristretto/${row.plan}`)
+    parts.push((await $.fs.exists(p)) ? String((await $.fs.stat(p)).mtimeMs) : '-')
+  }
+  return parts.join(',')
+}
+
 async function refreshBoard($: EngineInterface) {
   try {
     if (!(await $.fs.exists(await repo($, ROADMAP)))) {
@@ -103,30 +113,28 @@ async function refreshBoard($: EngineInterface) {
     }
     const mtime = (await $.fs.stat(await repo($, ROADMAP))).mtimeMs
     const parsed = parseRoadmap(String(await $.fs.read(await repo($, ROADMAP))))
-    // What each open plan says, plus the opened row's plan whatever its status; and the
-    // manual checks. A plan that cannot be read is simply absent. A blocked row with no
-    // reason in the roadmap says why from its plan's Blockers.
+    // Every plan's manual checks and decisions (a done row may still wait on a person), and
+    // what each open plan says, plus the opened row's plan whatever its status. A plan that
+    // cannot be read is simply absent. A blocked row with no reason in the roadmap says why
+    // from its plan's Blockers.
     const shownPage = await read($, page)
     const opened = shownPage?.kind === 'feature' ? shownPage.id : null
     const plans: Record<string, BoardPlan> = {}
+    const checks: Board['checks'] = {}
+    const decisions: Board['decisions'] = {}
     for (const row of parsed.rows) {
-      if (!row.plan || (row.status === 'done' && row.id !== opened)) continue
+      if (!row.plan) continue
       try {
-        plans[row.id] = parsePlan(String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`)))) as BoardPlan
+        const text = String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`)))
+        checks[row.id] = parseChecks(text) as Board['checks'][string]
+        decisions[row.id] = parseDecisions(text) as Board['decisions'][string]
+        if (row.status !== 'done' || row.id === opened) plans[row.id] = parsePlan(text) as BoardPlan
       } catch {
         // The opened row says its plan was not found.
       }
       if (row.status === 'blocked' && !row.reason) row.reason = plans[row.id]?.blockers[0] ?? ''
     }
-    let checks: Record<string, { done: boolean; text: string }[]> = {}
-    try {
-      if (await $.fs.exists(await repo($, CHECKS))) {
-        checksMtime = (await $.fs.stat(await repo($, CHECKS))).mtimeMs
-        checks = parseChecks(String(await $.fs.read(await repo($, CHECKS)))) as typeof checks
-      } else checksMtime = -1
-    } catch {
-      // No checks to show.
-    }
+    plansSig = await planSig($, parsed.rows)
     let plugin = ''
     try {
       plugin = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
@@ -134,7 +142,7 @@ async function refreshBoard($: EngineInterface) {
       // Without the plugin's format the format line is skipped; the board itself still draws.
     }
     const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
-    { const v = { name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks }; if (!same(await read($, board), v)) { await update($, board, () => v); await stamp($) } }
+    { const v = { name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks, decisions }; if (!same(await read($, board), v)) { await update($, board, () => v); await stamp($) } }
     roadmapMtime = mtime
     const shownRow = opened ? parsed.rows.find(r => r.id === opened) : null
     if (shownRow) await loadFiles($, shownRow.id, shownRow.commit)
@@ -225,15 +233,15 @@ async function refreshBranch($: EngineInterface) {
       const log = await git($, logArgs(base.ref))
       if (log.exitCode === 0) commits = parseLog(log.stdout) as typeof commits
     }
-    // A feature is a roadmap row, or an archived plan of one that left the roadmap.
+    // A feature is a roadmap row, or the plan of one that left the roadmap.
     const rows = new Set((await read($, board)).rows.map(r => r.id))
-    const archived = new Set<string>()
+    const left = new Set<string>()
     for (const c of commits) {
       const id = isDocs(c.subject) ? null : featureIdOf(c.subject)
-      if (id && !rows.has(id) && !archived.has(id) && (await $.fs.exists(await repo($, `docs/ristretto/plans/archived/${id}.md`)))) archived.add(id)
+      if (id && !rows.has(id) && !left.has(id) && (await $.fs.exists(await repo($, `docs/ristretto/plans/${id}.md`)))) left.add(id)
     }
     const onDefault = head === defaultBranch({ originHead, refs })
-    const next = branchOf({ head, base, commits, known: (id: string) => rows.has(id) || archived.has(id), runs: await read($, runs), now: await $.clock.now(), onDefault })
+    const next = branchOf({ head, base, commits, known: (id: string) => rows.has(id) || left.has(id), runs: await read($, runs), now: await $.clock.now(), onDefault })
     { const v = next; if (!same(await read($, branch), v)) { await update($, branch, () => v); await stamp($) } }
   } catch {
     // The next turn tries again.
@@ -389,8 +397,7 @@ async function poll($: EngineInterface) {
     await observeMarker($)
     const exists = await $.fs.exists(await repo($, ROADMAP))
     const mtime = exists ? (await $.fs.stat(await repo($, ROADMAP))).mtimeMs : -1
-    const checks = (await $.fs.exists(await repo($, CHECKS))) ? (await $.fs.stat(await repo($, CHECKS))).mtimeMs : -1
-    if (mtime !== roadmapMtime || checks !== checksMtime) await refreshBoard($)
+    if (mtime !== roadmapMtime || (await planSig($, (await read($, board)).rows)) !== plansSig) await refreshBoard($)
     await refreshDomain($)
     const sig = await gitSig($)
     if (sig !== lastSig) {
@@ -1271,8 +1278,9 @@ async function drawPane($: any, e: any) {
           <Text wrap="truncate-end">
             {[
               <Text key="t" bold>Files</Text>,
-              <Text key="n" dimColor>{` · ${p.files.planned ? 'planned' : p.files.n}`}</Text>,
-              ...(p.files.planned ? [] : [<Text key="a" color="success">{`  +${p.files.add}`}</Text>, <Text key="dl" color="error">{` −${p.files.del}`}</Text>]),
+              <Text key="n" dimColor>{` · ${p.files.n}`}</Text>,
+              <Text key="a" color="success">{`  +${p.files.add}`}</Text>,
+              <Text key="dl" color="error">{` −${p.files.del}`}</Text>,
             ]}
           </Text>
         </Box>
@@ -1288,9 +1296,9 @@ async function drawPane($: any, e: any) {
             <Box flexGrow={1} flexShrink={1} overflow="hidden" flexDirection="column">
               {can ? pressText(`dir-${p.id}-${f.path}`, label, flip, <Text bold wrap="truncate-end">{label}</Text>) : <Text bold={isDir} wrap="truncate-end">{label}</Text>}
             </Box>
-            {!p.files.planned && (f.bin
+            {f.bin
               ? <Box flexShrink={0}><Text dimColor>bin</Text></Box>
-              : <Box flexShrink={0} flexDirection="row" gap={1}><Text color="success">{`+${f.add}`}</Text><Text color="error">{`−${f.del}`}</Text></Box>)}
+              : <Box flexShrink={0} flexDirection="row" gap={1}><Text color="success">{`+${f.add}`}</Text><Text color="error">{`−${f.del}`}</Text></Box>}
             {can && pressArea(`dir-${p.id}-${f.path}`, flip)}
           </Box>
         )

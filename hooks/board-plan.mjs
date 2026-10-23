@@ -1,5 +1,5 @@
 // What a plan says, for the board to show without anyone opening it: its acceptance criteria,
-// what it depends on, its blockers, and once archived, the proof of each criterion, the
+// what it depends on, its blockers, its manual checks and decisions, and once built, the proof of each criterion, the
 // closer's review line, the gate line and the open findings. Pure: no $, no Node.
 //
 // Closers never had one line format, so the Evidence reading is tolerant: tessera's
@@ -17,6 +17,7 @@ function field(lines, name) {
   const inline = lines[at].replace(head, '').trim();
   const items = [];
   for (let i = at + 1; i < lines.length && /^\s+\S/.test(lines[i]); i++) {
+    if (/^\s+how:\s/.test(lines[i])) continue; // a manual check's steps, read by parseChecks
     if (/^\s+-\s+/.test(lines[i])) items.push(lines[i].replace(/^\s+-\s+/, '').trim());
     else if (items.length > 0) items[items.length - 1] += ` ${lines[i].trim()}`;
   }
@@ -73,10 +74,14 @@ function splitList(text) {
 }
 
 const HEAD = /^(?:criteri(?:on|a)|acceptance|ac)\s*\d/i;
+// The 0.22 closer writes `- 1: proof`, `- 2, 3: proof`: the criterion numbers alone.
+const BARE = /^(\d+(?:\s*(?:,|\/|&|and|to|[-–])\s*\d+)*)\s*:\s*(.+)$/;
 
 // One Evidence item, bold dropped: the criteria its head names and the proof after the head.
 function evidenceOf(item) {
   const text = item.replace(/\*\*/g, '');
+  const bare = BARE.exec(text);
+  if (bare) return { criteria: numbers(bare[1]), proof: bare[2].trim() };
   if (!HEAD.test(text)) return null;
   const sep = outside(text, (t, i) => (t[i] === ':' ? 1 : / [—–] /.test(t.slice(i, i + 3)) ? 3 : 0));
   if (!sep) return null;
@@ -136,8 +141,9 @@ export function parsePlan(text) {
   const lines = text.split(/\r?\n/);
   const acc = field(lines, 'Acceptance');
   const acceptance = (acc ? acc.items : []).map((item) => {
-    const tag = /^\[(auto|human)\]\s*/.exec(item);
-    return { auto: !tag || tag[1] === 'auto', text: tag ? item.slice(tag[0].length) : item };
+    const bare = item.replace(/^\[[ xX]\]\s+/, '');
+    const tag = /^\[(auto|human)\]\s*/.exec(bare);
+    return { auto: !tag || tag[1] === 'auto', text: tag ? bare.slice(tag[0].length) : bare };
   });
   const dep = field(lines, 'Depends');
   const depends = dep ? [dep.inline, ...dep.items].flatMap(ids) : [];
@@ -179,21 +185,52 @@ export function proofFor(plan, n) {
   return line ? line.proof : null;
 }
 
-// manual-checks.md: a `## <feature>` section per feature, `- [ ]` / `- [x]` items under it.
+// A plan's manual checks: each [human] criterion is a box, its steps on the `how:` line under it.
 export function parseChecks(text) {
-  const out = {};
-  let id = null;
+  const out = [];
+  let cur = null;
   for (const line of text.split(/\r?\n/)) {
-    const head = /^##\s+(.+?)\s*$/.exec(line);
-    if (head) { id = head[1]; continue; }
-    const item = /^\s*-\s+\[([ xX])\]\s+(.+)$/.exec(line);
-    if (id && item) (out[id] = out[id] || []).push({ done: item[1] !== ' ', text: item[2].replace(/\*\*/g, '').trim() });
+    const box = /^(\s*)-\s+\[([ xX])\]\s+\[human\]\s*(.*)$/.exec(line);
+    if (box) { cur = { indent: box[1].length, item: { done: box[2] !== ' ', text: box[3].trim(), how: '' } }; out.push(cur.item); continue; }
+    if (!cur || !line.trim() || /^\s*/.exec(line)[0].length <= cur.indent) { cur = null; continue; }
+    const how = /^\s+how:\s*(.*)$/.exec(line);
+    if (how) cur.item.how = how[1].trim();
+    else if (cur.item.how) cur.item.how += ` ${line.trim()}`;
+    else cur.item.text += ` ${line.trim()}`;
   }
   return out;
 }
 
+// The plan's Decisions: a prep ruling has no box (done null); a decision the agent took during a
+// build is `[ ]` until the user confirms it in chat, then `[x]`. Nested lines join their item.
+export function parseDecisions(text) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((line) => /^-\s+Decisions:/.test(line));
+  if (at < 0) return [];
+  const out = [];
+  let indent = -1;
+  for (let i = at + 1; i < lines.length && /^\s+\S/.test(lines[i]); i++) {
+    const depth = /^\s*/.exec(lines[i])[0].length;
+    const item = /^\s*-\s+(.*)$/.exec(lines[i]);
+    if (item && (indent < 0 || depth === indent)) {
+      indent = depth;
+      const box = /^\[([ xX])\]\s+/.exec(item[1]);
+      out.push({ done: box ? box[1] !== ' ' : null, text: (box ? item[1].slice(box[0].length) : item[1]).trim() });
+    } else if (out.length > 0) out[out.length - 1].text += ` ${(item ? item[1] : lines[i]).trim()}`;
+  }
+  return out;
+}
+
+// What a plan still asks of a person: open manual checks and unconfirmed decisions.
+export function openBoxes(text) {
+  return {
+    checks: parseChecks(text).filter((c) => !c.done).length,
+    decisions: parseDecisions(text).filter((d) => d.done === false).length,
+  };
+}
+
 // What a plan still waits on: dependencies that are not built, as `pull next` reads them.
-export const SATISFIES = new Set(['done', 'needs-human', 'needs-review']);
+export const SATISFIES = new Set(['done']);
 export function waitingOn(plan, statusOf) {
   if (!plan) return [];
   return plan.depends

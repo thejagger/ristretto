@@ -3,11 +3,11 @@
 
 import { SATISFIES, parsePlan, proofFor, waitingOn } from './board-plan.mjs';
 import { mergeRuns, splitOf } from './board-runs.mjs';
-import { OPEN_UP_TO, plannedOf, rowsOf, treeOf } from './board-files.mjs';
+import { OPEN_UP_TO, rowsOf, treeOf } from './board-files.mjs';
 
 export const STATUSES = ['planned', 'in-progress', 'blocked', 'needs-human', 'needs-review', 'done'];
 
-export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null, plans: {}, checks: {} };
+export const EMPTY_BOARD = { name: '', rows: [], format: { project: null, plugin: '' }, error: null, plans: {}, checks: {}, decisions: {} };
 
 // A table line's cells, `\|` kept as a literal pipe inside its cell. No lookbehind: the hooks
 // engine's runtime is not Node, and a regex it cannot compile would keep the module from loading.
@@ -53,8 +53,7 @@ export function parseRoadmap(text) {
 
   const head = cells(lines[at]).map((c) => c.toLowerCase());
   const col = (...names) => head.findIndex((h) => names.includes(h));
-  const [iFlight, iId, iTitle, iTier, iStatus, iPlan, iCommit] = [col('flight'), col('feature', 'id'), col('title'), col('tier'), col('status'), col('plan'), col('commit')];
-  const iTouched = col('files touched', 'touched');
+  const [iFlight, iId, iTitle, iTier, iStatus, iCommit] = [col('flight'), col('feature', 'id'), col('title'), col('tier'), col('status'), col('commit')];
 
   const rows = [];
   let end = lines.length;
@@ -68,9 +67,9 @@ export function parseRoadmap(text) {
       id: row[iId] || '',
       title: iTitle < 0 ? '' : row[iTitle] || '',
       tier: iTier >= 0 && /^easy\b/.test(row[iTier] || '') ? 'easy' : 'normal',
-      plan: planOf(iPlan < 0 ? '' : row[iPlan] || ''),
+      // A plan never moves: it is plans/<ID>.md, relative to docs/ristretto/.
+      plan: row[iId] ? `plans/${row[iId]}.md` : '',
       commit: iCommit < 0 ? '' : (row[iCommit] || '').replace(/`/g, '').replace(/^[—–-]$/, '').trim(),
-      touched: iTouched < 0 ? [] : (row[iTouched] || '').replace(/`/g, '').split(/,\s*/).map((s) => s.trim()).filter((s) => s && !/^[—–-]$/.test(s)),
       ...statusOf(iStatus < 0 ? '' : row[iStatus] || ''),
     });
   }
@@ -86,14 +85,6 @@ export function parseRoadmap(text) {
     if (row.status === 'blocked' && !row.reason && notes.has(row.id)) row.reason = notes.get(row.id);
   }
   return { rows, format, error: null };
-}
-
-// The plan a row links to, relative to docs/ristretto/: `[plan](plans/x.md)` or a bare path;
-// a repo-relative `docs/ristretto/plans/x.md` (immo-wert) reads the same.
-function planOf(cell) {
-  const link = /\(([^)\s]+\.md)\)/.exec(cell);
-  const path = link ? link[1] : /^[^\s[\]()]+\.md$/.test(cell) ? cell : '';
-  return path.replace(/^\.?\/?docs\/ristretto\//, '');
 }
 
 // A plan's first blocker, from its `- Blockers:` line: the inline text, or the first item
@@ -301,18 +292,16 @@ function featurePage(row, ctx) {
   };
 }
 
-// The Files card: what the feature's commits changed (board.tsx finds them by ID), else what
-// the plan says it will touch. ristretto's own docs ride along in the feature commit and are not
-// what a review reads. Up to OPEN_UP_TO files start open; a click overrides per folder.
+// The Files card: what the feature's commits changed (board.tsx finds them by ID); before there
+// is a commit, no card. ristretto's own docs ride along in the feature commit and are not what a
+// review reads. Up to OPEN_UP_TO files start open; a click overrides per folder.
 function filesOf(row, ctx) {
-  const found = (ctx.files[row.id] ?? []).filter((f) => !f.path.startsWith('docs/ristretto/'));
-  const read = found.length > 0 ? found : undefined;
-  const list = read ?? plannedOf(row.touched ?? []);
+  const list = (ctx.files[row.id] ?? []).filter((f) => !f.path.startsWith('docs/ristretto/'));
   if (list.length === 0) return null;
   const tree = treeOf(list);
   const clicked = ctx.folders[row.id] ?? {};
   const all = list.length <= OPEN_UP_TO;
-  return { planned: !read, n: list.length, add: tree.add, del: tree.del, rows: rowsOf(tree, (p) => clicked[p] ?? all) };
+  return { n: list.length, add: tree.add, del: tree.del, rows: rowsOf(tree, (p) => clicked[p] ?? all) };
 }
 
 // The facts as information: per file, those in conflict first, then the binding ones, then

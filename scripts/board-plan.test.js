@@ -118,25 +118,62 @@ const { pathToFileURL } = require('url');
 
   assert.deepStrictEqual(p.parsePlan(''), { acceptance: [], depends: [], blockers: [], goal: null, evidence: [], review: null, gate: null, findings: [], itemised: null });
 
-  // manual-checks.md: one section per feature, ticked and unticked items.
-  const checks = p.parseChecks([
-    '# Manual Checks', '', 'Things ristretto had no way to reach.', '',
-    '## core-bootstrap', '',
-    '- [x] **proves** · `https://tessera.loc` shows no certificate warning',
-    '- [ ] **proves** · mail arrives in Outlook',
-    '## other',
-    '- [ ] something',
-  ].join('\n'));
-  assert.deepStrictEqual(checks['core-bootstrap'], [
-    { done: true, text: 'proves · `https://tessera.loc` shows no certificate warning' },
-    { done: false, text: 'proves · mail arrives in Outlook' },
+  // parsesPlanChecks: a [human] criterion is its own box in the plan, its steps on a how: line.
+  const boxed = [
+    '## Contract',
+    '- Acceptance:',
+    '  - [auto] The page renders',
+    '  - [ ] [human] Mail arrives in Outlook',
+    '    how: send one from the dev stack and open Outlook',
+    '  - [x] [human] The design reads the same',
+    '    how: open both side by side',
+    '- Decisions:',
+    '  - Styling -> one stylesheet.',
+    '    - nested detail of that ruling',
+    '  - [ ] which client? → the bare one',
+    '  - [x] pin resvg? → yes',
+    '- Blockers: —',
+    '',
+    '## Evidence',
+    '- 1: tests/test_page.py',
+    '- 2, 3: by hand',
+    '',
+  ].join('\n');
+  assert.deepStrictEqual(p.parseChecks(boxed), [
+    { done: false, text: 'Mail arrives in Outlook', how: 'send one from the dev stack and open Outlook' },
+    { done: true, text: 'The design reads the same', how: 'open both side by side' },
   ]);
-  assert.strictEqual(checks.other.length, 1);
+  assert.deepStrictEqual(p.parsePlan(boxed).acceptance, [
+    { auto: true, text: 'The page renders' },
+    { auto: false, text: 'Mail arrives in Outlook' },
+    { auto: false, text: 'The design reads the same' },
+  ], 'a box and its how: line are not part of the criterion');
+  assert.strictEqual(p.proofFor(p.parsePlan(boxed), 1), 'tests/test_page.py', 'Evidence by criterion number');
+  assert.strictEqual(p.proofFor(p.parsePlan(boxed), 3), 'by hand');
+  assert.deepStrictEqual(p.parseChecks('- Acceptance:\n  - [auto] x\n'), []);
 
-  // Waiting: done, needs-human and needs-review satisfy a dependency, as `pull next` reads it.
-  const statusOf = new Map([['lnw-core', 'done'], ['mail-outbound', 'planned'], ['rbac', 'needs-review']]);
+  // parsesPlanDecisions: a prep ruling has no box; the agent's has one, ticked once the user confirms.
+  assert.deepStrictEqual(p.parseDecisions(boxed), [
+    { done: null, text: 'Styling -> one stylesheet. nested detail of that ruling' },
+    { done: false, text: 'which client? → the bare one' },
+    { done: true, text: 'pin resvg? → yes' },
+  ]);
+  assert.deepStrictEqual(p.openBoxes(boxed), { checks: 1, decisions: 1 });
+  assert.deepStrictEqual(p.openBoxes('# x\n'), { checks: 0, decisions: 0 });
+  assert.deepStrictEqual(p.parseDecisions('- Decisions: —\n- Blockers: —\n'), []);
+
+  // parsesCrlfPlan: the same plan with Windows line endings reads the same.
+  const crlf = boxed.replace(/\n/g, '\r\n');
+  assert.deepStrictEqual(p.parseChecks(crlf), p.parseChecks(boxed));
+  assert.deepStrictEqual(p.parseDecisions(crlf), p.parseDecisions(boxed));
+  assert.deepStrictEqual(p.parsePlan(crlf), p.parsePlan(boxed));
+
+  // doneSatisfiesDepends: only done satisfies a dependency; there is no other finished status.
+  const statusOf = new Map([['lnw-core', 'done'], ['mail-outbound', 'planned'], ['rbac', 'in-progress']]);
+  assert.deepStrictEqual(p.waitingOn({ depends: ['lnw-core'] }, statusOf), []);
   assert.deepStrictEqual(p.waitingOn({ depends: ['lnw-core', 'mail-outbound', 'rbac', 'mail-classify'] }, statusOf),
-    [{ id: 'mail-outbound', status: 'planned' }, { id: 'mail-classify', status: 'missing' }]);
+    [{ id: 'mail-outbound', status: 'planned' }, { id: 'rbac', status: 'in-progress' }, { id: 'mail-classify', status: 'missing' }]);
+  assert.deepStrictEqual([...p.SATISFIES], ['done']);
   assert.deepStrictEqual(p.waitingOn(undefined, statusOf), []);
 
   // The plan's one-line goal, for a feature's page.

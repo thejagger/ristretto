@@ -49,11 +49,6 @@ export function sumFiles(files) {
   return [...by.values()];
 }
 
-// The roadmap's `Files touched` cell, before there is a commit. A trailing `/` is a folder.
-export function plannedOf(touched) {
-  return touched.map((p) => p.trim().replace(/^\.?\//, '')).filter(Boolean).map((p) => ({ path: p, add: 0, del: 0, bin: false }));
-}
-
 const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 export function treeOf(files) {

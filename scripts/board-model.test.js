@@ -461,7 +461,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.factOf('waiting on Anatol: the V1.2 doc'), null);
   }
 
-  // The Files card: the commit's files when known, the plan's Files touched before.
+  // The Files card: the commit's files, and nothing before there is a commit (noCommitNoFiles).
   {
     const rows = [
       { flight: '', id: 'd', title: 'D', tier: 'normal', plan: '', commit: 'a7928f6', touched: ['lib/'], status: 'done', reason: '' },
@@ -475,16 +475,14 @@ const shown = (v) => JSON.stringify(v);
     const bookkeeping = [{ path: 'docs/ristretto/roadmap.md', add: 1, del: 1, bin: false }, { path: 'docs/ristretto/plans/archived/d.md', add: 40, del: 0, bin: false }];
     const page = (id, extra = {}) => m.view(board, null, false, { page: { kind: 'feature', id }, files: { d: [...list, ...bookkeeping], n: bookkeeping }, ...extra }).page;
     const d = page('d').files;
-    assert.deepStrictEqual([d.planned, d.n, d.add, d.del], [false, 13, 26, 13]);
+    assert.deepStrictEqual([d.n, d.add, d.del], [13, 26, 13]);
     assert.deepStrictEqual(d.rows.map((r) => r.name), ['lib/'], 'more than 12 files: only the top level shows');
     const opened = page('d', { folders: { d: { 'lib/': true } } }).files;
     assert.strictEqual(opened.rows.length, 14, 'a folder opened by a click shows its files');
-    const p = page('p').files;
-    assert.deepStrictEqual([p.planned, p.rows.map((r) => r.name)], [true, ['lib/data/', 'pubspec.yaml']]);
-    assert.strictEqual(page('n').files, null, 'nothing touched yet, no commit: no card');
-    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' } }).page.files.planned, true, 'commits not read yet: the plan meanwhile');
-    assert.strictEqual(page('n').files, null, 'only bookkeeping and nothing planned: no card');
-    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' }, files: { d: [] } }).page.files.planned, true, 'no commit found yet: the plan, not an empty card');
+    assert.strictEqual(page('p').files, null, 'no commit yet: no card, whatever an old roadmap said it would touch');
+    assert.strictEqual(page('n').files, null, 'only bookkeeping: no card');
+    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' } }).page.files, null, 'commits not read yet: no card');
+    assert.strictEqual(m.view(board, null, false, { page: { kind: 'feature', id: 'd' }, files: { d: [] } }).page.files, null, 'no commit found: no card');
   }
 
   // Final review #4: a feature blocked on a fact is recognised through the roadmap, whichever
@@ -520,10 +518,12 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(p.details.run.runs, 2);
   }
 
-  // parseRoadmap reads Files touched as a list; `—` is none.
+  // A 0.22 roadmap has no Plan column: every plan is plans/<ID>.md. Files touched is not read.
   {
-    const text = '| Feature | Title | Status | Files touched | Commit |\n|---|---|---|---|---|\n| a | A | done | pubspec.yaml, lib/data/, test/ | abc |\n| b | B | planned | — | — |\n';
-    assert.deepStrictEqual(m.parseRoadmap(text).rows.map((r) => r.touched), [['pubspec.yaml', 'lib/data/', 'test/'], []]);
+    const text = '| Flight | Feature | Title | Tier | Status |\n|---|---|---|---|---|\n| f | a | A | normal | done |\n';
+    const [row] = m.parseRoadmap(text).rows;
+    assert.strictEqual(row.plan, 'plans/a.md');
+    assert.ok(!('touched' in row));
   }
 
   // Format notice. The format has its own version now; the board must compare against it, not

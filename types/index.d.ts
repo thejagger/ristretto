@@ -1,12 +1,13 @@
 export type BoardStatus = 'planned' | 'in-progress' | 'blocked' | 'needs-human' | 'needs-review' | 'done' | 'unknown'
-export type BoardRow = { flight: string; id: string; title: string; tier: 'easy' | 'normal'; plan: string; commit: string; touched: string[]; status: BoardStatus; reason: string }
+export type BoardRow = { flight: string; id: string; title: string; tier: 'easy' | 'normal'; plan: string; commit: string; status: BoardStatus; reason: string }
 export type Board = {
   name: string
   rows: BoardRow[]
   format: { project: string | null; plugin: string }
   error: string | null
   plans: Record<string, BoardPlan>
-  checks: Record<string, { done: boolean; text: string }[]>
+  checks: Record<string, { done: boolean; text: string; how: string }[]>
+  decisions: Record<string, { done: boolean | null; text: string }[]>
 }
 export type BoardPlan = {
   acceptance: { auto: boolean; text: string }[]

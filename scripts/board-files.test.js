@@ -44,11 +44,9 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(closed[1].open, false);
   assert.strictEqual(f.OPEN_UP_TO, 12);
 
-  // The plan's Files touched, before any commit: folders stay as empty, unopenable rows.
-  const planned = f.rowsOf(f.treeOf(f.plannedOf(['pubspec.yaml', 'android/', 'lib/data/', 'test/data/x_test.dart'])), () => true);
-  assert.deepStrictEqual(planned.map((r) => `${r.depth}${r.kind[0]} ${r.name}${r.empty ? ' (empty)' : ''}`), [
-    '0d android/ (empty)', '0d lib/data/ (empty)', '0d test/data/', '1f x_test.dart', '0f pubspec.yaml',
-  ]);
+  // noCommitNoFiles: before there is a commit there is nothing to show; no Files touched fallback.
+  assert.strictEqual(f.plannedOf, undefined);
+  assert.deepStrictEqual(f.rowsOf(f.treeOf([]), () => true), []);
 
   // A feature's commits are found by its ID in the subject — `feat(DUAL-123): …`, `fix(DUAL-123): …`
   // — so a squash, a fix after review, and old rows all read the same; no hash in the roadmap.
