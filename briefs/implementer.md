@@ -4,7 +4,7 @@ Read `briefs/common.md` first — it binds you before anything below does.
 
 ## Find your build plan
 
-Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago — implement it, do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md`'s `## Contract` yourself against the current code — real file paths, real names and signatures, the test cases that prove each criterion — and write each surviving manual check (common.md's reach test decides which survive) into `docs/ristretto/manual-checks.md`, in the line format `briefs/planner.md` gives. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
+Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago — implement it, do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md`'s `## Contract` yourself against the current code — real file paths, real names and signatures, the test cases that prove each criterion — and make each surviving manual check (common.md's reach test) its criterion's box, with a `how:` line. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
 
 ## Tests first, red first
 
@@ -18,13 +18,13 @@ Common.md's Lean code section binds. Yours alone: no waste in how you work — d
 
 Finish with `node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" prove`, run with the tool's maximum timeout. If it cannot finish inside one call, start it in the background and poll it from this turn until it ends — never end a turn with it running. Exit 0 → report. Exit 1 → fix and run it again. Exit 3 → the tree is unverified: stop, and your final message is `blocked: <FEATURE-ID> — gate '<name>' unverified: <the reason prove printed>`.
 
-## Do not commit, archive, or touch the roadmap
+## Do not commit or touch the roadmap
 
 An independent review runs after you.
 
 ## Skip, never guess
 
-A real product decision the plan does not make, a missing contract, gates you cannot get green honestly → leave the tree as it is, stop, and report `blocked: <FEATURE-ID> — <spec gap>` phrased as what the plan failed to decide — the caller sets the row, not you. Do not `git restore`: if `gate.js state` reports the tree proven green, that work is finished and belongs committed.
+A question the plan leaves open → decide it as its Goal implies and report `decided: <question> → <ruling>`; never decide to delete data, push, merge, or touch unnamed files. A missing contract, gates you cannot get green honestly → leave the tree as it is, stop, report `blocked: <FEATURE-ID> — <spec gap>`; the caller sets the row. Do not `git restore`: if `gate.js state` reports the tree proven green, that work is finished and belongs committed.
 
 ## No scope creep
 
@@ -39,7 +39,7 @@ While expanding an easy contract, stop before writing any code and return `escal
 3. it must create public surface not named in `Provides:`;
 4. any acceptance criterion is `[human]`.
 
-Never lower a tier yourself, and never reach for `blocked:` instead — `blocked` holds back every dependent feature, while an escalation only means the label was optimistic. On a forced-easy run — only when you were told so at dispatch — there is no `escalate:`: build it anyway and put `would-escalate: <trigger>` in your trailing lines, never optional, never softened. It never edits the roadmap's `Tier` cell; only a real `escalate:`, handled by the orchestrator, does.
+Never lower a tier yourself, and never reach for `blocked:` instead — `blocked` holds back every dependent feature, while an escalation only means the label was optimistic. On a forced-easy run — only when you were told so at dispatch — there is no `escalate:`: build it anyway and name the trigger in your trailing lines as `forced past: <trigger>`, never optional, never softened. It never edits the roadmap's `Tier` cell; only a real `escalate:`, handled by the orchestrator, does.
 
 ## If you were dispatched as a fixer
 
@@ -50,10 +50,9 @@ A **trim pass** gets only `test` findings, on a green tree, and no review follow
 ## Final message
 
 Exactly one of:
-`ready: <FEATURE-ID> — <files touched> — <red→green test names, or how criteria were proven>`
-`needs-human: <FEATURE-ID> — <files touched> — <criteria proven> — pending: <the check, one line>`
+`ready: <FEATURE-ID> — <files touched> — <red→green test names, or how criteria were proven>[ — pending human: <n>]`
 `blocked: <FEATURE-ID> — <spec gap>`
 `escalate: <FEATURE-ID> — <which trigger, one line>` (easy path only, never on a forced-easy run)
 `fixed: <FEATURE-ID> — <what was fixed / left>` (fixer only)
 
-followed by at most 3 short lines. Nothing else — only this summary survives.
+then your `decided:` lines and at most 3 short lines. Nothing else — only this summary survives.

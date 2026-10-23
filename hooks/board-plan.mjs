@@ -154,8 +154,9 @@ export function parsePlan(text) {
   const proofLines = section(lines, 'Evidence');
   const listed = items(proofLines ?? []);
   const evidence = [...listed.map(evidenceOf).filter(Boolean), ...tableEvidence(proofLines ?? [])];
-  const review = lines.map((line) => line.replace(/\*\*/g, '').trim()).find((line) => /^review:\s/.test(line)) || null;
-  const gateItem = listed.find((item) => /^Gates?:/.test(item));
+  // The review line, flush (older closers) or as an Evidence item (`- review: …`, 0.22).
+  const review = lines.map((line) => line.replace(/\*\*/g, '').trim().replace(/^-\s+(?=review:)/, '')).find((line) => /^review:\s/.test(line)) || null;
+  const gateItem = listed.find((item) => /^Gates?:/i.test(item));
   // Open findings: each line of a fenced block, or each `- ` item; prose and trailers are not findings.
   const findings = [];
   let fenced = false;
@@ -171,7 +172,7 @@ export function parsePlan(text) {
     goal,
     evidence,
     review,
-    gate: gateItem ? gateItem.replace(/^Gates?:\s*/, '').trim() : null,
+    gate: gateItem ? gateItem.replace(/^Gates?:\s*/i, '').trim() : null,
     findings,
     // Whether the Evidence proves criterion by criterion: false when it is prose, null when
     // there is no Evidence yet.

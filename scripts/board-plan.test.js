@@ -137,6 +137,8 @@ const { pathToFileURL } = require('url');
     '## Evidence',
     '- 1: tests/test_page.py',
     '- 2, 3: by hand',
+    '- gates: test ✓ · lint ✓',
+    '- review: clean · rounds: 1 · open: 0 block, 0 note, 0 lean · trimmed: 0',
     '',
   ].join('\n');
   assert.deepStrictEqual(p.parseChecks(boxed), [
@@ -150,6 +152,8 @@ const { pathToFileURL } = require('url');
   ], 'a box and its how: line are not part of the criterion');
   assert.strictEqual(p.proofFor(p.parsePlan(boxed), 1), 'tests/test_page.py', 'Evidence by criterion number');
   assert.strictEqual(p.proofFor(p.parsePlan(boxed), 3), 'by hand');
+  assert.deepStrictEqual([p.parsePlan(boxed).gate, p.parsePlan(boxed).review],
+    ['test ✓ · lint ✓', 'review: clean · rounds: 1 · open: 0 block, 0 note, 0 lean · trimmed: 0'], 'the 0.22 closer writes gates and review as Evidence items');
   assert.deepStrictEqual(p.parseChecks('- Acceptance:\n  - [auto] x\n'), []);
 
   // parsesPlanDecisions: a prep ruling has no box; the agent's has one, ticked once the user confirms.

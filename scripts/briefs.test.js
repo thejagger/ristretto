@@ -43,6 +43,7 @@ const FINGERPRINTS = [
   'about 10 web searches',   // the research budget
   'Add only.',               // agents never edit a domain entry
   'more than three files',   // deleted ratchet trigger — must appear NOWHERE
+  'planned · in-progress · blocked · done', // the four statuses, defined once
 ];
 const FILES = [...COMMANDS, ...BRIEFS, 'reference/config.md'];
 for (const fp of FINGERPRINTS) {
@@ -53,6 +54,15 @@ for (const fp of FINGERPRINTS) {
     assert.strictEqual(hits.length, 1, `"${fp}" must live in exactly one file — found in: ${hits.join(', ') || '(nowhere)'}`);
   }
 }
+
+// 2b. The 0.22 layout: one fact, one place. Nothing tells an agent to read or write what that
+//     layout removed: the checks file, the archive, the two extra statuses, the dropped columns
+//     and fields, and the Evidence lines a decision used to hide in.
+const STALE = ['manual-checks.md', 'plans/archived', 'needs-human', 'needs-review', 'Files touched',
+               'Manual-Checks:', 'decision taken:', 'would-escalate:'];
+const LAYOUT_FILES = [...BRIEFS];
+const stale = LAYOUT_FILES.flatMap((f) => STALE.filter((p) => read(f).includes(p)).map((p) => `${f}: ${p}`));
+assert.deepStrictEqual(stale, [], `the 0.22 layout removed these, still named in:\n  ${stale.join('\n  ')}`);
 
 // 3. A command hands out a path, it does not paste a brief. The regression this whole cleanup
 //    exists to prevent is a brief creeping back inline, so bound the file instead of trusting it.
@@ -90,8 +100,9 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
 // re-derived wrong, so it is spelled out rather than hinted at — raise this only for another like it.
 // ~590 after the domain rule: a confirmed domain entry binds like a house rule, and every role
 // has to know it — raise this only for another rule every role needs. 614 after the conflict
-// rule (2026-10-13), written short to stay under it.
-assert.ok(words(common) < 615, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// rule (2026-10-13), written short to stay under it. 695 with the 0.22 statuses and boxes
+// (2026-10-23): every role reads and writes the plan's two kinds of box — +81, written short.
+assert.ok(words(common) < 696, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
 const impl = read('briefs/implementer.md');
@@ -107,8 +118,9 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 //    target moved by its 16 words (it also forbids editing a confirmed entry) and no more.
 //    1316 when the conflict rule landed (2026-10-13): every role notes a contradicted fact by
 //    script and stops on a binding one in conflict — 28 words, so the target moved by 28.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1348,
-  'an implementer dispatch must cost well under 1901 words — 1348 is the target, not the baseline');
+//    1429 with the 0.22 statuses and boxes (2026-10-23): +81 in common.md, so the target moved by 81.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1429,
+  'an implementer dispatch must cost well under 1901 words — 1429 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
@@ -119,8 +131,9 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1348,
 // reviewer's `block` bucket (building on a confirmed entry in conflict).
 // The closer once more with one commit per feature (2026-10-13): +50 in its own brief — the
 // roadmap row and archived plan ride in the feature commit, and a check re-run only adds. A duty.
-const CAPS = { 'briefs/planner.md': [450, 993], 'briefs/reviewer.md': [450, 1025], 'briefs/closer.md': [400, 943],
-               'briefs/researcher.md': [700, 1290] };
+// And with the 0.22 statuses and boxes (2026-10-23): +81 in common.md for every role, nothing else.
+const CAPS = { 'briefs/planner.md': [450, 1074], 'briefs/reviewer.md': [450, 1106], 'briefs/closer.md': [400, 1024],
+               'briefs/researcher.md': [700, 1371] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);

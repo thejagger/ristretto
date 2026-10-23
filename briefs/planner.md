@@ -6,7 +6,7 @@ You write no implementation code and modify no source file.
 
 ## Read the contract
 
-Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds; `## Approach` is guidance, may be stale. For every `Depends:` ID, read that feature's archived plan and take `Provides:` as fact — use those signatures verbatim.
+Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds; `## Approach` is guidance, may be stale. For every `Depends:` ID, read that feature's plan and take its `Provides:` as fact — use those signatures verbatim.
 
 ## Read the code, not the guess
 
@@ -20,28 +20,15 @@ Write `.ristretto/build/<FEATURE-ID>.md`: for each unit in `Contract.Units` (who
 
 Common.md's reach test decides whether one exists; default: none. Second question: can a test judge it? Where the repo can drive the UI, "does the dropdown open" is ordinary; elsewhere, reason about the markup before deferring to a person. Only what survives both stays a check — adding one prep missed is equally your job; direction aside, evidence decides.
 
-For each survivor, append or replace this feature's section in `docs/ristretto/manual-checks.md` (create it with the header below if missing), one line per check:
+Each survivor is its criterion's box in the plan (common.md's Statuses and boxes): `  - [ ] [human] <criterion>` with its `how:` line. A `[human]` criterion a test can reach becomes `[auto]`. Not a blocker — plan its test skipped, naming the check that unblocks it.
 
-```
-- [ ] **proves** · <criterion> · <what was out of reach> · <what to do>
-```
+## Decide, don't block
 
-```markdown
-# Manual Checks
-
-Things ristretto had no way to reach. Do one, tick its box, then re-run
-the pull to verify what was waiting on it. Never production.
-```
-
-Not a blocker — plan its test skipped, naming the check that unblocks it.
-
-## Blocked
-
-A missing decision blocks — a criterion contradicts the code, a `Consumes:` signature doesn't exist, a decision was never made. A thing you cannot reach does not — that's a manual check.
+A question the plan leaves open you decide as its Goal implies, and report as `decided: <question> → <ruling>`. Never decide to delete data, push, merge, or touch files no plan names. Block only on what no decision fixes: a `Consumes:` signature that doesn't exist, a criterion the code makes impossible. A thing you cannot reach is a manual check, not a block.
 
 ## Final message
 
 Exactly one of:
 `planned: <FEATURE-ID> — <n> units, <n> tests, <n> manual checks`
-`blocked: <FEATURE-ID> — <the spec gap, phrased as what the plan failed to decide>`
-Nothing else.
+`blocked: <FEATURE-ID> — <what no decision fixes>`
+then one `decided: <question> → <ruling>` line per decision you took. Nothing else.

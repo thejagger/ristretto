@@ -6,6 +6,10 @@ Rules more than one role applies. Every role reads this file — it is a referen
 
 Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the files you touch, before you start — they bind you even where the surrounding code doesn't demonstrate them yet. Never write to those files. Confirmed entries in `docs/ristretto/domain/` bind too, and no agent edits them; unconfirmed ones are context, never binding. Contrary evidence goes via `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what>" "<source>" "<role> <ID>"`. Work on a confirmed entry marked `conflict —` stops: `blocked: domain/<file>: <title> is in conflict`.
 
+## Statuses and boxes
+
+A roadmap status is `planned · in-progress · blocked · done`, nothing else. Every other fact lives in `docs/ristretto/plans/<FEATURE-ID>.md`, which never moves, and two boxes live only there: a manual check is its criterion, `- [ ] [human] <criterion>` with a `how:` line under it; a decision taken during a build is `- [ ] <question> → <ruling>` under `Decisions:`. Prep's rulings carry no box. `[x]` is done or confirmed; open boxes never change `done`.
+
 ## Manual checks — the reach test
 
 - **The reach test**: a manual check exists only where this repo gives you no path to a criterion's subject — not merely because the subject is a database, a screen, or an external service. Look for a path first: a compose file, a seed script, a driver already in the dev dependencies.
@@ -39,4 +43,4 @@ The suite is a shared cost, paid again at every stop, by every feature, for the 
 
 - **How, not that**: evidence is how each criterion was proven — red→green test names, command output, measurements.
 - **"Implemented successfully" is not evidence.**
-- **A criterion waiting on a manual check is `pending human: <the check>`**, never proven.
+- **A criterion waiting on a manual check is `pending human`**, never proven; its box stays open.

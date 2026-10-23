@@ -4,28 +4,28 @@ Read `briefs/common.md` first — it binds you before anything below does.
 
 ## Commit — last, once
 
-Close the plan first; then one commit holds code, archived plan and roadmap row. Stage only what you touched — never `git add -A`. `feat(<FEATURE-ID>): <summary>` (the ID finds it later), plain ASCII, or `git commit -F <path>` — never a heredoc. Never push, force, reset, or open a PR. Never repair a shell-mangled subject with `--amend` — report it instead. `--amend`'s one legal use: the message of the commit you just made, nothing committed since, disclosed.
-
-A check re-run only adds `checked: <date> — <checks> ticked` to `## Evidence`, sets the status, commits `docs(<FEATURE-ID>): manual checks passed`.
+Close the plan first; then one commit holds code, plan and roadmap row. Stage only what you touched — never `git add -A`. `feat(<FEATURE-ID>): <summary>` (the ID finds it later), plain ASCII, or `git commit -F <path>` — never a heredoc. Never push, force, reset, or open a PR. Never repair a shell-mangled subject with `--amend` — report it instead. `--amend`'s one legal use: the message of the commit you just made, nothing committed since, disclosed.
 
 ## Close the plan
 
-Correct `Provides:` to what was built — a drifted `Provides:` poisons every dependent feature, since the archived plan is what the next planner reads as fact. Append `## Evidence`: proof, gate summary, and these two lines verbatim:
+The plan stays where it is. Correct `Provides:` to what was built — a drifted `Provides:` poisons every dependent feature, since the plan is what the next planner reads as fact.
+
+Every decision you were handed (`decided: <question> → <ruling>`) becomes a box under `- Decisions:`, `  - [ ] <question> → <ruling>`, creating the field at the end of `## Contract` when it is missing. A `[human]` criterion stays an open box. Neither is yours to tick.
+
+Append `## Evidence`, by criterion number — never restate a criterion:
 
 ```
-review: <clean | notes-only | resolved | needs-review> · rounds: <n> · open: <b> block, <n> note, <l> lean · trimmed: <t>
-tier: <normal | easy | easy (forced)>[ · escalated from easy: <trigger>]
+- <n>: <the tests or measurement that prove criterion n>
+- gates: <gate summary>
+- review: <clean | notes-only | resolved | findings open> · rounds: <n> · open: <b> block, <n> note, <l> lean · trimmed: <t>
+- tier: <normal | easy | easy (forced)>[ · escalated from easy: <trigger>]
 ```
 
-Record every `would-escalate:` line verbatim, and any `decision taken:` line you were given unchanged, in `## Evidence`. Flip the roadmap `Tier` to `normal` on a real escalation (`escalated from easy`) — never otherwise.
+A criterion waiting on its manual check is `- <n>: pending human`. Told findings remain open → copy them verbatim under `## Open findings`. Flip the roadmap `Tier` to `normal` on a real escalation (`escalated from easy`) — never otherwise.
 
-Choose the status: every criterion proven → `done`. Any criterion `pending human: <check>` → `needs-human`, never recorded as proven. Told `needs-review` → that status, with the open findings copied verbatim under `## Open findings`. `needs-human` and `needs-review` both still satisfy `Depends:` — the `Provides:` are already in the code.
-
-Archive to `plans/archived/`; set roadmap row: status, date, files, `Commit` `—` (no commit holds its own hash); delete `.ristretto/build/<FEATURE-ID>.md`.
+Set the roadmap row's status to `done` and change no other cell; open boxes and open findings never change it. Delete `.ristretto/build/<FEATURE-ID>.md`.
 
 ## Final message
 
-Exactly one:
-`brewed: <FEATURE-ID> <hash> — <one-line summary>`
-`brewed-needs-human: <FEATURE-ID> <hash> — pending: <check>`
-`brewed-needs-review: <FEATURE-ID> <hash> — <n> finding(s) open — <the sharpest one, one line>`
+Exactly one line:
+`brewed: <FEATURE-ID> <hash> — <n> check(s), <m> decision(s) open`

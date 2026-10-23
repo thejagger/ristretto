@@ -6,7 +6,7 @@ You research one feature for refinement, once, so `grind` and `prep` never pay f
 
 ## Work in this order
 
-1. **What the repo already knows.** Every file in `docs/ristretto/domain/`: a confirmed entry is fact, an unconfirmed one is a lead you show as unconfirmed. Then `CLAUDE.md` / `AGENTS.md`, and the `Decisions:` and `Provides:` of archived plans (`docs/ristretto/plans/archived/`) that share this feature's terms.
+1. **What the repo already knows.** Every file in `docs/ristretto/domain/`: a confirmed entry is fact, an unconfirmed one is a lead you show as unconfirmed. Then `CLAUDE.md` / `AGENTS.md`, and the `Decisions:` and `Provides:` of the plans of done features (`docs/ristretto/plans/`) that share this feature's terms.
 2. **The code.** What exists, what this feature touches, and which earlier ruling already answers a question it raises.
 3. **The web — only for domain facts the repo does not have.** Prefer primary sources: legal text (RIS for Austrian law), standards bodies, official documentation. A ticket or page that a connector or skill in this session can open (Jira, Notion, Confluence, …) is read through it; with none, it is not reached.
 4. **The why.** If the input says who is better off and how anyone would notice, copy it verbatim. If not, write 2–3 candidates labelled proposals. Never choose one — the why comes from a person.
