@@ -254,6 +254,9 @@ const baselinePath = path.join(projectDir, '.ristretto', 'baseline.json');
 const orchestratingPath = path.join(projectDir, '.ristretto', 'orchestrating');
 // The full-suite verdict the board reads; it outlives the run, so disarm leaves it.
 const suitePath = path.join(projectDir, '.ristretto', 'suite.json');
+// Untracked files already there when the run armed, path → content hash. They are the user's —
+// a dump waiting on a privacy scan, a scratch note — not a dead subagent's leftovers.
+const untrackedPath = path.join(projectDir, '.ristretto', 'untracked-before.json');
 
 // Files ristretto reads and never writes. A hand-curated memory file that an agent appends to
 // stops being worth reading, so every brief in every command says so — and prose held right up
@@ -587,16 +590,49 @@ function recordSuite(verdict, gates, failing, extra = {}) {
   } catch { /* best-effort */ }
 }
 
-// Paths of every dirty or untracked file, as git reports them.
-function dirtyPaths() {
+// Every dirty or untracked file as git reports it: { code, path }, code being the two status
+// letters (`??` for untracked).
+function statusEntries() {
   const status = git('status --porcelain -uall');
   if (status === null) return null;
   return status.split('\n').filter(Boolean).map((line) => {
     let p = line.slice(3);
     if (p.includes(' -> ')) p = p.split(' -> ')[1];
     if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1).replace(/\\(.)/g, '$1');
-    return p;
+    return { code: line.slice(0, 2), path: p };
   });
+}
+
+// Paths of every dirty or untracked file, as git reports them.
+function dirtyPaths() {
+  const entries = statusEntries();
+  return entries === null ? null : entries.map((e) => e.path);
+}
+
+function contentHash(p) {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(projectDir, p))).digest('hex'); } catch { return null; }
+}
+
+// The untracked files that are the user's, not the run's: never dirty, never scoped into a gate,
+// never deleted. Before arming that is every untracked file — arm snapshots exactly those. Once
+// armed, only those still byte-identical to the snapshot: one a subagent rewrote is its work now.
+// Armed without a snapshot (an older install armed it) → none, the old strict reading.
+function theirPaths(entries) {
+  let before = null;
+  try { before = JSON.parse(fs.readFileSync(untrackedPath, 'utf8')); } catch { /* no snapshot */ }
+  const armed = fs.existsSync(markerPath) || fs.existsSync(orchestratingPath);
+  if (armed && (before === null || typeof before !== 'object')) return new Set();
+  return new Set(entries
+    .filter((e) => e.code === '??' && (!armed || before[e.path] === contentHash(e.path)))
+    .map((e) => e.path));
+}
+
+// What this run changed: every dirty path but the user's untracked files.
+function runPaths() {
+  const entries = statusEntries();
+  if (entries === null) return null;
+  const theirs = theirPaths(entries);
+  return entries.map((e) => e.path).filter((p) => !theirs.has(p));
 }
 
 // Fingerprint of the working tree: HEAD + status + content of every dirty/untracked
@@ -619,7 +655,7 @@ function treeFingerprint() {
 
 // Every changed file that still exists on disk, repo-relative.
 function changedFiles() {
-  return (dirtyPaths() || []).filter((p) => {
+  return (runPaths() || []).filter((p) => {
     try { return fs.statSync(path.join(projectDir, p)).isFile(); } catch { return false; }
   });
 }
@@ -1141,7 +1177,7 @@ function auditStaticConfig() {
   // up later as a loop that unexpectedly drags. Reuses `matchesAny`, the same matcher `testChanged`
   // routing uses at runtime, rather than a second glob implementation that could drift from it.
   if (Array.isArray(gates.testChanged)) {
-    const paths = dirtyPaths() || [];
+    const paths = runPaths() || [];
     const uncovered = paths.filter((p) => !gates.testChanged.some((entry) => entry && matchesAny(p, entry.match)));
     if (uncovered.length) {
       console.error(`ristretto: ${uncovered.length} changed path(s) match no "testChanged" route and fall back to the full suite:`);
@@ -1373,7 +1409,9 @@ async function main() {
       console.log(`${label}: ${status}, last activity ${age}`);
     }
 
-    const paths = dirtyPaths();
+    const status = statusEntries();
+    const theirs = status === null ? new Set() : theirPaths(status);
+    const paths = status === null ? null : status.map((e) => e.path).filter((p) => !theirs.has(p));
     if (paths === null) {
       console.log('tree: not a git repo, or git is unavailable');
     } else if (paths.length === 0) {
@@ -1386,6 +1424,12 @@ async function main() {
       console.log(`tree: ${paths.length} changed path(s) — ${proven ? 'PROVEN GREEN, commit it rather than discarding it' : 'unproven'}`);
       for (const p of paths.slice(0, 20)) console.log(`  ${p}`);
       if (paths.length > 20) console.log(`  … and ${paths.length - 20} more`);
+    }
+    // Named, never counted as dirty: a plan may want a file to sit untracked until something
+    // vets it, and one such file used to stop a whole batch before it started.
+    if (theirs.size) {
+      const list = [...theirs];
+      console.log(`left alone: ${list.length} untracked file(s) that predate the run — ${list.slice(0, 10).join(', ')}${list.length > 10 ? ', …' : ''}`);
     }
 
     let builds = [];
@@ -1401,7 +1445,7 @@ async function main() {
     // no constant naming it (no single file owns that directory), so it stays a literal.
     const known = new Set([
       markerPath, orchestratingPath, retriesPath, greenPath, stalledPath,
-      toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath,
+      toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
     ].map((p) => path.basename(p)));
     known.add('build');
     for (const rel of allReportPaths()) known.add(path.basename(rel));
@@ -1433,6 +1477,14 @@ async function main() {
     // write failure here is loud (one line naming the path and why) and exits 1 instead.
     try {
       fs.mkdirSync(path.join(projectDir, '.ristretto', 'build'), { recursive: true });
+      // Before the markers, while every untracked file still reads as the user's. Kept on a
+      // re-arm or a takeover: by then the tree holds the run's own files too.
+      if (!fs.existsSync(untrackedPath)) {
+        const entries = statusEntries() || [];
+        const snapshot = {};
+        for (const e of entries) if (e.code === '??') snapshot[e.path] = contentHash(e.path);
+        fs.writeFileSync(untrackedPath, JSON.stringify(snapshot));
+      }
       fs.writeFileSync(markerPath, me);
       if (ARG === 'orchestrator') fs.writeFileSync(orchestratingPath, me);
     } catch (e) {
@@ -1445,7 +1497,7 @@ async function main() {
   if (MODE === 'disarm') {
     // Everything a run creates, in one place. `build/` is deliberately absent: a plan that was
     // paid for and never implemented outlives the run, and its closer deletes it.
-    for (const p of [markerPath, orchestratingPath, retriesPath, stalledPath]) {
+    for (const p of [markerPath, orchestratingPath, retriesPath, stalledPath, untrackedPath]) {
       try { fs.unlinkSync(p); } catch { /* never existed */ }
     }
     process.exit(0);

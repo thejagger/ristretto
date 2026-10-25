@@ -13,7 +13,7 @@ Target: $ARGUMENTS  (a feature ID; add `nocommit` to skip committing)
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → stop, report a stale install. Exit 2 → cannot tell, stop.
+Exit 0 → continue. Exit 1 → switch to step 5's branch first, never the default; then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → stop, report a stale install. Exit 2 → cannot tell, stop.
 
 ## 1. Resolve the target
 
@@ -29,7 +29,7 @@ Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` is binding — criter
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. Another session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. PROVEN GREEN → finished work, tell the user to commit it. `unrecognised:` is informational only.
+Read-only. Another session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. PROVEN GREEN → finished work, tell the user to commit it. `unrecognised:` and `left alone:` (the user's untracked files — never touch them) are informational only.
 
 ## 4. Complete the gates config
 
@@ -41,7 +41,7 @@ Read `.ristretto.json` — create it, or add whatever key the pre-flight names m
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" arm
 ```
 
-Exit 1 only if it cannot write its marker — stop and report. Create and switch to `feature/<FEATURE-ID>`, or reuse it if already there. Never push, never set an upstream.
+Exit 1 only if it cannot write its marker — stop and report. Create and switch to `feature/<FEATURE-ID>`, or reuse it. Never push or set an upstream.
 
 ## 6. Implement — no planner
 
@@ -73,7 +73,7 @@ Skip only if trivial (< 15 lines, no new logic); when in doubt, review. Dispatch
 
 ## 9. Close and disarm
 
-Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself. `nocommit` → skip the commit, say the changes are left uncommitted; everything else — `Provides:`, `## Evidence`, archiving, the roadmap row — still applies. Always — here and on every stop above:
+Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself. `nocommit` → skip the commit, say they're left uncommitted; everything else — `Provides:`, `## Evidence`, the roadmap row — still applies. Always — here and on every stop above:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" disarm

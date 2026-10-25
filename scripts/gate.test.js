@@ -1559,13 +1559,17 @@ assert.ok(/silence|quiet|--no-progress|-q\b/.test(r.stderr), 'a silencing flag m
 
 // 146. Paths matching no route fall back to the full suite. That is safe but slow, and it is
 //      invisible — the pre-flight is where it costs nothing to hear about it. Needs a real git
-//      repo: the check reads dirtyPaths(), which is null (and so reports nothing) outside one.
+//      repo: the check reads runPaths(), which is null (and so reports nothing) outside one. An
+//      untracked file there before arming is the user's and no gate ever sees it, so only the
+//      tracked edit is a gap.
 dir = gitTmpRepo(JSON.stringify({
   gates: { test: PASS, testChanged: [{ name: 'be', match: ['backend/**'], cmd: PASS }] },
 }));
-fs.writeFileSync(path.join(dir, 'frontend.txt'), 'untracked, and matches no route');
+fs.writeFileSync(path.join(dir, 'src.txt'), 'edited, and matches no route');
+fs.writeFileSync(path.join(dir, 'dump.sql'), 'untracked, the user\'s');
 r = gate(dir, 'verify');
 assert.ok(/route|uncovered|falls back/i.test(r.stderr), 'route gaps must be reported at pre-flight — got: ' + r.stderr.slice(0, 400));
+assert.ok(r.stderr.includes('src.txt') && !r.stderr.includes('dump.sql'), 'only the run\'s paths are gaps — got: ' + r.stderr.slice(0, 400));
 
 // 147. The three static checks (formatPaths, silencing flags, route gaps) are pre-flight advice,
 //      not hook noise — the amendment the controller's ruling restored after the "one shared
@@ -1673,5 +1677,59 @@ assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the refusal must name the fa
   s = suite(dir);
   assert.deepStrictEqual([s.verdict, s.head, s.tree], ['green', null, null]);
 }
+
+// 150. An untracked file that predates the run is the user's, not a dead subagent's: a plan may
+//      want a dump to sit untracked until its privacy scan has run, and one such file used to
+//      stop a whole brew at pre-flight. Before arming, `state` names it and calls the tree clean.
+dir = gitTmpRepo(JSON.stringify({ gates: { test: FULL, testChanged: ARGS } }));
+fs.writeFileSync(path.join(dir, 'dump.sql'), 'schema');
+r = gate(dir, 'state');
+assert.ok(/tree: clean/.test(r.stdout), 'a pre-existing untracked file must not make the tree dirty — got: ' + r.stdout);
+assert.ok(/left alone: 1 untracked file\(s\).*dump\.sql/.test(r.stdout), 'it must still be named — got: ' + r.stdout);
+
+// 151. A tracked change is still dirty before arming — only untracked files are presumed the user's.
+fs.writeFileSync(path.join(dir, 'src.txt'), 'edited');
+r = gate(dir, 'state');
+assert.ok(/tree: 1 changed path\(s\)/.test(r.stdout) && /\n  src\.txt/.test(r.stdout), 'a tracked edit must stay dirty — got: ' + r.stdout);
+spawnSync('git', ['checkout', '--', 'src.txt'], { cwd: dir });
+
+// 152. `arm` snapshots it; once armed, a file created after the snapshot is the run's work and
+//      dirty, while the snapshotted one stays left alone — and out of every scoped gate.
+r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' }, 'orchestrator');
+assert.strictEqual(r.status, 0);
+assert.ok(fs.existsSync(path.join(dir, '.ristretto', 'untracked-before.json')), 'arm must snapshot the untracked files');
+fs.writeFileSync(path.join(dir, 'half.txt'), 'a subagent died here');
+r = gate(dir, 'state');
+assert.ok(/tree: 1 changed path\(s\)/.test(r.stdout) && /\n  half\.txt/.test(r.stdout), 'a file born after arming must be dirty — got: ' + r.stdout);
+assert.ok(/left alone: 1 .*dump\.sql/.test(r.stdout), 'the snapshotted file must stay left alone — got: ' + r.stdout);
+assert.ok(!/unrecognised/.test(r.stdout), 'the snapshot is a file gate.js owns — got: ' + r.stdout);
+assert.strictEqual(gate(dir, 'full', JSON.stringify({ session_id: 'sess-aaa' }), {}, 'subagent').status, 0);
+args = fs.readFileSync(path.join(dir, 'args'), 'utf8').trim();
+assert.ok(args.includes('half.txt'), 'the run\'s own file must reach the scoped command');
+assert.ok(!args.includes('dump.sql'), 'the user\'s file must stay out of the scoped command — got: ' + args);
+
+// 153. A re-arm keeps the first snapshot: by then the tree holds the run's files too.
+gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' });
+assert.ok(!/half\.txt/.test(fs.readFileSync(path.join(dir, '.ristretto', 'untracked-before.json'), 'utf8')),
+  're-arming must not absorb the run\'s own files into the snapshot');
+
+// 154. A snapshotted file a subagent rewrote is the run's work now.
+fs.writeFileSync(path.join(dir, 'dump.sql'), 'schema, edited by the run');
+r = gate(dir, 'state');
+assert.ok(/\n  dump\.sql/.test(r.stdout), 'a rewritten file must count as changed — got: ' + r.stdout);
+assert.ok(!/left alone/.test(r.stdout), 'nothing is left alone once it changed — got: ' + r.stdout);
+
+// 155. `disarm` drops the snapshot with the markers.
+gate(dir, 'disarm');
+assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'untracked-before.json')), 'disarm must remove the snapshot');
+
+// 156. Armed without a snapshot (an older install armed it) keeps the strict reading: every
+//      untracked file is dirty, because nothing says which were there first.
+dir = gitTmpRepo(JSON.stringify({ gates: { test: PASS } }));
+fs.writeFileSync(path.join(dir, 'dump.sql'), 'schema');
+arm(dir);
+r = gate(dir, 'state');
+assert.ok(/tree: 1 changed path\(s\)/.test(r.stdout) && !/left alone/.test(r.stdout),
+  'armed with no snapshot, an untracked file must stay dirty — got: ' + r.stdout);
 
 console.log('gate.test.js: all checks passed');

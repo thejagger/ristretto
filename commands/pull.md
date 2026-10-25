@@ -13,7 +13,7 @@ Target: $ARGUMENTS  (a feature ID, or `next` = the top `planned` row in the road
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say that the project was migrated; resolve the target (step 1) off the migrated roadmap, then create and switch to step 6's branch (`feature/<FEATURE-ID>`, or reuse it) and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.22` — never on the default branch. If step 1 stops instead, leave the migration uncommitted and say so. Then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Resolve the target — trust the roadmap
 
@@ -33,7 +33,7 @@ Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` is binding — accept
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. A marker armed by another live session, a dirty tree, or a leftover build plan → show what it printed and stop. A tree it marks PROVEN GREEN is finished work, not a problem — tell the user to commit it, never discard it. `unrecognised: <n> file(s)` is informational only, never a reason to stop.
+Read-only. A marker armed by another live session, a dirty tree, or a leftover build plan → show what it printed and stop. A tree it marks PROVEN GREEN is finished work, not a problem — tell the user to commit it, never discard it. `unrecognised: <n> file(s)` is informational only, never a reason to stop. `left alone:` names untracked files that predate the run — the user's, never dirty: don't move, ignore, commit, or delete them.
 
 ## 4. Complete the gates config
 

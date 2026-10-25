@@ -27,7 +27,7 @@ Arguments: $ARGUMENTS  (add `easy` to force every feature through the easy path 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → switch to step 6's branch first, never the default; then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say so, commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`, continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Read the roadmap
 
@@ -49,7 +49,7 @@ Read `docs/ristretto/roadmap.md` — the one file you read yourself. Missing →
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard. `unrecognised: <n> file(s)` is informational only.
+Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard. `unrecognised: <n> file(s)` and `left alone:` (the user's untracked files — never touch them) are informational only.
 
 ## 3. Complete the gates config
 
@@ -127,7 +127,7 @@ While an eligible feature exists:
    > Record: review <clean | notes-only | resolved | findings open> · rounds <n> · open <b> block, <n> note, <l> lean · trimmed <t>; <open findings / decided: lines / escalated from easy:, as applicable>
    > Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it.
 7. **Record the result, print nothing else.** `☕ <FEATURE-ID> brewed (n/m)`, `🔧 <FEATURE-ID> brewed — <n> check(s), <m> decision(s) open (n/m)`, `👀 <FEATURE-ID> brewed — <count> finding(s) open (n/m)`, or `⛔ <FEATURE-ID> blocked — <reason> (n/m)`. `n` is features finished in any terminal state, up by one each line; `m` is every `planned` row when the loop started, fixed. **That line, a blocker, and the final report are the whole of what the main chat gets** — nothing about which subagent runs or which round.
-8. **Hygiene.** `git status --short` must be clean before the next feature starts — dirty means a subagent died mid-work; handle it via "When a subagent dies" below (`gate.js state` before any restore), then delete any leftover `.ristretto/build/<FEATURE-ID>.md` for a row that blocked.
+8. **Hygiene.** `gate.js state` must print `tree: clean` before the next feature starts — dirty means a subagent died mid-work; handle it via "When a subagent dies" below (`gate.js state` before any restore), then delete any leftover `.ristretto/build/<FEATURE-ID>.md` for a row that blocked.
 9. Next eligible feature.
 
 ## Models — always name one
@@ -138,10 +138,10 @@ Planner and reviewer: capable. Implementer: cheap on the normal path (a build pl
 
 Not the user. A killed, disconnected, or malformed-result subagent looks like an interrupt from where you sit — treat it as what you can verify: the subagent failed.
 
-1. `git status --short` — the only evidence of what it managed.
+1. `gate.js state` — its `tree:` line is the only evidence of what it managed.
 2. **Clean tree**, closer died → first `git log --oneline -1`: already names this feature's commit → it committed and only failed to report; record that result, move on. Otherwise (any role) → dispatch the same brief again, once, fresh context.
 3. **Dirty tree** → one fresh subagent, same brief, plus: reconcile the partial work a previous attempt left against the build plan, finish the feature, verify all of it as your own.
-4. **A second death ends it.** First `gate.js state` — PROVEN GREEN → closer commits it `done` with what is unresolved under `## Open findings`, never discard. Otherwise `git restore` the tracked files, delete the untracked ones it created, row `blocked` ("implementation aborted twice — no verifiable result"), next feature. Never a third attempt.
+4. **A second death ends it.** First `gate.js state` — PROVEN GREEN → closer commits it `done` with what is unresolved under `## Open findings`, never discard. Otherwise `git restore` the tracked files, delete the untracked ones under `tree:`, row `blocked` ("implementation aborted twice — no verifiable result"), next feature. Never a third attempt.
 
 Print `⛔ <FEATURE-ID> blocked — subagent died twice`. Deaths across *different* features name an environment problem in the report — diagnosing it isn't this run's job.
 
