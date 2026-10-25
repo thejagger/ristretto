@@ -8,7 +8,7 @@ Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the fil
 
 ## Statuses and boxes
 
-A roadmap status is `planned · in-progress · blocked · done`, nothing else. Every other fact lives in `docs/ristretto/plans/<FEATURE-ID>.md`, which never moves, and two boxes live only there: a manual check is its criterion, `- [ ] [human] <criterion>` with a `how:` line under it; a decision taken during a build is `- [ ] <question> → <ruling>` under `Decisions:`. Prep's rulings carry no box. `[x]` is done or confirmed; open boxes never change `done`.
+A roadmap status is `planned · in-progress · blocked · done`, nothing else. Every other fact lives in `docs/ristretto/plans/<FEATURE-ID>.md`, which never moves. Its one box is a manual check: `- [ ] [human] <criterion>` with a `how:` line under it. A user-visible choice made during a build is `- taken: <question> → <ruling>` under `Decisions:` — in force, no box; the user overrules it in chat. `[x]` is done; an open box never changes `done`.
 
 ## Manual checks — the reach test
 

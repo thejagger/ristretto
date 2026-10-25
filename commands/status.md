@@ -18,9 +18,9 @@ Filter (optional): $ARGUMENTS
    - `open` → everything not `done`
    - `done` → only `done`
    - `blocked` → only `blocked`, each with its recorded reason — this is the **refinement queue** after a `brew` run
-   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open decisions first, marked `⚠` — a question an agent answered on its own authority is the thing most worth a human's eye; then its open `[ ] [human]` boxes with their `how:` lines, and any open box under `## Manual checks (migrated)`; then its `## Open findings` other than `note` and `lean` items, as "open findings" — a note or a lean is recorded, never your turn. This is the **your-turn queue**: say "manual checks done" or "decisions ok" in the chat once they are.
+   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open `[ ] [human]` boxes with their `how:` lines, and any open box under `## Manual checks (migrated)`; then its `## Open findings` other than `note` and `lean` items, as "open findings" — a note or a lean is recorded, never your turn. This is the **your-turn queue**: say "manual checks done" in the chat once they are. Decisions taken during a build are not on it — they are in force, not a question.
    - `easy` → only rows whose `Tier` is `easy`
-   - a feature ID → just that row
+   - a feature ID → just that row, then its plan's `taken:` decisions as information, with `overrule one in chat: /ristretto:prep overrule <ID> — <what instead>`
    - a flight slug → only rows in that flight
 
    If any rows carry a `Flight`, group the output by flight (standalone `—` rows last under "Other"). Within a group, a feature still waiting on an unfinished `Depends:` prerequisite gets a small `⏳` marker so it's clear why `pull next` would skip it — only a prerequisite that is not `done` earns that marker. A `done` row whose plan still asks a person something gets a 🔧. Don't over-decorate — one marker, no analysis.

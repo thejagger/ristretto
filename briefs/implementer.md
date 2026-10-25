@@ -24,7 +24,7 @@ An independent review runs after you.
 
 ## Skip, never guess
 
-A question the plan leaves open → decide it as its Goal implies and report `decided: <question> → <ruling>`; never decide to delete data, push, merge, or touch unnamed files. A missing contract, gates you cannot get green honestly → leave the tree as it is, stop, report `blocked: <FEATURE-ID> — <spec gap>`; the caller sets the row. Do not `git restore`: if `gate.js state` reports the tree proven green, that work is finished and belongs committed.
+An open question → decide it as its Goal implies; report `decided: <question> → <ruling>` only if a user could see it. Never decide to delete data, push, merge, or touch unnamed files. A missing contract, gates you cannot get green honestly → leave the tree, stop, report `blocked: <FEATURE-ID> — <spec gap>`; the caller sets the row. Do not `git restore`: if `gate.js state` reports the tree proven green, that work is finished and belongs committed.
 
 ## No scope creep
 

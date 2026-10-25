@@ -29,7 +29,7 @@ Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` is binding — criter
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. Another session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. PROVEN GREEN → finished work, tell the user to commit it. `unrecognised:` and `left alone:` (the user's untracked files — never touch them) are informational only.
+Read-only. Another session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. PROVEN GREEN → finished work, tell the user to commit it. `unrecognised:` and `left alone:` (the user's untracked files — never touch) are informational only.
 
 ## 4. Complete the gates config
 
@@ -81,13 +81,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" disarm
 
 ## When done
 
-Summarize: what changed, criteria satisfied, review verdict, branch and commit (or uncommitted), plan closed, roadmap updated. Open boxes in the plan → list them:
+Summarize: what changed, criteria satisfied, review verdict, branch and commit (or uncommitted), plan closed, roadmap updated. Open checks, then taken decisions:
 
 ```
-🔧 1 check · 1 decision open — docs/ristretto/plans/<FEATURE-ID>.md
-   check · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
-   decision · which client? → the bare one
-   say "manual checks done" or "decisions ok" once they are
+🔧 1 check open — docs/ristretto/plans/<FEATURE-ID>.md
+   criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+   say "manual checks done" once it is
+📝 decided, in force:
+   which client? → the bare one
+   overrule one in chat: /ristretto:prep overrule <FEATURE-ID> — <what instead>
 ```
 
 Cup:

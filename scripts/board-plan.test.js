@@ -130,7 +130,8 @@ const { pathToFileURL } = require('url');
     '- Decisions:',
     '  - Styling -> one stylesheet.',
     '    - nested detail of that ruling',
-    '  - [ ] which client? → the bare one',
+    '  - taken: which client? → the bare one',
+    '  - [ ] cache it? → a day',
     '  - [x] pin resvg? → yes',
     '- Blockers: —',
     '',
@@ -164,11 +165,13 @@ const { pathToFileURL } = require('url');
     { done: true, text: 'Ran the redirect script.', how: '' },
   ]);
 
-  // parsesPlanDecisions: a prep ruling has no box; the agent's has one, ticked once the user confirms.
+  // parsesPlanDecisions: a prep ruling is plain; the agent's is `taken:`, in force. An early 0.22
+  // box, open or ticked, reads as taken too — there is nothing left to confirm.
   assert.deepStrictEqual(p.parseDecisions(boxed), [
-    { done: null, text: 'Styling -> one stylesheet. nested detail of that ruling' },
-    { done: false, text: 'which client? → the bare one' },
-    { done: true, text: 'pin resvg? → yes' },
+    { taken: false, text: 'Styling -> one stylesheet. nested detail of that ruling' },
+    { taken: true, text: 'which client? → the bare one' },
+    { taken: true, text: 'cache it? → a day' },
+    { taken: true, text: 'pin resvg? → yes' },
   ]);
   assert.deepStrictEqual(p.parseDecisions('- Decisions: —\n- Blockers: —\n'), []);
 

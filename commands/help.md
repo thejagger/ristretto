@@ -37,9 +37,13 @@ THE WORKFLOW
                                     each row names its spec gap. refine via
                                     prep (flips it back to planned), re-brew.
      /ristretto:status checks          your turn — built, committed and green, but
-                                    its plan still asks you: a manual check, a
-                                    decision an agent took, an open finding. say
-                                    "manual checks done" or "decisions ok" in chat.
+                                    its plan still asks you: a manual check or
+                                    an open finding. say "manual checks done"
+                                    in chat.
+     /ristretto:prep overrule <f> — <what>
+                                    a choice the build made that a user can
+                                    see is information, already in force.
+                                    disagree? say so — prep plans the change.
 
 THE REST OF THE MENU
   /ristretto:shot <feature>         the easy path against a plan prep already
@@ -107,12 +111,13 @@ HOUSE RULES
   • four statuses: planned · in-progress · blocked · done. "blocked" is the
     ONLY one that holds dependents back. a feature is done once built,
     committed and green; what it still asks a person — a manual check, a
-    decision an agent took, a finding still open after 3 rounds — is a box
-    or a section in its plan, never a status. dependent features brew on;
+    finding still open after 3 rounds — is a box or a section in its plan,
+    never a status. dependent features brew on;
     nothing stalls a flight behind one alter table or one open opinion.
   • brew never stops the pot — 15 features means 15 attempted. where it must
     settle a question the contract left open it takes the recommended reading
-    and says so loudly, rather than costing you the night.
+    and, when a user could see it, records it as taken — in force unless you
+    overrule it in chat. naming, structure and tests never reach you.
   • tiers — a feature is "normal" (plan, build, review, close) or "easy",
     which skips the planner only. easy is a claim about the contract being
     concrete, not about the ticket being small. any agent may escalate

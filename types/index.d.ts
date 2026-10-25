@@ -7,7 +7,7 @@ export type Board = {
   error: string | null
   plans: Record<string, BoardPlan>
   checks: Record<string, { done: boolean; text: string; how: string }[]>
-  decisions: Record<string, { done: boolean | null; text: string }[]>
+  decisions: Record<string, { taken: boolean; text: string }[]>
 }
 export type BoardPlan = {
   acceptance: { auto: boolean; text: string }[]

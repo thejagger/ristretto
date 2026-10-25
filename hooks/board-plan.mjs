@@ -208,8 +208,10 @@ export function parseChecks(text) {
   return out;
 }
 
-// The plan's Decisions: a prep ruling has no box (done null); a decision the agent took during a
-// build is `[ ]` until the user confirms it in chat, then `[x]`. Nested lines join their item.
+// The plan's Decisions: a prep ruling is a plain item (taken false); a user-visible choice the
+// agent made during a build is `taken: <question> → <ruling>` — in force, information, never a
+// question. An early 0.22 build wrote those as `[ ]`/`[x]` boxes; they read as taken too. Nested
+// lines join their item.
 export function parseDecisions(text) {
   const lines = text.split(/\r?\n/);
   const at = lines.findIndex((line) => /^-\s+Decisions:/.test(line));
@@ -221,8 +223,8 @@ export function parseDecisions(text) {
     const item = /^\s*-\s+(.*)$/.exec(lines[i]);
     if (item && (indent < 0 || depth === indent)) {
       indent = depth;
-      const box = /^\[([ xX])\]\s+/.exec(item[1]);
-      out.push({ done: box ? box[1] !== ' ' : null, text: (box ? item[1].slice(box[0].length) : item[1]).trim() });
+      const mark = /^(?:taken:|\[[ xX]\])\s+/.exec(item[1]);
+      out.push({ taken: !!mark, text: (mark ? item[1].slice(mark[0].length) : item[1]).trim() });
     } else if (out.length > 0) out[out.length - 1].text += ` ${(item ? item[1] : lines[i]).trim()}`;
   }
   return out;

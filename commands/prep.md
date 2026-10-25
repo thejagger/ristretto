@@ -1,13 +1,13 @@
 ---
 description: Plans features into the roadmap. No code.
-argument-hint: <feature IDs, pasted feature text, or short descriptions> [deep] | facts
+argument-hint: <feature IDs, pasted feature text, or short descriptions> [deep] | facts | overrule <ID> — <what instead>
 ---
 
 You are in the **PREP** phase of ristretto. You plan; you do **not** write or modify any implementation code. The code is written fresh later, by `pull`.
 
 Inputs to prep: $ARGUMENTS  (add `deep` to force roast mode on every input)
 
-If the only input is `facts`, skip to **Facts — `prep facts`, and the binding question** below and plan nothing.
+If the only input is `facts`, skip to **Facts — `prep facts`, and the binding question** below and plan nothing. An input starting `overrule` goes through **Overrule** below.
 
 Each input is one of: a **tracked feature** (has an ID like `BREW-224` — keep that ID exactly, it's how the work is tracked in git), a **raw idea** you want to build, or a **feature too big** to plan as one unit.
 
@@ -39,7 +39,7 @@ If `roadmap.md` is new, start it with exactly this — the roadmap holds order a
 Status values: `planned` · `in-progress` · `blocked` · `done`, and no others.
 Tier values: `easy` · `normal`. `normal` is the default and is what every feature got before 0.16.
 `blocked` is set by `pull`/`brew` when a feature can't proceed — the row carries a one-line reason. Re-prepping a `blocked` feature (refining its plan to resolve the reason) flips it back to `planned`.
-`done` means built, committed and green. Whatever is left for a person — an open manual check, a decision the agent took that waits for the user's word, open review findings — is a box or a section in the plan, never a status.
+`done` means built, committed and green. Whatever is left for a person — an open manual check, open review findings — is a box or a section in the plan, never a status. A decision an agent took during the build is a `taken:` line: information, in force, nothing for the person to do unless they overrule it.
 Flight: a short kebab slug grouping related features, or `—` for a standalone feature.
 
 ## Research — once per input, never per child
@@ -174,7 +174,7 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    - Parallel-with: <IDs, or —>
    ```
 
-   The title and the flight live in the roadmap row only, and the status too: nothing in the plan repeats them. A ruling prep settles is a plain `Decisions:` item, never a box — a box under `Decisions:` is a decision an agent took during a build, waiting for the user's word.
+   The title and the flight live in the roadmap row only, and the status too: nothing in the plan repeats them. A ruling prep settles is a plain `Decisions:` item, never a box. A `taken:` item is a user-visible choice an agent made during a build — in force, and only ever changed by an overrule.
 
 4. **Fill `Units:` whenever the feature needs more than one red→green cycle** — 2–6 lines, each an independently testable deliverable inside this one feature. Only a genuinely single-cycle feature gets `—`.
 
@@ -203,6 +203,10 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
    Note what follows: an `easy` label makes **your** job harder, not easier. With no planner to expand the contract into file paths and signatures, the contract itself has to carry them.
 
    **Write `easy` only with a reason**, as a `Tier: easy — <one clause>` line at the top of the plan's `## Approach`. `normal` is the default and needs no justification. The asymmetry is deliberate and is the same device the review's `note` findings use: the optimistic label is the cheap one, so it should cost a sentence. **When torn, write `normal`** — the ratchet only ever escalates, so an under-optimistic label costs nothing but a planner you would have run anyway, while an over-optimistic one costs an implementer stopping mid-flight.
+
+## Overrule — `prep overrule <ID> — <what instead>`
+
+The user disagrees with a `taken:` line in a built feature's plan, said in chat. Find the line it means; ask once which, only if two could fit. Then plan the change as a new input like any other — a feature `<ID>-<short slug>` with `Depends: <ID>`, research and roast as usual, its `Decisions:` carrying the user's ruling as a plain prep item (`Source: <user> overruled <ID>'s taken: <question> (<YYYY-MM-DD>)`). Append ` · overruled → <new ruling> (<new ID>)` to the original `taken:` line. Prep still writes no code: the change is built by `pull` or `brew` like any feature. A `planned` feature has no `taken:` lines — a change there is an ordinary re-prep.
 
 ## Facts — `prep facts`, and the binding question
 

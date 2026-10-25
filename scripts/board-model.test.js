@@ -724,14 +724,14 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(s.done.all.map((r) => r.id), ['b'], 'a feature that waits on you is not under Done');
     assert.strictEqual(s.open, 0, 'it is still done: it is not open work');
 
-    // doneWithOpenDecisionNeedsYou
-    const decisions = { a: [{ done: null, text: 'prep ruling' }, { done: false, text: 'q1 → r1' }, { done: false, text: 'q2 → r2' }] };
+    // takenDecisionAsksNothing: a decision the build took is in force, information — never your turn.
+    const decisions = { a: [{ taken: false, text: 'prep ruling' }, { taken: true, text: 'q1 → r1' }, { taken: true, text: 'q2 → r2' }] };
     s = at({ decisions });
-    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '2 decisions open']]);
+    assert.deepStrictEqual([s.needsYou, s.done.all.map((r) => r.id)], [[], ['b', 'a']], 'taken decisions alone leave it done');
     s = at({ decisions, checks: { a: [{ done: false, text: 'x', how: '' }] } });
-    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '1 check · 2 decisions open']]);
+    assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail]), [['a', '1 check open']], 'only the check is counted');
     s = at({ decisions, branch: { name: 'x', base: 'main', ids: ['a'], lastBrew: '' } });
-    assert.deepStrictEqual(s.holders.map((r) => [r.id, r.detail, r.tone]), [['a', '2 decisions open', 'permission']], 'on the branch it holds the branch');
+    assert.deepStrictEqual(s.holders, [], 'taken decisions never hold the branch');
 
     // notesAndLeansAskNothing: a note or a lean is recorded, never a person's turn; anything else tagged is.
     const findings = (list) => ({ a: { depends: [], blockers: [], findings: list } });
@@ -740,10 +740,10 @@ const shown = (v) => JSON.stringify(v);
     s = at({ plans: findings(['bug · x.php:1 · wrong', 'lean · y.php:2 · shorter']) });
     assert.deepStrictEqual(s.needsYou.map((r) => [r.id, r.detail, r.glyph]), [['a', '1 finding open', 'findings']]);
 
-    // doneCleanIsDone: ticked checks and confirmed or prep decisions leave nothing to do.
-    s = at({ checks: { a: [{ done: true, text: 'x', how: '' }] }, decisions: { a: [{ done: true, text: 'q → r' }, { done: null, text: 'p' }] } });
+    // doneCleanIsDone: ticked checks leave nothing to do.
+    s = at({ checks: { a: [{ done: true, text: 'x', how: '' }] }, decisions: { a: [{ taken: true, text: 'q → r' }, { taken: false, text: 'p' }] } });
     assert.deepStrictEqual([s.needsYou, s.done.all.map((r) => r.id)], [[], ['b', 'a']]);
-    // The feature page carries the plan's decisions with their boxes.
+    // The feature page carries the plan's decisions, taken ones marked.
     const page = m.view(board, null, false, { decisions, page: { kind: 'feature', id: 'a' } }).page;
     assert.deepStrictEqual(page.details.decisions, decisions.a);
   }

@@ -332,19 +332,19 @@ export function domainPage(domain) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const featureOpen = (id) => ({ kind: 'feature', id });
 
-// What a done feature still asks of a person, read from its plan: open findings, open manual
-// checks, unconfirmed decisions. Derived when shown, never stored as a status. null: nothing.
+// What a done feature still asks of a person, read from its plan: open findings and open manual
+// checks. A decision taken during the build is in force, not a question, so it never counts.
+// Derived when shown, never stored as a status. null: nothing.
 function waitsOf(row, ctx) {
   if (row.status !== 'done') return null;
   // A finding is `<tag> · <where> · <what>`. A note or a lean is recorded, not a person's turn,
   // and an untagged line is prose around the findings.
   const findings = (ctx.plans[row.id]?.findings ?? []).filter((f) => { const tag = /^(\w+)\s+·/.exec(f); return tag && !['note', 'lean'].includes(tag[1]); }).length;
   const checks = (ctx.checks[row.id] ?? []).filter((c) => !c.done).length;
-  const decisions = (ctx.decisions[row.id] ?? []).filter((d) => d.done === false).length;
-  if (!findings && !checks && !decisions) return null;
-  // A box a person ticks or confirms first; findings alone are a look, not an answer.
-  const person = checks > 0 || decisions > 0;
-  const words = [[findings, 'finding'], [checks, 'check'], [decisions, 'decision']].filter(([n]) => n).map(([n, w]) => plural(n, w));
+  if (!findings && !checks) return null;
+  // A box a person ticks first; findings alone are a look, not an answer.
+  const person = checks > 0;
+  const words = [[findings, 'finding'], [checks, 'check']].filter(([n]) => n).map(([n, w]) => plural(n, w));
   return { detail: `${words.join(' · ')} open`, glyph: person ? 'person' : 'findings', tone: person ? 'permission' : 'warning' };
 }
 

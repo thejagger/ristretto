@@ -10,7 +10,7 @@ Close the plan first; then one commit holds code, plan and roadmap row. Stage on
 
 The plan stays where it is. Correct `Provides:` to what was built — a drifted `Provides:` poisons every dependent feature, since the plan is what the next planner reads as fact.
 
-Every decision you were handed (`decided: <question> → <ruling>`) becomes a box under `- Decisions:`, `  - [ ] <question> → <ruling>`, creating the field at the end of `## Contract` when it is missing. A `[human]` criterion stays an open box. Neither is yours to tick.
+Every `decided: <question> → <ruling>` you were handed becomes `  - taken: <question> → <ruling>` under `- Decisions:` (created at the end of `## Contract` if missing) — no box, it is in force. A `[human]` criterion stays an open box, never yours to tick.
 
 Append `## Evidence`, by criterion number — never restate a criterion:
 
@@ -28,4 +28,4 @@ Set the roadmap row's status to `done` and change no other cell; open boxes and 
 ## Final message
 
 Exactly one line:
-`brewed: <FEATURE-ID> <hash> — <n> check(s), <m> decision(s) open`
+`brewed: <FEATURE-ID> <hash> — <n> check(s) open, <m> decision(s) taken`

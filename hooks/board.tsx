@@ -1201,11 +1201,11 @@ async function drawPane($: any, e: any) {
   function featureCards(p: any): any[] {
     const d = p.details
     const [said, tone] = STATUS[p.status] ?? ['unknown', 'dim']
-    // The agent's decisions carry a box; a prep ruling (done null) is not a question.
-    const boxed = d.decisions.filter((x: any) => x.done !== null)
-    const asks = d.checks.some((x: any) => !x.done) || boxed.some((x: any) => !x.done)
+    // A decision the build took is information, already in force — never a question.
+    const taken = d.decisions.filter((x: any) => x.taken)
+    const asks = d.checks.some((x: any) => !x.done)
     const hint = p.status === 'blocked' ? `settle it in the chat: /ristretto:prep ${p.id} deep`
-      : asks ? `say 'manual checks done' or 'decisions ok' in the chat`
+      : asks ? `say 'manual checks done' in the chat`
         : null
     const head = card('f-head', [
       <Box key="id" flexDirection="row" alignItems="center" gap={1}>
@@ -1321,8 +1321,8 @@ async function drawPane($: any, e: any) {
       (d.run || d.commit) && note('rc', [d.run && `${p.split ? '' : `${duration(d.run.ms)} · `}${count(d.run.tokens.in + d.run.tokens.out)} tok`, d.commit && `commit ${d.commit}`].filter(Boolean).join('  ·  ')),
     ])
 
-    // Manual checks and the agent's decisions: the plan's open boxes, ticked by the person's word.
-    const boxes = [...d.checks, ...boxed.map((x: any) => ({ ...x, text: `decision · ${x.text}` }))]
+    // Manual checks: the plan's open boxes, ticked by the person's word.
+    const boxes = d.checks
     const ticked = boxes.filter((x: any) => x.done).length
     const checks = boxes.length > 0 && card('f-checks', [
       headline('fc', <Text bold color={ticked === boxes.length ? 'success' : 'permission'}>Checks</Text>, <Text dimColor>{`${ticked} of ${boxes.length}`}</Text>),
@@ -1334,12 +1334,26 @@ async function drawPane($: any, e: any) {
         </Box>
       ))),
       strip(6, 'fc-g1'),
-      note('fc-note', "say 'manual checks done' or 'decisions ok' in chat · the board never ticks", { color: 'subtle' }),
+      note('fc-note', "say 'manual checks done' in chat · the board never ticks", { color: 'subtle' }),
+    ])
+
+    // What the build decided on its own where a user could see it: in force unless overruled.
+    const decided = taken.length > 0 && card('f-decided', [
+      headline('fd', <Text bold>Decided while building</Text>, <Text dimColor>{String(taken.length)}</Text>),
+      strip(4, 'fd-g0'),
+      ...spaced('dec', taken.map((x: any, i: number) => (
+        <Box key={`dec-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
+          <Box flexShrink={0} width={2}><Text dimColor>{`${i + 1}.`}</Text></Box>
+          <Box flexShrink={1}><Text wrap="wrap">{md(x.text, `dec-${i}`)}</Text></Box>
+        </Box>
+      ))),
+      strip(6, 'fd-g1'),
+      note('fd-note', `in force · to change one, say so in chat: /ristretto:prep overrule ${p.id} — <what instead>`, { color: 'subtle' }),
     ])
 
     // What waits on the person comes right after the head.
     const home = p.status === 'blocked' ? blockers : asks ? checks : d.findings.length > 0 ? review : null
-    return [head, home, acceptance, filesCard, ...[blockers, review, checks].filter(x => x && x !== home)].filter(Boolean)
+    return [head, home, acceptance, filesCard, ...[blockers, review, checks, decided].filter(x => x && x !== home)].filter(Boolean)
   }
 
   // The facts as information: per file, in conflict first, then binding, then context. A fact

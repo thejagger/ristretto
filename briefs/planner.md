@@ -24,11 +24,11 @@ Each survivor is its criterion's box in the plan (common.md's Statuses and boxes
 
 ## Decide, don't block
 
-A question the plan leaves open you decide as its Goal implies, and report as `decided: <question> → <ruling>`. Never decide to delete data, push, merge, or touch files no plan names. Block only on what no decision fixes: a `Consumes:` signature that doesn't exist, a criterion the code makes impossible. A thing you cannot reach is a manual check, not a block.
+An open question you decide as its Goal implies; report `decided: <question> → <ruling>` only if a user could see the answer — naming, structure and tests stay in the build plan. Never decide to delete data, push, merge, or touch files no plan names. Block only on what no decision fixes: a missing `Consumes:` signature, a criterion the code makes impossible. Unreachable is a manual check, not a block.
 
 ## Final message
 
 Exactly one of:
 `planned: <FEATURE-ID> — <n> units, <n> tests, <n> manual checks`
 `blocked: <FEATURE-ID> — <what no decision fixes>`
-then one `decided: <question> → <ruling>` line per decision you took. Nothing else.
+then one `decided:` line per user-visible ruling. Nothing else.

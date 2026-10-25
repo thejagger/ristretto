@@ -162,26 +162,26 @@ const apiPlan = (...p) => read('api', 'docs', 'ristretto', 'plans', ...p);
   assert.ok(out.includes('  - [auto] The importer loads'), 'the [auto] criterion is untouched');
 }
 
-// decisionTakenBecomesBox
+// decisionTakenBecomesTaken: information in force, no box
 {
   const pw = m.migratePlan(vsPlan('pw-frontend-templates'), vsChecks.get('pw-frontend-templates'));
   assert.ok(pw.includes([
     '  - Termine defaults to upcoming.',
-    "  - [ ] how to stop double-encoding titles -> $page->getUnformatted('title') inside $sanitizer->entities() at all 23 sites",
+    "  - taken: how to stop double-encoding titles -> $page->getUnformatted('title') inside $sanitizer->entities() at all 23 sites",
     '- Blockers: —',
   ].join('\n')), pw);
   assert.ok(!pw.includes('decision taken:'));
   const fav = m.migratePlan(apiPlan('archived', 'api-favicon.md'));
   assert.ok(fav.includes([
     '  - Cache for a day.',
-    '  - [ ] which bare client proves "no session, no bearer"? → the existing `unauth_client` fixture (`tests/conftest.py:782`).',
-    '  - [ ] `dependencies = ["resvg-py"]` unpinned? → pinned `resvg-py==0.5.0`. The criterion "same SVG → same bytes" must hold.',
+    '  - taken: which bare client proves "no session, no bearer"? → the existing `unauth_client` fixture (`tests/conftest.py:782`).',
+    '  - taken: `dependencies = ["resvg-py"]` unpinned? → pinned `resvg-py==0.5.0`. The criterion "same SVG → same bytes" must hold.',
     '',
   ].join('\n')), fav);
   assert.ok(!/decision taken:|would-escalate:/.test(fav));
   assert.ok(fav.includes('- Planner decisions (build plan, 2026-10-16), unchanged:\n- Review history'), 'the lines around them stay');
   const eval_ = m.migratePlan(apiPlan('archived', 'mail-classify-eval.md'), apiChecks.get('mail-classify-eval'));
-  assert.ok(eval_.includes('- Blockers: —\n- Decisions:\n  - [ ] a correction key whose value is no object is no change\n\n## Evidence'), eval_);
+  assert.ok(eval_.includes('- Blockers: —\n- Decisions:\n  - taken: a correction key whose value is no object is no change\n\n## Evidence'), eval_);
 }
 
 // planLosesDuplicates
@@ -279,14 +279,14 @@ const apiPlan = (...p) => read('api', 'docs', 'ristretto', 'plans', ...p);
 const multiChecks = m.parseChecks(read('multi', 'docs', 'ristretto', 'manual-checks.md'));
 const multiPlan = (...p) => read('multi', 'docs', 'ristretto', 'plans', ...p);
 
-// decisionWrapsAreJoined: a decision taken over several lines is one box, flush or indented;
+// decisionWrapsAreJoined: a decision taken over several lines is one line, flush or indented;
 // a wrapped would-escalate goes whole.
 {
   const out = m.migratePlan(multiPlan('nb-anmeldung.md'));
   assert.ok(out.includes([
     '  - Keys are TANs.',
-    "  - [ ] whether to keep the duplicated auth preamble on the two endpoints that gate children's data or extract it -> extracted to NbApi::requireKey(), with the byte-identical 403 independently re-verified after the extraction",
-    '  - [ ] which client? → the bare one, because the contract names no other.',
+    "  - taken: whether to keep the duplicated auth preamble on the two endpoints that gate children's data or extract it -> extracted to NbApi::requireKey(), with the byte-identical 403 independently re-verified after the extraction",
+    '  - taken: which client? → the bare one, because the contract names no other.',
     '- Blockers: —',
   ].join('\n')), out);
   assert.ok(!/children's data or extract|the contract names no other\.\n|does not name/.test(out.split('- Blockers')[1]), 'no continuation is left behind');

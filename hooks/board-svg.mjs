@@ -68,7 +68,7 @@ const SHAPES = {
   blocked: () => `<path d="M4.6 1h4.8L13 4.6v4.8L9.4 13H4.6L1 9.4V4.6z" fill="${HUE.error}"/><rect x="3.8" y="6.2" width="6.4" height="1.6" rx=".4" fill="${HUE.white}"/>`,
   // A done feature with open review findings.
   findings: () => `<path d="M7 1.3l6 11.2H1z" fill="${HUE.warning}" stroke="${HUE.warning}" stroke-width="1" stroke-linejoin="round"/><rect x="6.35" y="4.8" width="1.3" height="4" rx=".5" fill="${HUE.white}"/><circle cx="7" cy="10.4" r=".8" fill="${HUE.white}"/>`,
-  // A done feature that waits on a person: an open manual check or an unconfirmed decision.
+  // A done feature that waits on a person: an open manual check.
   person: () => `<circle cx="7" cy="4.4" r="2.6" fill="${HUE.permission}"/><path d="M1.8 13c0-3 2.3-4.8 5.2-4.8s5.2 1.8 5.2 4.8z" fill="${HUE.permission}"/>`,
   done: () => TICK(HUE.success),
   ready: () => TICK(HUE.success),

@@ -182,6 +182,17 @@ assert.ok(!/`easy`\s*→|Tier.*easy.*→/.test(pull), 'pull is the normal path �
 // A done feature is never re-built: pull names its commit and what its plan still leaves open.
 assert.ok(/\*\*`done`\*\* → stop[^\n]*\[ \] \[human\][^\n]*Do not re-implement/.test(pull), 'pull on a done row lists its open boxes and stops');
 assert.ok(/`ready:` → continue to review\. Keep every `decided:/.test(pull), 'pull hands the decisions to the closer');
+// A decision a build took is information in force, never a box or a question: the user only ever
+// overrules one in chat. Twelve boxes for one feature — renames, test harnesses — is how this began.
+assert.ok(/`  - taken: <question> → <ruling>`/.test(read('briefs/closer.md')), 'the closer writes a taken: line, not a box');
+assert.ok(!/- \[ \] <question>/.test(read('briefs/closer.md') + read('briefs/common.md')), 'no decision box anywhere');
+for (const f of ['briefs/planner.md', 'briefs/implementer.md']) {
+  assert.ok(/only if a user could see/.test(read(f)), `${f} reports only user-visible decisions`);
+}
+for (const f of [...COMMANDS, 'commands/status.md', 'commands/help.md', 'README.md']) {
+  assert.ok(!read(f).includes('decisions ok'), `${f} must not ask the user to confirm decisions`);
+}
+assert.ok(/## Overrule/.test(read('commands/prep.md')), 'prep takes an overrule');
 
 // 16. shot is the easy path against an existing plan — it no longer writes one.
 const shot = read('commands/shot.md');

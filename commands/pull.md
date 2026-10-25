@@ -19,7 +19,7 @@ Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate
 
 Read `docs/ristretto/roadmap.md`; take it at its word, don't second-guess it against the code.
 
-- **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes, unconfirmed `Decisions:` boxes, `## Open findings`. Do not re-implement.
+- **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
 - **`blocked`** → surface the recorded reason, ask whether to proceed anyway — the block may have been resolved outside the roadmap.
 - **`next`** → the top `planned` row whose `Depends:` are all satisfied. Only `done` satisfies a dependency; `blocked` withholds. If every `planned` row is blocked, stop and say what each is waiting on. A named ID (not `next`) with an unfinished `Depends:` → warn and ask before proceeding.
 
@@ -105,13 +105,15 @@ Always — on a normal close, a `blocked:` stop, or an open-findings stop.
 
 ## When done
 
-Print a short summary: what changed, which criteria are satisfied, the review verdict (including any `lean` findings deliberately left open), the branch and commit (or that it's left uncommitted), and confirm the plan was closed and the roadmap updated. If the plan has open boxes — manual checks or decisions taken during the build — list them from the plan:
+Print a short summary: what changed, which criteria are satisfied, the review verdict (including any `lean` findings deliberately left open), the branch and commit (or that it's left uncommitted), and confirm the plan was closed and the roadmap updated. List the plan's open manual checks, then the decisions taken during the build — information, already in force:
 
 ```
-🔧 1 check · 1 decision open — docs/ristretto/plans/<FEATURE-ID>.md
-   check · criterion 2 · Supabase SQL editor (dev) · add profiles.tier
-   decision · which client? → the bare one
-   say "manual checks done" or "decisions ok" once they are
+🔧 1 check open — docs/ristretto/plans/<FEATURE-ID>.md
+   criterion 2 · Supabase SQL editor (dev) · add profiles.tier
+   say "manual checks done" once it is
+📝 decided while building, in force:
+   which client? → the bare one
+   overrule one in chat: /ristretto:prep overrule <FEATURE-ID> — <what instead>
 ```
 
 End with a little cup:

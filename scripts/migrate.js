@@ -12,8 +12,8 @@
 //           dirty docs/ristretto/, prints one line per file it changed.
 //
 // 0.22 is "one fact, one place": the roadmap holds order and status only, every other fact about
-// a feature lives in plans/<ID>.md (which never moves), and manual checks and the agent's
-// decisions are checkboxes in that plan. There is no manual-checks.md and no plans/archived/.
+// a feature lives in plans/<ID>.md (which never moves), and manual checks are boxes and the agent's
+// decisions `taken:` lines in that plan. There is no manual-checks.md and no plans/archived/.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -237,7 +237,7 @@ function migratePlan(text, checks = []) {
   }
 
   if (decisions.length) {
-    const boxes = decisions.map((q) => `  - [ ] ${q}`);
+    const boxes = decisions.map((q) => `  - taken: ${q}`);
     const at = out.findIndex((l) => /^- Decisions:/.test(l));
     if (at >= 0) {
       let j = at + 1;
