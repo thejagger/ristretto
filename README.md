@@ -121,7 +121,7 @@ One entry, because one is a realistic number. The same feature's "does the banne
 
 The part that matters for an unattended `brew`: **an open box never holds up another feature.** A `Depends:` is satisfied by `done`, because the prerequisite's `Provides:` exist in the code — what's outstanding is in a database console or on a screen, not in the repo. Only `blocked` stops dependents. One pending `alter table` can't stall a whole flight.
 
-Run the check, then say "manual checks done" in the chat. ristretto never ticks a box itself; your word is the signature that it really happened.
+Run the check, then say "manual checks done" in the chat, with the feature's ID if more than one has open checks. Your word is the signature that it really happened: ristretto ticks the boxes, writes `confirmed in chat <date>` into the Evidence, and commits the plan. You never edit a file. Say "except the banner one — still overlaps" and that box stays open with your note. Nothing else ticks a box, not even another agent.
 
 **The bar for getting on this list is reach, not subject.** A check exists only where the repo gives the agent no path to the thing — a hosted console with no credential in the environment, a device that isn't there. A migration the dev stack already applies is run, not delegated; a screen the repo can drive is tested, not eyeballed. And **nothing on this list is ever about production**: no backfills, no prod flags, no key rotations. This is a development loop, and a checklist that fills up with things you could have automated is one you stop reading — including the entry that mattered.
 

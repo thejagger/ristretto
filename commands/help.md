@@ -39,7 +39,7 @@ THE WORKFLOW
      /ristretto:status checks          your turn — built, committed and green, but
                                     its plan still asks you: a manual check or
                                     an open finding. say "manual checks done"
-                                    in chat.
+                                    in chat · "except <what>" keeps that one open.
      /ristretto:prep overrule <f> — <what>
                                     a choice the build made that a user can
                                     see is information, already in force.
