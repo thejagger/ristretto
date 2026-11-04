@@ -219,6 +219,41 @@ const PROPOSED = '- **Stellplatz** is a full Wohnungseigentumsobjekt\n  source: 
   ok('forged confirmed entry added by the run → removed, exit 1');
 }
 {
+  // Research keeps unconfirmed entries current in place. A restore elsewhere in the same file
+  // must not bring the old wording back next to the new one.
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}${PROPOSED}` }, 'init');
+  r.run('snapshot');
+  const updated = PROPOSED.replace('is a full', 'is no').replace('proposed by grind ECO-1, 2026-10-07', 'updated by prep ECO-2, 2026-11-04');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED.replace('the unit', 'any unit')}${updated}`);
+  assert.strictEqual(r.run('check-domain').status, 1, 'the confirmed edit is undone');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(now.includes(CONFIRMED.trimEnd()), 'the confirmed wording is back');
+  assert.strictEqual(now.split('**Stellplatz**').length - 1, 1, `the updated entry is there once\n${now}`);
+  assert.ok(now.includes('is no Wohnungseigentumsobjekt') && !now.includes('is a full'), 'in its new wording');
+  ok('unconfirmed entry updated in place survives a restore in the same file, once');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${CONFIRMED}${PROPOSED}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${CONFIRMED.replace('the unit', 'any unit')}`);
+  assert.strictEqual(r.run('check-domain').status, 1, 'the confirmed edit is undone');
+  assert.ok(!r.read('docs/ristretto/domain/weg.md').includes('Stellplatz'), 'an unconfirmed entry research deleted stays deleted');
+  ok('unconfirmed entry deleted by the run stays deleted through a restore');
+}
+{
+  const r = repo();
+  r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}` }, 'init');
+  r.run('snapshot');
+  r.write('docs/ristretto/domain/weg.md', `# WEG\n\n${PROPOSED.replace('unconfirmed — proposed by grind ECO-1, 2026-10-07', 'confirmed — research ECO-1, 2026-11-04')}`);
+  assert.strictEqual(r.run('check-domain').status, 1, 'a run may not confirm an entry');
+  const now = r.read('docs/ristretto/domain/weg.md');
+  assert.ok(now.includes(PROPOSED.trimEnd()), `the entry is back, unconfirmed\n${now}`);
+  assert.ok(!/· confirmed/.test(now), 'and the forged marker is gone');
+  ok('run confirms an existing entry → the unconfirmed entry comes back');
+}
+{
   const r = repo();
   r.commit({ 'docs/ristretto/domain/weg.md': `# WEG\n\n${PROPOSED}` }, 'init');
   r.run('snapshot');

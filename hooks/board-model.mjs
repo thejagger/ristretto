@@ -401,16 +401,14 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
   }
 
   // What needs a person but does not hold this branch: blocked rows without code here, done rows
-  // with open boxes or findings built elsewhere (or every one, with no scope), facts in conflict.
+  // with open boxes or findings built elsewhere (or every one, with no scope). Domain facts are
+  // background — a conflict among them is information on the facts row, never a person's turn.
   const needsYou = [];
   for (const r of rows) {
     if (onBranch(r.id) || r.id === running) continue;
     const waits = waitsOf(r, ctx);
     if (r.status === 'blocked') needsYou.push({ key: `need-${r.id}`, glyph: 'blocked', id: r.id, detail: blockedWords(r), tone: 'dim', open: featureOpen(r.id) });
     else if (waits) needsYou.push({ key: `need-${r.id}`, glyph: waits.glyph, id: r.id, detail: waits.detail, tone: 'dim', open: featureOpen(r.id) });
-  }
-  for (const f of (opts.domain ?? { tree: [] }).tree.filter((x) => x.conflict)) {
-    needsYou.push({ key: `fact-${f.file}-${f.title}`, glyph: 'fact-conflict', id: f.title, detail: `${f.file} · in conflict`, tone: 'warning', open: { kind: 'domain' } });
   }
 
   // Up next: what waits on nothing, in brew's order, five at most.
@@ -647,7 +645,7 @@ export function view(board, live, elsewhere = false, opts = {}) {
   }
   const conflicted = domain.tree.filter((f) => f.conflict);
   // A red suite on this code holds the branch even when every row is done: never under the cup.
-  if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && !conflicted.length && state.holders.length === 0) return { kind: 'cup', total: rows.length };
+  if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && state.holders.length === 0) return { kind: 'cup', total: rows.length };
 
   const notices = [];
   const plugin = (/^(\d+\.\d+)/.exec(board.format.plugin) || [])[1];

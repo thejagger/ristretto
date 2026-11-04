@@ -426,7 +426,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.waitsOn('no API docs yet'), 'no API docs yet');
   }
 
-  // 8b. Facts are information; a conflict is the only thing that needs a person.
+  // 8b. Facts are background information — a conflict included; none of them needs a person.
   {
     const fact = (title, state, conflict = null, file = 'adsb-lol.md') => ({ file, title, text: `${title} text`, source: 's', state, by: '', conflict });
     const tree = [
@@ -438,10 +438,7 @@ const shown = (v) => JSON.stringify(v);
     const board = { ...m.EMPTY_BOARD, name: 'plane-spotter', rows: [{ flight: '', id: 'a', title: 'A', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' }], format: { project: '0.20', plugin: '0.20' } };
     const v = m.view(board, null, false, { domain: { tree } });
     assert.deepStrictEqual(v.cards.find((c) => c.kind === 'facts'), { kind: 'facts', n: 4, binding: 1, conflicts: 1 }, 'the facts as one line');
-    const needs = v.cards.find((c) => c.kind === 'needs');
-    assert.deepStrictEqual(needs.rows.map((r) => [r.id, r.detail, r.tone]), [['Rate limits', 'adsb-lol.md · in conflict', 'warning']]);
-    const calm = m.view(board, null, false, { domain: { tree: tree.filter((f) => !f.conflict) } });
-    assert.strictEqual(calm.cards.find((c) => c.kind === 'needs'), undefined, 'facts without a conflict need nobody');
+    assert.strictEqual(v.cards.find((c) => c.kind === 'needs'), undefined, 'facts need nobody, a conflict included');
     assert.strictEqual(m.view(board, null, false, { domain: { tree: [] } }).cards.find((c) => c.kind === 'facts'), undefined, 'no facts: no line');
 
     const pg = m.view(board, null, false, { domain: { tree }, page: { kind: 'domain' } }).page;
@@ -452,7 +449,7 @@ const shown = (v) => JSON.stringify(v);
     ], 'per file: conflicts first, then binding, then context');
     assert.ok(!('pending' in pg) && !('locked' in pg) && !('confirmed' in pg), 'nothing to confirm, commit or lock');
 
-    // A feature blocked on a fact in conflict waits on the fact file.
+    // A row blocked on a fact before facts went to the background still names the fact file.
     const blocked = { ...board, rows: [{ ...board.rows[0], status: 'blocked', reason: 'blocked: domain/adsb-lol.md: Rate limits is in conflict' }] };
     const row = m.view(blocked, null, false, { domain: { tree } }).cards.find((c) => c.kind === 'needs').rows[0];
     assert.strictEqual(row.detail, 'waits on domain/adsb-lol.md');
@@ -570,14 +567,14 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
   }
 
-  // Final review I2, reworded: every feature done → the cup, unless a fact is in conflict.
+  // Final review I2, reworded: every feature done → the cup; facts never hold it back.
   {
     const done = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'done', reason: '' }] };
     assert.strictEqual(m.view(done, null, false, {}).kind, 'cup');
     const calm = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '', conflict: null };
     assert.strictEqual(m.view(done, null, false, { domain: { tree: [calm] } }).kind, 'cup', 'context facts do not hold the cup back');
     const v = m.view(done, null, false, { domain: { tree: [{ ...calm, conflict: { what: 'w', source: 's', by: 'b' } }] } });
-    assert.strictEqual(v.kind, 'board', 'a conflict keeps the overview');
+    assert.strictEqual(v.kind, 'cup', 'nor does a fact in conflict');
   }
 
   // The band above the prompt: only the main thing — what runs and its step, who is needed.
@@ -602,16 +599,16 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
   }
 
-  // The chat side of facts: who may note a conflict, where it is settled, when prep asks.
+  // The chat side of facts: who may note a conflict, and that nobody is asked unprompted.
   {
     const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
     const prep = read('commands/prep.md');
     assert.ok(/research\.js" conflict/.test(read('briefs/common.md')), 'builders and reviewers note conflicts through the script');
     assert.ok(/research\.js" conflict/.test(read('briefs/researcher.md')), 'so does research');
-    assert.ok(/blocked: domain\/<file>: <title> is in conflict/.test(read('briefs/common.md')), 'a binding fact in conflict blocks, in the shape the board reads');
-    assert.ok(/## Facts — `prep facts`/.test(prep) && /update \/ remove \/ keep/.test(prep), 'prep settles conflicts in the chat');
-    assert.ok(/at most two/.test(prep) && /\(stays context: domain\/<file>: <title>\)/.test(prep), 'prep asks about at most two binding facts');
-    assert.ok(/in conflict — \/ristretto:prep facts/.test(read('commands/status.md')) && !/to confirm — open the board/.test(read('commands/status.md')), 'status counts conflicts, not unconfirmed facts');
+    assert.ok(/A fact never stops work/.test(read('briefs/common.md')) && !/is in conflict`/.test(read('briefs/common.md')), 'no build blocks on a fact');
+    assert.ok(/## Facts — `prep facts`, only when the user asks/.test(prep) && /\*\*confirm\*\*/.test(prep), 'prep facts is the opt-in way in, confirm included');
+    assert.ok(!/Should they bind the build/.test(prep) && !/stays context: domain/.test(prep), 'prep never asks whether a fact binds');
+    assert.ok(!/domain facts in conflict/.test(read('commands/status.md')), 'status has no facts to-do line');
     // One commit per feature, found by its ID; the plan never moves and nothing re-runs a check.
     const closer = read('briefs/closer.md');
     assert.ok(/one commit holds code, plan and roadmap row/.test(closer) && /change no other cell/.test(closer) && !/archiv/i.test(closer), 'the closer commits once and only sets the status');
@@ -703,10 +700,9 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(s.done.recent, true);
     assert.deepStrictEqual(s.done.here.map((r) => r.id), ['d-here', 'd-old'], 'newest first: measured, then later rows');
 
-    // A fact in conflict needs you, amber.
+    // A fact in conflict is background, never a person's turn.
     s = m.stateOf(board, null, false, { ...opts, domain: { tree: [{ file: 'web-auth.md', title: 'Sessions', state: 'confirmed', conflict: { what: 'x' } }] } });
-    const fact = s.needsYou[s.needsYou.length - 1];
-    assert.deepStrictEqual([fact.glyph, fact.detail, fact.tone, fact.open.kind], ['fact-conflict', 'web-auth.md · in conflict', 'warning', 'domain']);
+    assert.ok(!s.needsYou.some((r) => r.glyph === 'fact-conflict'));
 
     // No buttons anywhere: the person acts in the chat.
     assert.ok(!/"action"/.test(JSON.stringify(m.stateOf(board, null, false, opts))));

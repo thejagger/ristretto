@@ -14,10 +14,11 @@
 //   conflict <file> <title> <what> <source> <who>
 //                  note on one entry that something disagrees with it: appends
 //                  ` · conflict — <what> (<source>), noticed by <who>, <date>`, replacing an older
-//                  conflict field. The only way an agent marks a fact; settling it is prep's, in the chat.
+//                  conflict field. Only for a confirmed entry — research updates unconfirmed ones in
+//                  place. Settling it is `prep facts`, when the user asks.
 //                  exit 0 = noted, 2 = no such file, or no / more than one entry with that title.
 //
-// Agents may add `unconfirmed` domain entries and nothing else. That rule is the whole value of
+// Agents may add, update and delete `unconfirmed` domain entries and nothing else. That rule is the whole value of
 // the domain store — a confirmed entry is a person's signature — so it is checked here, not asked for.
 'use strict';
 const fs = require('fs');
@@ -140,6 +141,7 @@ const bare = (b) => b.split('\n')
   .map((line) => line.split('·').filter((f, j) => j === 0 || !CONFLICT.test(f.trim())).join('·').trimEnd())
   .join('\n');
 const same = (a, b) => bare(a) === bare(b);
+const titleOf = (b) => (/^- \*\*(.+?)\*\*/.exec(b) || [])[1];
 
 function today() {
   const d = new Date();
@@ -219,7 +221,18 @@ function checkDomain({ removeForged = true } = {}) {
     // conflict fields, minus a reverted copy of an entry being restored (same first line).
     const restoredHeads = new Set(missing.map(head));
     const added = now.filter((b) => b.trim() && !before.some((x) => same(x, b)) && !forged.includes(b) && !restoredHeads.has(head(b)));
-    const kept = before.map((b) => (restoredHeads.has(head(b)) ? b : now.find((n) => same(n, b)) ?? b));
+    // An unconfirmed entry is research's to update in place or delete: its new version (same
+    // title) takes its old place, and a deleted one stays deleted. Only a forged confirmation
+    // brings the old entry back.
+    const forgedTitles = new Set(forged.map(titleOf).filter(Boolean));
+    const kept = before.flatMap((b) => {
+      if (restoredHeads.has(head(b))) return [b];
+      const n = now.find((x) => same(x, b));
+      if (n) return [n];
+      if (!b.startsWith('- ') || forgedTitles.has(titleOf(b))) return [b];
+      const i = added.findIndex((x) => titleOf(x) && titleOf(x) === titleOf(b));
+      return i < 0 ? [] : added.splice(i, 1);
+    });
     while (kept.length && kept[kept.length - 1] === '') kept.pop();
     fs.mkdirSync(domainDir, { recursive: true });
     fs.writeFileSync(current, `${[...kept, ...added].join('\n')}\n`);

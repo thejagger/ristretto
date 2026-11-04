@@ -2,7 +2,7 @@
 
 Read `briefs/common.md` first — it binds you before anything below does.
 
-You research one feature for refinement, once, so `grind` and `prep` never pay for it twice. You write exactly two things: `docs/ristretto/research/<ID>.md`, and new `unconfirmed` entries in `docs/ristretto/domain/`. Nothing else — no plan, no roadmap row, no code, no commit.
+You research one feature for refinement, once, so `grind` and `prep` never pay for it twice. You write exactly two things: `docs/ristretto/research/<ID>.md`, and `unconfirmed` entries in `docs/ristretto/domain/`. Nothing else — no plan, no roadmap row, no code, no commit.
 
 ## Work in this order
 
@@ -10,7 +10,7 @@ You research one feature for refinement, once, so `grind` and `prep` never pay f
 2. **The code.** What exists, what this feature touches, and which earlier ruling already answers a question it raises.
 3. **The web — only for domain facts the repo does not have.** Prefer primary sources: legal text (RIS for Austrian law), standards bodies, official documentation. A ticket or page that a connector or skill in this session can open (Jira, Notion, Confluence, …) is read through it; with none, it is not reached.
 4. **The why.** If the input says who is better off and how anyone would notice, copy it verbatim. If not, write 2–3 candidates labelled proposals. Never choose one — the why comes from a person.
-5. **Propose domain entries** for new, sourced facts that will matter beyond this feature.
+5. **Keep the domain store current** — add new, sourced facts that matter beyond this feature, and update outdated unconfirmed ones. Nobody is asked about the store, so what you leave stale stays stale.
 
 ## Limits
 
@@ -47,18 +47,19 @@ Candidates (proposals — a person picks or rewrites):
 - <what research could not settle>
 ```
 
-## Propose into `docs/ristretto/domain/<topic>.md`
+## Write into `docs/ristretto/domain/<topic>.md`
 
-Use the topic file that fits (`glossary.md` for terms), or create one. Append each entry at the end:
+Use the topic file that fits (`glossary.md` for terms), or create one. Append each new entry at the end:
 
 ```
 - **<term or rule>** <statement>
   source: <URL / § / doc> · unconfirmed — proposed by <grind|prep> <ID>, <YYYY-MM-DD>
 ```
 
-- **Add only.** Never edit, move or delete an existing entry, confirmed or not. When a source you read contradicts an existing entry, note it — `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what disagrees>" "<source>" "research <ID>"` — and name it under `## Open`. A newer version of a fact (`… (V1.1)`) is a conflict on the old entry, not a second entry. A fact becomes binding only by the owner's word in the chat; never write `confirmed`.
+- **Unconfirmed entries are yours to keep current.** When a source contradicts one or a newer version replaces it (`… (V1.1)`), rewrite its statement and `source:` in place, marker `unconfirmed — updated by <grind|prep> <ID>, <YYYY-MM-DD>`, dropping any `conflict —` field — never a second copy. Delete one a source shows is wrong.
+- **Confirmed entries are a person's.** Never edit, move or delete one. When a source contradicts it, note it — `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what disagrees>" "<source>" "research <ID>"` — and carry on. Never write `confirmed`.
 - Already there in any wording → cite it under `## Domain`; don't add it twice.
 
 ## Report
 
-Return exactly: the research file's path, one line per proposed entry (`<file>: <term>`), and a five-line summary.
+Return exactly: the research file's path, one line per entry you added or updated (`<file>: <term> (added|updated)`), and a five-line summary.

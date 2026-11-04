@@ -1362,7 +1362,7 @@ async function drawPane($: any, e: any) {
     const cards: any[] = [card('d-head', [
       headline('dh', <Text bold {...(p.conflicts ? { color: 'warning' } : {})}>Domain facts</Text>, <Text dimColor>{String(p.n)}</Text>),
       strip(4, 'dh-g'),
-      note('dh-sum', `${p.binding} binding${p.conflicts ? ` · ${p.conflicts} in conflict` : ''} · binding facts hold the builder and the reviewer; the rest is context · settled in the chat (prep)`),
+      note('dh-sum', `${p.binding} binding${p.conflicts ? ` · ${p.conflicts} in conflict` : ''} · binding facts hold the builder and the reviewer; the rest is context · optional: /ristretto:prep facts`),
     ])]
     for (const g of p.groups) {
       cards.push(card(`d-${g.file}`, [

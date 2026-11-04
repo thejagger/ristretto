@@ -7,7 +7,7 @@ You are in the **PREP** phase of ristretto. You plan; you do **not** write or mo
 
 Inputs to prep: $ARGUMENTS  (add `deep` to force roast mode on every input)
 
-If the only input is `facts`, skip to **Facts — `prep facts`, and the binding question** below and plan nothing. An input starting `overrule` goes through **Overrule** below.
+If the only input is `facts`, skip to **Facts — `prep facts`, only when the user asks** below and plan nothing. An input starting `overrule` goes through **Overrule** below.
 
 Each input is one of: a **tracked feature** (has an ID like `BREW-224` — keep that ID exactly, it's how the work is tracked in git), a **raw idea** you want to build, or a **feature too big** to plan as one unit.
 
@@ -52,8 +52,7 @@ Flight: a short kebab slug grouping related features, or `—` for a standalone 
 then `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain` (exit 1 → name what it undid in your report; exit 2 → the domain store was not checked, say so), and read the file. Research one input at a time — every run shares one domain snapshot. Use it like this:
 
 - **Why** — the plan's `Why:` line is the research's stated why, or `—`. A missing why never escalates to roast mode by itself; when roast runs anyway, ask the why first, with the research's candidates as your recommended answer.
-- **Domain** — a confirmed entry in `docs/ristretto/domain/` is given: never ask it again. A `Decisions:` line that rests on an unconfirmed entry says so: `(rests on unconfirmed domain/<file>: <entry>)`.
-- **Conflicts** — an entry the research touched that carries a `conflict —` field is settled now, before planning, as in **Facts — `prep facts`, and the binding question**.
+- **Domain** — background, never a question. A confirmed entry in `docs/ristretto/domain/` is given; an unconfirmed one is context you plan with like any other source. Never ask whether a fact matters, binds, or is still right, and never stop on a `conflict —` field: that is `prep facts`, when the user asks for it.
 - **Already settled** — cite it in `Decisions:` instead of asking.
 - **Open** — the roast agenda, before anything else you would ask.
 
@@ -208,23 +207,17 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
 The user disagrees with a `taken:` line in a built feature's plan, said in chat. Find the line it means; ask once which, only if two could fit. Then plan the change as a new input like any other — a feature `<ID>-<short slug>` with `Depends: <ID>`, research and roast as usual, its `Decisions:` carrying the user's ruling as a plain prep item (`Source: <user> overruled <ID>'s taken: <question> (<YYYY-MM-DD>)`). Append ` · overruled → <new ruling> (<new ID>)` to the original `taken:` line. Prep still writes no code: the change is built by `pull` or `brew` like any feature. A `planned` feature has no `taken:` lines — a change there is an ordinary re-prep.
 
-## Facts — `prep facts`, and the binding question
+## Facts — `prep facts`, only when the user asks
 
-Domain facts are context unless the owner said otherwise; the board only shows them. Two things about them are asked here, in the chat, and nowhere else.
+The domain store is a knowledge base that research keeps current in the background; the board only shows it. Nothing in it is ever asked about unprompted — not in a plan, not in a build. `prep facts` is the one way in, for a user who wants to look.
 
-**Conflicts.** For every entry in `docs/ristretto/domain/` with a `conflict —` field (all of them for `prep facts`; the ones the research touched otherwise), one at a time: show the entry, the conflict and its source, and ask **update / remove / keep**.
-- **update** — rewrite the statement and `source:` from the conflict's evidence and drop the conflict field. An entry that was confirmed is confirmed again: `confirmed — <git config user.name>, <YYYY-MM-DD> (updated in prep facts)`.
+Plan nothing. List the entries in `docs/ristretto/domain/` that carry a `conflict —` field, then ask the user what they want to do. They may name any entry — conflicted or not — and say:
+- **update** — rewrite the statement and `source:` from the evidence they or the conflict give, and drop the conflict field. An entry that was confirmed is confirmed again: `confirmed — <git config user.name>, <YYYY-MM-DD> (updated in prep facts)`.
 - **remove** — delete the entry.
 - **keep** — drop the conflict field; the entry stands as it was.
+- **confirm** — rewrite an unconfirmed entry's marker to `confirmed — <git config user.name>, <YYYY-MM-DD> (prep facts)`. From then on it binds every builder and the reviewer, and research no longer edits it.
 
-Then every `blocked` row whose reason reads `blocked: domain/<file>: <title> is in conflict` for an entry settled now flips back to `planned`. Leave the changes in the working tree; prep commits nothing.
-
-**Binding — at the end, after `check-domain`.** Pick the unconfirmed entries this plan's `Decisions:` actually rest on — at most two — and ask once:
-> The plan rests on these facts. Should they bind the build?
-> 1. **<title>** — <statement, one line> (domain/<file>)
-> Answer like `1 yes, 2 no`, or `skip`.
-
-A yes rewrites that entry's marker to `confirmed — <git config user.name>, <YYYY-MM-DD> (said yes in prep <ID>)`. A no adds `(stays context: domain/<file>: <title>)` to the `Decisions:` line, and a later prep of the same ID reads it and does not ask again. Never more than two; never in an unattended run; never an entry already confirmed.
+Nothing they don't name changes. Leave the changes in the working tree; prep commits nothing.
 
 ## Hard rules
 

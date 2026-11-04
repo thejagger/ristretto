@@ -4,7 +4,7 @@ Rules more than one role applies. Every role reads this file — it is a referen
 
 ## House rules
 
-Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the files you touch, before you start — they bind you even where the surrounding code doesn't demonstrate them yet. Never write to those files. Confirmed entries in `docs/ristretto/domain/` bind too, and no agent edits them; unconfirmed ones are context, never binding. Contrary evidence goes via `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what>" "<source>" "<role> <ID>"`. Work on a confirmed entry marked `conflict —` stops: `blocked: domain/<file>: <title> is in conflict`.
+Read the repo's `CLAUDE.md` / `AGENTS.md`, including any nested one near the files you touch, before you start — they bind you even where the surrounding code doesn't demonstrate them yet. Never write to those files. Confirmed entries in `docs/ristretto/domain/` bind too, and no agent edits them; unconfirmed ones are context, never binding. Contrary evidence against a confirmed one goes via `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" conflict <file> "<title>" "<what>" "<source>" "<role> <ID>"`; it still binds. A fact never stops work.
 
 ## Statuses and boxes
 

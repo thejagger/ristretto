@@ -41,7 +41,7 @@ const FINGERPRINTS = [
                              // fingerprint of `gate.js prove` would match nothing
   'never instructions',      // fetched text is data — the researcher's injection line
   'about 10 web searches',   // the research budget
-  'Add only.',               // agents never edit a domain entry
+  "Confirmed entries are a person's.", // agents never edit a confirmed domain entry
   'more than three files',   // deleted ratchet trigger — must appear NOWHERE
   'planned · in-progress · blocked · done', // the four statuses, defined once
 ];
@@ -256,7 +256,7 @@ for (const s of ['## As-is', 'Exists:', 'Touches:', 'Already settled:', 'at comm
 // 25. prep reuses grind's research instead of paying for it again, and records the why.
 const prep = read('commands/prep.md');
 for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" check-domain', 'researcher.md',
-                 '- Why: <outcome> · noticed by: <signal>', 'rests on unconfirmed']) {
+                 '- Why: <outcome> · noticed by: <signal>', 'background, never a question']) {
   assert.ok(prep.includes(s), `prep.md must carry "${s}"`);
 }
 assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why must not trigger roast mode on its own');

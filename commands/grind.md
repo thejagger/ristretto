@@ -3,7 +3,7 @@ description: Honest refinement review of a feature — researches it once, then 
 argument-hint: "<feature: paste text/ACs, or an ID + description> [fresh]"
 ---
 
-You are running **GRIND** — an honest refinement review of one feature, for use in a refinement session. You research the feature once and write that down; beyond `docs/ristretto/research/<ID>.md` and new `unconfirmed` entries in `docs/ristretto/domain/`, you change no files, and you commit nothing — the user commits the research with the rest of refinement.
+You are running **GRIND** — an honest refinement review of one feature, for use in a refinement session. You research the feature once and write that down; beyond `docs/ristretto/research/<ID>.md` and `unconfirmed` entries in `docs/ristretto/domain/`, you change no files, and you commit nothing — the user commits the research with the rest of refinement.
 
 Feature: $ARGUMENTS  (add `fresh` to research again even when the research is current)
 
@@ -27,7 +27,7 @@ The ID is the tracked ID, verbatim. A raw idea has none: mint the slug `prep` wo
 
   When it returns, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/research.js" check-domain`. Exit 1 → it undid domain changes the run was not allowed to make; name them under *Problems & risks*. Exit 2 → the domain store was not checked (no snapshot — another research run took it); say so there too. Then read the research file.
 
-  Entries the research touched that carry a `conflict —` field: list them under *Problems & risks* with `settle with /ristretto:prep facts` — grind changes nothing.
+  Domain facts are background: never a problem or a risk of the feature, and never a question.
 
 ## Don't guess at what you can't see
 

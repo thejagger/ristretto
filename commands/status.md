@@ -13,7 +13,6 @@ Filter (optional): $ARGUMENTS
    `☕ [█████░░░░░] 5/10 brewed`
    If any `done` feature's plan still has an open box or an open finding that is not a `note` or `lean`, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`.
 3. Print a one-line count summary: planned / in-progress / blocked / done.
-3a. **Domain facts in conflict.** If `docs/ristretto/domain/` holds entries with a `·` field starting `conflict`, print one line: `📖 <n> domain facts in conflict — /ristretto:prep facts`. Facts without a conflict are context; they are no to-do and get no line.
 4. Print the roadmap rows. If a filter was given, show only matching rows:
    - `open` → everything not `done`
    - `done` → only `done`

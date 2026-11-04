@@ -19,9 +19,9 @@ THE WORKFLOW
                                     fast by default; escalates into roast mode
                                     when a criterion can't be made checkable.
                                     "deep" forces the roast.
-     …or /ristretto:prep facts      settle domain facts in conflict, one by
-                                    one: update / remove / keep. prep also asks
-                                    at most two "binding?" questions per plan.
+     …or /ristretto:prep facts      optional: look at the domain facts research
+                                    keeps in the background, and update /
+                                    remove / keep / confirm one. never asked.
   3. /ristretto:brew [easy]         brew the whole pot: implements every
                                     eligible feature unattended, one gated
                                     commit each, on feature/brew-<date>.
