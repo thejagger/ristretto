@@ -132,7 +132,10 @@ function main(argv) {
   if (found.length > 1) fail(2, `${id} is planned in more than one repo: ${found.map((f) => f.repo).join(', ')} - pass --repo`);
   const { plan } = found[0];
   const text = fs.readFileSync(plan, 'utf8');
-  if (openChecks(text).length === 0) fail(1, `nothing open in ${id}`);
+  const open = openChecks(text).length;
+  if (open === 0) fail(1, `nothing open in ${id}`);
+  const beyond = [...keep.keys()].filter((n) => n > open);
+  if (beyond.length) fail(2, `--keep ${beyond.join(', ')}: ${id} has ${open} open box(es) - nothing ticked`);
   const r = tick(text, { keep, date });
   fs.writeFileSync(plan, r.text);
   process.stdout.write(`${JSON.stringify({ plan, ticked: r.ticked, kept: r.kept })}\n`);

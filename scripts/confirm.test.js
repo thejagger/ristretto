@@ -202,5 +202,14 @@ test('unknownIdExits2', () => {
   assert.strictEqual(cli(root, 'tick', 'nope').status, 2);
 });
 
+test('keepOutOfRangeRefuses', () => {
+  const root = tmp();
+  repo(root, { r: plan });
+  const r = cli(root, 'tick', 'r', '--keep', '5', '--note', 'not yet', '--date', DATE);
+  assert.strictEqual(r.status, 2);
+  assert.ok(/5/.test(r.stderr) && /2 open/.test(r.stderr), r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(root, 'docs', 'ristretto', 'plans', 'r.md'), 'utf8'), plan, 'nothing ticked');
+});
+
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');
