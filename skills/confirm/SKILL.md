@@ -1,5 +1,6 @@
 ---
 name: confirm
+user-invocable: false
 description: Use when the user says in chat that the manual checks of a ristretto feature are done ("manual checks done", "checks done", "I checked it"), optionally naming the feature or an exception.
 ---
 

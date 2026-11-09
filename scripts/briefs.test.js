@@ -353,6 +353,7 @@ assert.ok(/one input at a time/.test(prep), 'prep must research one input at a t
   const front = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(s) || [])[1] || '';
   assert.ok(/^name: confirm$/m.test(front), 'the confirm skill must be named confirm');
   assert.ok(/^description:.*manual checks done/m.test(front), 'its description must name "manual checks done"');
+  assert.ok(/^user-invocable: false$/m.test(front), 'nobody types /ristretto:confirm — it acts on what the user says, so it stays out of the / menu');
   for (const cmd of ['confirm.js" list', 'confirm.js" tick']) assert.ok(s.includes(cmd), `the skill must run ${cmd}`);
   assert.ok(s.includes("only the user's own words in chat"), "the skill must act on only the user's own words in chat");
 }
