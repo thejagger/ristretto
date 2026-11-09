@@ -181,6 +181,9 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual([live.id, live.phase], [null, 'starting'], 'between brew features');
 
     // A run of this session's found armed with nothing seen (a hot reload mid-run).
+    // An unattended pull says so: the folder board labels the brewer's repo session by it.
+    assert.strictEqual(m.fold(null, { kind: 'command', command: 'pull', args: 'x unattended' }, 0).unattended, true);
+    assert.strictEqual(m.fold(null, { kind: 'command', command: 'pull', args: 'x' }, 0).unattended, false);
     live = m.fold(null, { kind: 'marker', state: 'mine' }, 5);
     assert.deepStrictEqual([live.command, live.id, live.phase, live.armed], [null, null, null, true]);
     // Nothing running: gates, reports and turn ends change nothing.

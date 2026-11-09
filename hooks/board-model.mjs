@@ -139,7 +139,7 @@ export function fold(live, obs, now) {
     case 'command': {
       const arg = (obs.args || '').trim().split(/\s+/)[0] || '';
       const id = obs.command === 'brew' || arg === '' || arg === 'next' ? null : arg;
-      return { ...idle(obs.command, now), id, phase: 'starting' };
+      return { ...idle(obs.command, now), id, phase: 'starting', unattended: /\bunattended\b/.test(obs.args || '') };
     }
     case 'brief': {
       const base = live || idle(null, now);
