@@ -9,7 +9,7 @@
 //                    agent), but ONLY while .ristretto/pulling exists. Outside a pull: exits 0.
 //                    Uses gates.testChanged (scoped to the touched files) when configured — the
 //                    loop stays fast; the full suite is proven once at the end via `verify`.
-//   full subagent    SubagentStop hook. Same, but never exempt (see ORCHESTRATOR below).
+//   full subagent    SubagentStop hook. Same.
 //   verify           Not a hook — run directly (`node gate.js verify`). Runs lint + typecheck +
 //                    the FULL test gate, ignoring the marker and the cache. One-line summary.
 //                    Exits 0 green, 1 red. brew's pre-flight and its end-of-run proof.
@@ -23,12 +23,6 @@
 //                    tree and does nothing — one run instead of two. Exits 0 green, 1 red, 3
 //                    UNVERIFIED (a stall, an unobtained lock, or an unparseable config), never the
 //                    hook's 2.
-//
-// ORCHESTRATOR. brew's main agent writes no source by design; it dispatches subagents, which are
-// gated individually on SubagentStop. Gating its OWN stops means running a suite against a tree a
-// live subagent is mid-edit on — a half-applied migration reads as hundreds of red tests that
-// belong to nobody. So while .ristretto/orchestrating exists, Stop is exempt and SubagentStop is
-// not. pull and shot never write that marker: there the main agent IS the implementer.
 //
 // LOCK. Exactly one gate run at a time, repo-wide (.ristretto/gate-lock). Two concurrent suites
 // sharing one database or port produce failures that belong to neither — a red that is pure
@@ -102,12 +96,6 @@ const LOCK_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 // being kept alive forever by gate hooks from sessions that were never part of it.
 const MARKER_MAX_IDLE_MS = 24 * 60 * 60 * 1000;
 
-// The orchestrator's exemption gets a far shorter rope than the pulling marker, because the two
-// fail in opposite directions. A stale `pulling` gates a session that never asked for it: annoying,
-// and obvious the moment it happens. A stale `orchestrating` turns Stop gating OFF, which has no
-// symptom at all — work simply stops being checked. A live brew stops a subagent every few minutes,
-// so hours of silence is not a slow feature; it is a loop that is no longer running.
-const ORCHESTRATOR_MAX_IDLE_MS = 2 * 60 * 60 * 1000;
 
 // null when it cannot be read at all — the caller decides what to do with "unknown", and every
 // caller here chooses the safe direction rather than the convenient one.
@@ -251,7 +239,9 @@ const toolsPath = path.join(projectDir, '.ristretto', 'gate-tools.json');
 const lockPath = path.join(projectDir, '.ristretto', 'gate-lock');
 const formatBrokenPath = path.join(projectDir, '.ristretto', 'format-broken');
 const baselinePath = path.join(projectDir, '.ristretto', 'baseline.json');
-const orchestratingPath = path.join(projectDir, '.ristretto', 'orchestrating');
+// Written by brews before 0.23, which armed an orchestrator exemption. Nothing reads it now;
+// disarm still clears a leftover, and the pre-flight knows its name.
+const legacyOrchestratingPath = path.join(projectDir, '.ristretto', 'orchestrating');
 // The full-suite verdict the board reads; it outlives the run, so disarm leaves it.
 const suitePath = path.join(projectDir, '.ristretto', 'suite.json');
 // Untracked files already there when the run armed, path → content hash. They are the user's —
@@ -620,7 +610,7 @@ function contentHash(p) {
 function theirPaths(entries) {
   let before = null;
   try { before = JSON.parse(fs.readFileSync(untrackedPath, 'utf8')); } catch { /* no snapshot */ }
-  const armed = fs.existsSync(markerPath) || fs.existsSync(orchestratingPath);
+  const armed = fs.existsSync(markerPath);
   if (armed && (before === null || typeof before !== 'object')) return new Set();
   return new Set(entries
     .filter((e) => e.code === '??' && (!armed || before[e.path] === contentHash(e.path)))
@@ -1398,7 +1388,7 @@ async function main() {
   // creates, deletes, or refreshes anything — a command that reports state must never be the
   // reason the state changes.
   if (MODE === 'state') {
-    for (const [label, p] of [['pulling', markerPath], ['orchestrating', orchestratingPath]]) {
+    for (const [label, p] of [['pulling', markerPath]]) {
       const who = ownerLabel(p);
       if (who === null) { console.log(`${label}: not armed`); continue; }
       const idle = markerIdleMs(p);
@@ -1444,7 +1434,7 @@ async function main() {
     // file stays known automatically instead of silently drifting from this list. `build` has
     // no constant naming it (no single file owns that directory), so it stays a literal.
     const known = new Set([
-      markerPath, orchestratingPath, retriesPath, greenPath, stalledPath,
+      markerPath, legacyOrchestratingPath, retriesPath, greenPath, stalledPath,
       toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
     ].map((p) => path.basename(p)));
     known.add('build');
@@ -1463,6 +1453,10 @@ async function main() {
   // after a `brew` left `orchestrating` behind — and while that file exists, Stop does not gate
   // at all, with no error and no symptom.
   if (MODE === 'arm') {
+    if (ARG) {
+      console.error(`ristretto: unknown argument '${ARG}' - arm takes none (the brewer never arms; there is no orchestrator mode)`);
+      process.exit(2);
+    }
     const me = mySession();
     const prior = markerOwner(markerPath);
     if (prior !== null && prior !== '' && prior !== me) {
@@ -1486,7 +1480,6 @@ async function main() {
         fs.writeFileSync(untrackedPath, JSON.stringify(snapshot));
       }
       fs.writeFileSync(markerPath, me);
-      if (ARG === 'orchestrator') fs.writeFileSync(orchestratingPath, me);
     } catch (e) {
       console.error(`ristretto: could not arm — cannot write ${e.path || markerPath}: ${e.message}`);
       process.exit(1);
@@ -1497,7 +1490,7 @@ async function main() {
   if (MODE === 'disarm') {
     // Everything a run creates, in one place. `build/` is deliberately absent: a plan that was
     // paid for and never implemented outlives the run, and its closer deletes it.
-    for (const p of [markerPath, orchestratingPath, retriesPath, stalledPath, untrackedPath]) {
+    for (const p of [markerPath, legacyOrchestratingPath, retriesPath, stalledPath, untrackedPath]) {
       try { fs.unlinkSync(p); } catch { /* never existed */ }
     }
     process.exit(0);
@@ -1588,29 +1581,6 @@ async function main() {
     // This run counts as activity. Without it, "old" would mean total age and a batch that runs
     // longer than the window would disarm its own gates halfway through.
     try { const t = Date.now() / 1000; fs.utimesSync(markerPath, t, t); } catch { /* best-effort */ }
-
-    // A subagent stopping is the only proof that a brew loop is actually alive — nothing else
-    // produces one. So that, and only that, keeps the orchestrator's exemption current.
-    if (IS_SUBAGENT && fs.existsSync(orchestratingPath)) {
-      try { const t = Date.now() / 1000; fs.utimesSync(orchestratingPath, t, t); } catch { /* best-effort */ }
-    }
-
-    // brew's orchestrator writes no source and its subagents are gated one by one. Running a
-    // suite here measures a tree that a live subagent is mid-edit on — the red belongs to a
-    // half-finished cycle, not to anyone's work, and it burns the retry budget to say so.
-    //
-    // But this exemption TURNS GATES OFF, so unlike the pulling marker it may never be taken on
-    // faith. A brew that dies without disarming leaves this file behind, and an exemption that
-    // never expires means every later session in that repo stops ungated — silently, with no
-    // symptom until something red is committed. Being wrong the other way costs one unnecessary
-    // suite on a tree a subagent may be mid-edit on: recoverable, and loud.
-    if (!IS_SUBAGENT && fs.existsSync(orchestratingPath)) {
-      const idle = markerIdleMs(orchestratingPath);
-      if (idle !== null && idle <= ORCHESTRATOR_MAX_IDLE_MS) process.exit(0);
-      const age = idle === null ? 'an unreadable age' : `${Math.round(idle / 3600000)}h`;
-      console.error(`ristretto: .ristretto/orchestrating has seen no subagent gate for ${age} — treating it as a leftover from a dead brew and gating normally.`);
-      console.error('  If a brew really is running, touch the file; if not, delete it. Leaving it would turn Stop gating off for good.');
-    }
 
     // Tree unchanged since the last green run → already proven, skip.
     const fp = treeFingerprint();

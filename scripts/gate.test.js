@@ -295,31 +295,34 @@ if (process.platform !== 'win32') {
   assert.ok(!r.stderr.includes('is not the one that was verified'), 'no drift warning when nothing drifted');
 }
 
-// --- The orchestrator exemption. ---
-// brew's main agent writes no source; gating its stops runs a suite against a tree a live
-// subagent is mid-edit on, and reports a red that belongs to a half-finished TDD cycle.
+// --- No orchestrator exemption: the brewer never builds and never arms. ---
+// A Stop is gated only for the session that owns the marker, which is what lets the brewer sit
+// in a repo while that repo's own session pulls.
 
-// 28. While orchestrating, a Stop is exempt but a SubagentStop is still fully gated.
+// 28. foreignOwnerNotGated: a marker owned by session A does not gate a Stop in session B.
+dir = tmpRepo(JSON.stringify({ gates: { lint: FAIL } }));
+arm(dir);
+fs.writeFileSync(path.join(dir, '.ristretto', 'pulling'), 'session-A');
+r = gate(dir, 'full', JSON.stringify({ session_id: 'session-B' }));
+assert.strictEqual(r.status, 0, 'a Stop in a session that does not own the marker is not gated');
+assert.ok(r.stderr.includes('belongs to another session'), 'and it says why');
+r = gate(dir, 'full', JSON.stringify({ session_id: 'session-A' }));
+assert.strictEqual(r.status, 2, 'the owner\'s Stop is gated as before');
+
+// 29. armOrchestratorRefused: `arm orchestrator` is gone, and says so instead of arming quietly.
+dir = tmpRepo(JSON.stringify({ gates: { lint: PASS } }));
+r = gate(dir, 'arm', '{}', {}, 'orchestrator');
+assert.strictEqual(r.status, 2, 'arm orchestrator is refused');
+assert.ok(r.stderr.includes('unknown argument'), r.stderr);
+assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'pulling')), 'nothing was armed');
+
+// 30. A leftover .ristretto/orchestrating from an older brew exempts nothing, and disarm clears it.
 dir = tmpRepo(JSON.stringify({ gates: { lint: FAIL } }));
 arm(dir);
 fs.writeFileSync(path.join(dir, '.ristretto', 'orchestrating'), '');
-assert.strictEqual(gate(dir, 'full').status, 0, 'an orchestrator Stop must not be gated');
-r = gate(dir, 'full', '{}', {}, 'subagent');
-assert.strictEqual(r.status, 2, 'a SubagentStop must be gated even while orchestrating');
-assert.ok(r.stderr.includes("gate 'lint' FAILED"), 'the subagent gate must still name the failure');
-
-// 29. The exemption is opt-in per run: without the marker, Stop gates exactly as before. pull
-//     and shot never write it, because there the main agent IS the implementer.
-fs.rmSync(path.join(dir, '.ristretto', 'orchestrating'));
-fs.rmSync(path.join(dir, '.ristretto', 'gate-retries'), { force: true });
-assert.strictEqual(gate(dir, 'full').status, 2, 'without the marker a red Stop must block as usual');
-
-// 30. The event name from the hook payload identifies a SubagentStop too, so a hooks.json that
-//     predates the argument still gates subagents rather than silently exempting them.
-fs.writeFileSync(path.join(dir, '.ristretto', 'orchestrating'), '');
-fs.rmSync(path.join(dir, '.ristretto', 'gate-retries'), { force: true });
-r = gate(dir, 'full', JSON.stringify({ hook_event_name: 'SubagentStop' }));
-assert.strictEqual(r.status, 2, 'the payload event name must be enough to identify a subagent stop');
+assert.strictEqual(gate(dir, 'full').status, 2, 'a leftover orchestrating file no longer turns Stop gating off');
+gate(dir, 'disarm');
+assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'orchestrating')), 'disarm clears the leftover');
 
 // --- The gate lock: one run at a time, repo-wide. ---
 
@@ -639,31 +642,6 @@ dir = gitTmpRepo(JSON.stringify({ gates: FIXED }));
 arm(dir);
 r = gate(dir, 'verify');
 assert.ok(!r.stderr.includes('missing a flag'), 'a corrected config must produce no advice at all');
-
-// 60. THE SILENT ONE. A leftover `orchestrating` marker turns Stop gating off — no error, no
-//     symptom, nothing to notice until something red is committed. A brew that dies without
-//     disarming leaves exactly that behind, and before this the exemption never expired.
-dir = tmpRepo(JSON.stringify({ gates: { test: COUNT } }));
-arm(dir);
-const orchPath = path.join(dir, '.ristretto', 'orchestrating');
-fs.writeFileSync(orchPath, '');
-r = gate(dir, 'full');
-assert.strictEqual(r.status, 0, 'a live brew orchestrator is still exempt');
-assert.strictEqual(runs(dir), 0, 'and exempt means no gate ran');
-
-const stale = Date.now() / 1000 - 3 * 60 * 60; // 3h without a single subagent stop
-fs.utimesSync(orchPath, stale, stale);
-r = gate(dir, 'full');
-assert.ok(r.stderr.includes('leftover from a dead brew'), 'a stale exemption must be named, not honoured');
-assert.strictEqual(runs(dir), 1, 'and the gates must actually run — an expired exemption is no exemption');
-
-// 61. A subagent stopping is the only thing that proves the loop is alive, so it — and nothing
-//     else — keeps the exemption current. Without this a long feature would expire its own brew.
-r = gate(dir, 'full', undefined, {}, 'subagent');
-assert.ok(Date.now() - fs.statSync(orchPath).mtimeMs < 60 * 1000,
-  'a subagent gate must refresh the exemption it runs under');
-r = gate(dir, 'full');
-assert.strictEqual(r.status, 0, 'and the orchestrator is exempt again once the loop has proven itself alive');
 
 // 62. THE ONE THAT KILLED A HEALTHY SUITE. `pytest -q` over a thousand tests is about a kilobyte
 //     of dots — less than one buffer block — so piped rather than attached to a terminal it emits
@@ -1253,7 +1231,6 @@ dir = tmpRepo(JSON.stringify({ gates: { test: PASS } }));
 r = gate(dir, 'state');
 assert.strictEqual(r.status, 0, 'state must always exit 0');
 assert.ok(/pulling: not armed/.test(r.stdout), 'state must say pulling is not armed — got: ' + r.stdout);
-assert.ok(/orchestrating: not armed/.test(r.stdout), 'state must report orchestrating too');
 assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'pulling')), 'state must create nothing');
 
 // 111. An armed marker is reported with its owner and how long it has been idle.
@@ -1311,10 +1288,6 @@ r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' });
 assert.strictEqual(r.status, 0, 'arm must exit 0');
 assert.strictEqual(fs.readFileSync(path.join(dir, '.ristretto', 'pulling'), 'utf8').trim(), 'sess-aaa',
   'arm must stamp the marker with the session');
-
-// 118. `arm orchestrator` additionally creates the orchestrating marker.
-r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' }, 'orchestrator');
-assert.ok(fs.existsSync(path.join(dir, '.ristretto', 'orchestrating')), 'arm orchestrator must create it');
 
 // 119. `arm` in the SAME session is idempotent — "the API died, I fire again" must just work.
 r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' });
@@ -1695,7 +1668,7 @@ spawnSync('git', ['checkout', '--', 'src.txt'], { cwd: dir });
 
 // 152. `arm` snapshots it; once armed, a file created after the snapshot is the run's work and
 //      dirty, while the snapshotted one stays left alone — and out of every scoped gate.
-r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' }, 'orchestrator');
+r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-aaa' });
 assert.strictEqual(r.status, 0);
 assert.ok(fs.existsSync(path.join(dir, '.ristretto', 'untracked-before.json')), 'arm must snapshot the untracked files');
 fs.writeFileSync(path.join(dir, 'half.txt'), 'a subagent died here');
