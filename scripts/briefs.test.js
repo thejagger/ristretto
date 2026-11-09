@@ -230,20 +230,19 @@ assert.ok(/commands\/pull\.md/.test(shot) && /skip the planner/.test(shot), 'sho
 assert.ok(!/Add a `planned` row|in prep's format/.test(shot), 'shot no longer writes plans — prep always runs first');
 assert.ok(/prep/.test(shot), 'shot must say prep runs first');
 
-// 17. brew is an orchestrator: it dispatches by path and keeps its own rules only.
+// 17. brew is the brewer: a goal, not a loop. It keeps the overview and feeds pulls to one session
+//     per repo; it never builds, never arms a gate, never dispatches a role.
 const brew = read('commands/brew.md');
-assert.ok(words(brew) < 2200, `brew.md is ${words(brew)} words — was 9220`);
-for (const b of ['planner.md', 'implementer.md', 'reviewer.md', 'closer.md']) {
-  assert.ok(brew.includes(b), `brew must dispatch ${b} by path`);
+assert.ok(brew.split(/\r?\n/).length <= 45, `brew.md is ${brew.split(/\r?\n/).length} lines — the brewer is a goal of at most 45`);
+for (const s of ['/ristretto:pull', 'unattended', 'one session', 'feature/brew-', 'never builds', 'decided:']) {
+  assert.ok(brew.includes(s), `brew.md must carry "${s}"`);
 }
-assert.ok(/gate\.js" arm .*orchestrator|arm orchestrator/.test(brew), 'brew must arm as orchestrator');
-assert.ok(!/You are the independent REVIEW gate/.test(brew), 'the review brief must not be pasted back in');
-assert.ok(/3 rounds|capped at 3/.test(brew), 'brew keeps its 3-round cap');
-assert.ok(!/append.*easy|appended with/.test(brew), 'the forced-easy lane must never edit the Tier cell');
+for (const gone of ['PLANNER for', 'arm orchestrator', 'reviewer.md', 'implementer.md']) {
+  assert.ok(!brew.includes(gone), `brew.md must not carry "${gone}" — the brewer does not build`);
+}
 
-// 18. The green-tree rule is honoured everywhere, not contradicted twelve lines later.
-assert.ok(!/`git restore`/.test(brew) || /gate\.js" state|proven green/.test(brew),
-  'any git restore in brew must be gated on the tree not being proven green');
+// 18. The green-tree rule is honoured everywhere: nothing a run built is ever restored away.
+assert.ok(!/git restore/.test(brew), 'the brewer never restores work away');
 
 // 19. The roadmap cell rule lives where rows are written.
 assert.ok(read('commands/prep.md').includes('every cell'), 'prep.md must carry the cell rule — it writes the rows');
