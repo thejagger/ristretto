@@ -357,7 +357,7 @@ const blockedWords = (row) => {
 function nextPick(rows, ctx, running) {
   for (const r of rows) {
     if (r.id === running) continue;
-    if (r.status === 'planned' && waitingOn(ctx.plans[r.id], ctx.statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length)) return r.id;
+    if (r.status === 'planned' && waitingOn(ctx.plans[r.id], (id) => ctx.statusOf.get(id)).length === 0 && !(ctx.plans[r.id]?.blockers?.length)) return r.id;
   }
   return null;
 }
@@ -413,7 +413,7 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
 
   // Up next: what waits on nothing, in brew's order, five at most.
   const planned = rows.filter((r) => r.status === 'planned' && r.id !== running);
-  const free = (r) => waitingOn(ctx.plans[r.id], statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
+  const free = (r) => waitingOn(ctx.plans[r.id], (id) => statusOf.get(id)).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
   const eligible = planned.filter(free);
   const upNext = {
     rows: eligible.slice(0, 5).map((r) => ({
@@ -519,7 +519,7 @@ export function brewingOf(board, live, opts = {}) {
   const queued = (ids) => ids.map((id, i) => ({
     key: `q-${id}`, glyph: i === 0 ? 'next' : 'planned', id, detail: i === 0 ? 'next' : 'queued', tone: i === 0 ? 'default' : 'dim', open: featureOpen(id),
   }));
-  const free = (r) => waitingOn(ctx.plans[r.id], statusOf).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
+  const free = (r) => waitingOn(ctx.plans[r.id], (id) => statusOf.get(id)).length === 0 && !(ctx.plans[r.id]?.blockers?.length);
   let tally = null;
   let rest = [];
   let more = 0;
@@ -596,7 +596,7 @@ export function queuePage(board, state) {
       key: `flight-${flight || 'other'}`,
       flight,
       rows: waiting.filter((r) => r.flight === flight).map((r) => {
-        const on = waitingOn(ctx.plans[r.id], ctx.statusOf).map((w) => w.id);
+        const on = waitingOn(ctx.plans[r.id], (id) => ctx.statusOf.get(id)).map((w) => w.id);
         const blocker = ctx.plans[r.id]?.blockers?.[0];
         return {
           key: `wait-${r.id}`, glyph: 'planned', id: r.id, tone: 'dim', open: featureOpen(r.id),

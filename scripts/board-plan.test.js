@@ -182,12 +182,20 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(p.parsePlan(crlf), p.parsePlan(boxed));
 
   // doneSatisfiesDepends: only done satisfies a dependency; there is no other finished status.
-  const statusOf = new Map([['lnw-core', 'done'], ['mail-outbound', 'planned'], ['rbac', 'in-progress']]);
+  const statusMap = new Map([['lnw-core', 'done'], ['mail-outbound', 'planned'], ['rbac', 'in-progress']]);
+  const statusOf = (id) => statusMap.get(id);
   assert.deepStrictEqual(p.waitingOn({ depends: ['lnw-core'] }, statusOf), []);
   assert.deepStrictEqual(p.waitingOn({ depends: ['lnw-core', 'mail-outbound', 'rbac', 'mail-classify'] }, statusOf),
     [{ id: 'mail-outbound', status: 'planned' }, { id: 'rbac', status: 'in-progress' }, { id: 'mail-classify', status: 'missing' }]);
   assert.deepStrictEqual([...p.SATISFIES], ['done']);
   assert.deepStrictEqual(p.waitingOn(undefined, statusOf), []);
+
+  // A sibling repo's feature, named <folder>/<id>: kept whole, split by siblingOf, resolved by the caller.
+  assert.deepStrictEqual(p.parsePlan('- Depends: web-lnw-orders-table, api/api-order-title\n').depends, ['web-lnw-orders-table', 'api/api-order-title']);
+  assert.deepStrictEqual(p.siblingOf('api/api-order-title'), { folder: 'api', id: 'api-order-title' });
+  assert.strictEqual(p.siblingOf('web-order-title'), null);
+  const st = (id) => ({ 'api/api-order-title': 'done', 'api/x': 'missing', p1: 'planned' })[id];
+  assert.deepStrictEqual(p.waitingOn({ depends: ['api/api-order-title', 'api/x', 'p1'] }, st), [{ id: 'api/x', status: 'missing' }, { id: 'p1', status: 'planned' }]);
 
   // The plan's one-line goal, for a feature's page.
   assert.strictEqual(p.parsePlan('## Spec\n- Source: idea\n- Goal: measure the classifier on real mails.\n').goal, 'measure the classifier on real mails.');

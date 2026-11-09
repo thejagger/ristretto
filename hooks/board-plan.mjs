@@ -132,7 +132,7 @@ function items(lines) {
 // (`DGS-162 (merged …)`, `x *(client half only)*`) is not part of it.
 function ids(value) {
   return splitList(value)
-    .map((part) => /^[\s`*]*([A-Za-z0-9][\w.-]*)/.exec(part))
+    .map((part) => /^[\s`*]*((?:[A-Za-z0-9][\w.-]*\/)?[A-Za-z0-9][\w.-]*)/.exec(part))
     .filter((m) => m && !NONE.test(m[1]))
     .map((m) => m[1]);
 }
@@ -232,9 +232,17 @@ export function parseDecisions(text) {
 
 // What a plan still waits on: dependencies that are not built, as `pull next` reads them.
 export const SATISFIES = new Set(['done']);
+// `statusOf(id)` answers for a plain id (this repo) and for `<folder>/<id>` (a sibling repo);
+// undefined means it was not found.
 export function waitingOn(plan, statusOf) {
   if (!plan) return [];
   return plan.depends
-    .filter((id) => !SATISFIES.has(statusOf.get(id)))
-    .map((id) => ({ id, status: statusOf.get(id) ?? 'missing' }));
+    .filter((id) => !SATISFIES.has(statusOf(id)))
+    .map((id) => ({ id, status: statusOf(id) ?? 'missing' }));
+}
+
+// A sibling repo's feature: `api/api-order-title` → { folder: 'api', id: 'api-order-title' }.
+export function siblingOf(id) {
+  const m = /^([^/]+)\/([^/]+)$/.exec(String(id));
+  return m ? { folder: m[1], id: m[2] } : null;
 }
