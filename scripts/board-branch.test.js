@@ -24,6 +24,11 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(b.parseBase({ head: 'feature/x', originHead: 'refs/remotes/origin/main', refs: 'refs/heads/main\nrefs/remotes/origin/main\n', isAncestor: () => false }), { ref: 'refs/heads/main', label: 'main' });
   // No remote: local main, else master.
   assert.deepStrictEqual(b.parseBase({ head: 'feature/x', originHead: '', refs: 'refs/heads/master\n', isAncestor: () => false }), { ref: 'refs/heads/master', label: 'master' });
+  // No origin/HEAD, no main or master: development, then develop (the owner's repos use them).
+  assert.deepStrictEqual(b.parseBase({ head: 'feature/x', originHead: '', refs: 'refs/heads/development\n', isAncestor: () => false }), { ref: 'refs/heads/development', label: 'development' });
+  assert.deepStrictEqual(b.parseBase({ head: 'feature/x', originHead: '', refs: 'refs/remotes/origin/develop\n', isAncestor: () => false }), { ref: 'refs/remotes/origin/develop', label: 'develop' });
+  assert.strictEqual(b.defaultBranch({ originHead: '', refs: 'refs/heads/develop\nrefs/heads/development\n' }), 'development');
+  assert.ok(b.baseArgs.refs.includes('refs/heads/development') && b.baseArgs.refs.includes('refs/remotes/origin/develop'));
   assert.deepStrictEqual(b.parseBase({ head: 'HEAD', originHead: '', refs: 'refs/heads/main\nrefs/heads/master\n', isAncestor: () => false }), { ref: 'refs/heads/main', label: 'main' }, 'a detached HEAD compares with main');
   // origin/HEAD naming another default branch.
   assert.deepStrictEqual(b.parseBase({ head: 'feature/x', originHead: 'refs/remotes/origin/develop', refs: 'refs/heads/main\n', isAncestor: () => false }), { ref: 'refs/remotes/origin/develop', label: 'develop' });

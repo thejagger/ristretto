@@ -242,7 +242,7 @@ const LOOK = {
   unknown: { mark: '?', tone: 'inactive', tag: '' },
 };
 
-const PREP = 'no roadmap here — /ristretto:prep starts one';
+export const PREP = 'no roadmap here — /ristretto:prep starts one';
 
 // What an opened row says: what it needs, what done means for it, and what happened.
 function detailsOf(row, plan, ctx) {
@@ -268,9 +268,9 @@ function detailsOf(row, plan, ctx) {
 }
 
 // Every page goes back to the board, by one label.
-const BACK = 'Board';
+export const BACK = 'Board';
 
-function featurePage(row, ctx) {
+export function featurePage(row, ctx) {
   const look = LOOK[row.status];
   const plan = ctx.plans[row.id];
   const run = ctx.runOf.get(row.id);
@@ -335,7 +335,7 @@ const featureOpen = (id) => ({ kind: 'feature', id });
 // What a done feature still asks of a person, read from its plan: open findings and open manual
 // checks. A decision taken during the build is in force, not a question, so it never counts.
 // Derived when shown, never stored as a status. null: nothing.
-function waitsOf(row, ctx) {
+export function waitsOf(row, ctx) {
   if (row.status !== 'done') return null;
   // A finding is `<tag> · <where> · <what>`. A note or a lean is recorded, not a person's turn,
   // and an untagged line is prose around the findings.
@@ -348,7 +348,7 @@ function waitsOf(row, ctx) {
   return { detail: `${words.join(' · ')} open`, glyph: person ? 'person' : 'findings', tone: person ? 'permission' : 'warning' };
 }
 
-const blockedWords = (row) => {
+export const blockedWords = (row) => {
   const fact = factOf(row.reason);
   return fact ? `waits on domain/${fact}` : waitsOn(row.reason);
 };

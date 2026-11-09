@@ -6,9 +6,11 @@ import { featureIdOf, isDocs } from './board-files.mjs';
 
 export const headArgs = ['rev-parse', '--abbrev-ref', 'HEAD'];
 export const shortHeadArgs = ['rev-parse', '--short', 'HEAD'];
+// The base branch when origin/HEAD names none, first found wins.
+export const BASES = ['main', 'master', 'development', 'develop'];
 export const baseArgs = {
   originHead: ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
-  refs: ['for-each-ref', '--format=%(refname)', 'refs/heads/main', 'refs/heads/master', 'refs/remotes/origin/main', 'refs/remotes/origin/master'],
+  refs: ['for-each-ref', '--format=%(refname)', ...BASES.flatMap((n) => [`refs/heads/${n}`, `refs/remotes/origin/${n}`])],
 };
 
 const lines = (text) => String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -24,7 +26,7 @@ export function parseBase({ head, originHead, refs, isAncestor }) {
   const origin = lines(originHead)[0] || '';
   const name = origin.startsWith(REMOTE)
     ? origin.slice(REMOTE.length)
-    : ['main', 'master'].find((n) => have.has(LOCAL + n) || have.has(REMOTE + n));
+    : BASES.find((n) => have.has(LOCAL + n) || have.has(REMOTE + n));
   if (!name) return null;
   const remote = origin === REMOTE + name || have.has(REMOTE + name) ? REMOTE + name : null;
   const local = have.has(LOCAL + name) ? LOCAL + name : null;
@@ -43,7 +45,7 @@ export function defaultBranch({ originHead, refs }) {
   const have = new Set(lines(refs));
   const origin = lines(originHead)[0] || '';
   if (origin.startsWith(REMOTE)) return origin.slice(REMOTE.length);
-  return ['main', 'master'].find((n) => have.has(LOCAL + n) || have.has(REMOTE + n)) ?? null;
+  return BASES.find((n) => have.has(LOCAL + n) || have.has(REMOTE + n)) ?? null;
 }
 
 export function logArgs(baseRef) {
