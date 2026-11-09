@@ -13,7 +13,7 @@ const THEME_KEYS = new Set(['text', 'subtle', 'inactive', 'claude', 'error', 'su
 
 const ROADMAP = [
   '# Ristretto Roadmap',
-  '<!-- ristretto-format: 0.22 -->',
+  '<!-- ristretto-format: 0.23 -->',
   '',
   '| Flight | Feature | Title | Tier | Status |',
   '|---|---|---|---|---|',

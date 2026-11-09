@@ -30,7 +30,7 @@ If `shot` sent you here: skip the planner (step 7) and review at `medium`. That 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say so; resolve the target (step 1) off the migrated roadmap, then switch to step 6's branch and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.22` — never on the default branch. If step 1 stops, leave the migration uncommitted and say so. Exit 3 → the project is newer than this plugin: stop, report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say so; resolve the target (step 1) off the migrated roadmap, then switch to step 6's branch and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.23` — never on the default branch. If step 1 stops, leave the migration uncommitted and say so. Exit 3 → the project is newer than this plugin: stop, report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Resolve the target — trust the roadmap
 
@@ -39,7 +39,7 @@ Read `docs/ristretto/roadmap.md`; take it at its word.
 - **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). A feature is built in its repo, never from the parent folder, where no gate fires: in the desktop app start a session in that repo with this same command; elsewhere tell the user to open it there. Stop here.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
 - **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause — proceed.
-- **`next`** → the top `planned` row whose `Depends:` are all `done`. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
+- **`next`** → the top `planned` row whose `Depends:` are all `done`. A `<folder>/<id>` dependency is looked up in `../<folder>/docs/ristretto/roadmap.md`; a missing folder or row is not done. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
 
 ## 2. Read the plan
 

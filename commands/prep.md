@@ -17,7 +17,7 @@ Each input is one of: a **tracked feature** (has an ID like `BREW-224` — keep 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.22`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.23`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
 
 ## Setup
 
@@ -30,7 +30,7 @@ If `roadmap.md` is new, start it with exactly this — the roadmap holds order a
 
 ```
 # Ristretto Roadmap
-<!-- ristretto-format: 0.22 -->
+<!-- ristretto-format: 0.23 -->
 
 | Flight | Feature | Title | Tier | Status |
 |--------|---------|-------|------|--------|
@@ -81,7 +81,7 @@ When unsure, keep it whole. Before writing any plans, **print the proposed split
 
 When inputs belong together — a split of one feature, or several features that form one deliverable — give them a shared **Flight** slug (kebab, e.g. `dpk-detail`). A lone feature with no siblings gets `—`. This is just a grouping label; it changes nothing about how a feature is planned or pulled.
 
-When one resulting feature can't start until another lands, record it with **`Depends:`** (the prerequisite feature IDs) on the dependent plan. When two are independent and could be worked side by side, note it with **`Parallel-with:`**. Both default to `—` (no constraint). These are honest notes about the graph — `pull next` reads `Depends:` to avoid pulling a feature whose foundation isn't built yet; `Parallel-with:` is informational. ristretto stays one-feature-at-a-time; you're recording order, not running waves.
+When one resulting feature can't start until another lands, record it with **`Depends:`** (the prerequisite feature IDs) on the dependent plan. A prerequisite in a sibling repo of the same folder is written `<folder>/<id>` (the sibling folder's name, never a path), e.g. `api/api-order-title`. When two are independent and could be worked side by side, note it with **`Parallel-with:`**. Both default to `—` (no constraint). These are honest notes about the graph — `pull next` reads `Depends:` to avoid pulling a feature whose foundation isn't built yet; `Parallel-with:` is informational. ristretto stays one-feature-at-a-time; you're recording order, not running waves.
 
 A `Depends:` is satisfied by a prerequisite that is `done` — its code is built and its `Provides:` present, even while a box in its plan still waits on a person.
 

@@ -63,13 +63,23 @@ const apiPlan = (...p) => read('api', 'docs', 'ristretto', 'plans', ...p);
   const out = m.migrateRoadmap(read('vs', 'docs', 'ristretto', 'roadmap.md'));
   const t = m.readTable(out);
   assert.deepStrictEqual(t.header, ['Flight', 'Feature', 'Title', 'Tier', 'Status']);
-  assert.ok(out.includes('<!-- ristretto-format: 0.22 -->'), 'stamped 0.22');
+  assert.ok(out.includes('<!-- ristretto-format: 0.23 -->'), 'stamped 0.23');
   assert.ok(out.includes('\n|--------|---------|-------|------|--------|\n'), 'separator sized to the header');
   assert.deepStrictEqual(t.rows.map((r) => r.Feature), ['pw-frontend-templates', 'wp-content-migration', 'test-suite-runtime']);
-  assert.strictEqual(m.FORMAT, '0.22');
+  assert.strictEqual(m.FORMAT, '0.23');
   // Text around the table stays.
   const api = m.migrateRoadmap(read('api', 'docs', 'ristretto', 'roadmap.md'));
   assert.ok(api.endsWith('## Blockiert\n\n- **nodes-invoice-draft** — waiting on Anatol: Notes write API for draft invoices.\n'));
+}
+
+// crossRepoDependsNote (0.23): prep's old note on a sibling repo's feature becomes a <folder>/<id> id.
+{
+  assert.strictEqual(m.migratePlan('- Depends: web-lnw-orders-table (cross-repo: after api-order-title in C:\\work\\sisi\\api is done)\n'), '- Depends: web-lnw-orders-table, api/api-order-title\n');
+  assert.strictEqual(m.migratePlan('- Depends: — (cross-repo: after api-worker-absence in C:\\work\\sisi\\api is done)\n'), '- Depends: api/api-worker-absence\n');
+  assert.strictEqual(m.migratePlan('- Depends: a, b (cross-repo: after x in /home/u/sisi/api is done)\n'), '- Depends: a, b, api/x\n');
+  const once = m.migratePlan(read('web', 'docs', 'ristretto', 'plans', 'web-order-title.md'));
+  assert.ok(once.includes('- Depends: web-lnw-orders-table, api/api-order-title'), 'the sisi plan is rewritten');
+  assert.strictEqual(m.migratePlan(once), once, 'a second run changes nothing');
 }
 
 // statusesMap

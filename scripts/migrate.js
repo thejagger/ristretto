@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const FORMAT = '0.22';
+const FORMAT = '0.23';
 const STAMP_RE = /<!--\s*ristretto-format:\s*(\d+\.\d+)\s*-->/;
 const COLUMNS = ['Flight', 'Feature', 'Title', 'Tier', 'Status'];
 // Every status any earlier format wrote, onto the four 0.22 has. What used to be a status of its
@@ -259,7 +259,17 @@ function migratePlan(text, checks = []) {
     for (const k of unmatched) out.push('', ...linesOf(k.raw));
   }
   if (ended) out.push('');
-  return out.join(eol);
+  return out.map(crossRepoDepends).join(eol);
+}
+
+// 0.23: prep's note on a sibling repo's prerequisite, `(cross-repo: after <id> in <path>\<folder> is
+// done)`, becomes the id `<folder>/<id>` on the same Depends line (the folder's name, never a path).
+function crossRepoDepends(line) {
+  const m = /^(\s*-\s*Depends:\s*)(.*?)\s*\(cross-repo: after ([A-Za-z0-9][\w.-]*) in (?:.*[\\/])?([^\\/\s]+) is done\)\s*$/.exec(line);
+  if (!m) return line;
+  const sibling = `${m[4]}/${m[3]}`;
+  const rest = m[2].trim();
+  return `${m[1]}${!rest || /^[—-]$/.test(rest) ? sibling : `${rest}, ${sibling}`}`;
 }
 
 // -1 / 0 / 1, MAJOR.MINOR numerically: "0.9" is older than "0.13".
