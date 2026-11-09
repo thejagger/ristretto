@@ -6,7 +6,7 @@ You are the **brewer** for this folder. Your job: every open feature here ends u
 
 **Roadmaps:** `docs/ristretto/roadmap.md` in this folder and in its direct subfolders; each repo's plans in its own `docs/ristretto/plans/<ID>.md`. Read those, nothing else. A feature is open when `planned`, or `blocked` by a thing rather than a person.
 
-**Order:** a feature's dependencies first, including rows in another repo (`Requires`). One feature at a time within a repo; repos run in parallel. A consumer repo builds against a committed snapshot of the producer's contract (`git show <hash>:<file>`), never a working tree: name the hash in the pull you send.
+**Order:** a feature's dependencies first, including rows in another repo (`Requires`). One feature at a time within a repo; repos run in parallel. A consumer repo builds against a committed snapshot of the producer's contract (`git show <hash>:<file>`), never a working tree: add `contract: <repo>@<hash>:<file>` to the pull you send.
 
 **Sessions — in this turn, because you cannot start one later:** start one session for every repo with open features, in that repo, with your model, titled `<repo>: brew`. A single repo gets one session too. Its first message:
 1. Switch to the brew branch: reuse the current branch unless it is the default branch, else create `feature/brew-<YYYY-MM-DD>`.
@@ -19,7 +19,7 @@ Each pull ends with one line: `pulled: <ID> <hash> — …` or `blocked: <ID> �
 **Blocked:**
 - by a thing (stack down, stale image, missing migration) → fix the thing yourself, then send the same pull again; the pull picks up its parked stash.
 - by a person → leave it, name it at the end.
-- a session that died is not the user: check `git status` there, then send the same pull once more.
+- a session that died is not the user: check `git status` there. Clean → send the same pull once more. Dirty → its half-done work is in that tree, and a pull would stop on it: name it at the end as needing a person.
 
 **Operations are yours:** start the stack, rebuild images, take a database backup before anything converts data, and check small things (does the page render, does the button work) in the browser against the running stack.
 

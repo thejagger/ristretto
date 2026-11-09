@@ -279,6 +279,22 @@ assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads th
   }
 }
 
+// 33. The unattended block-and-resume cycle holds (final review, 2026-11-09): the brewer's
+//     rulings and contract snapshots reach the planner and fixer; a parked feature's own build plan
+//     doesn't stop its resume; the stash is taken before the row is set and never holds the
+//     roadmap or .ristretto.json; a dead session's dirty tree goes to a person.
+{
+  assert.ok((pull.match(/Decided \(binding\)/g) || []).length >= 2, 'the brewer\'s rulings bind the planner and the fixer');
+  assert.ok(/contract: <repo>@<hash>:<file>/.test(pull) && /git -C <repo> show <hash>:<file>/.test(pull), 'pull takes a contract snapshot and reads it from git, never a working tree');
+  assert.ok(/own build plan/.test(pull.slice(pull.search(/^## 3\. Pre-flight/m), pull.search(/^## 4\./m))), 'a parked feature\'s own build plan is resumable, not a stop');
+  const blockedStep = pull.slice(pull.search(/^## 12\. Blocked/m), pull.search(/^## 13\./m));
+  assert.ok(blockedStep.indexOf('git stash push') >= 0 && blockedStep.indexOf('git stash push') < blockedStep.indexOf('Then set the roadmap row'), 'stash first, then set the row');
+  assert.ok(/never `docs\/ristretto\/roadmap\.md`/.test(blockedStep) && /`\.ristretto\.json`/.test(blockedStep), 'the stash never holds the roadmap or .ristretto.json');
+  assert.ok(/finishing options[^\n]*then the last line/.test(pull), 'unattended prints the finishing options, then the last line');
+  assert.ok(/contract: <repo>@<hash>:<file>/.test(brew), 'the brewer sends the snapshot in pull\'s own argument form');
+  assert.ok(/dirty[^\n]*person/i.test(brew), 'a dead session\'s dirty tree is named for a person, not re-pulled into a stop');
+}
+
 // 23. README's Depends: sentence: only `done` satisfies, open boxes and all.
 const readmeDepSentence = (read('README.md').match(/A prerequisite counts as finished[^.]*\./) || [''])[0];
 assert.ok(/`done`/.test(readmeDepSentence) && /box/.test(readmeDepSentence),
