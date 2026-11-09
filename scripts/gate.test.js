@@ -255,45 +255,16 @@ r = gate(dir, 'verify');
 assert.strictEqual(r.status, 0);
 assert.ok(r.stdout.includes('none configured'), 'verify must say when there was nothing to run');
 
-// --- Toolchain drift: a pre-flight proved with a different binary than the hook runs. ---
-// The real-world shape: two installs of the same tool on one machine, the agent prepends the
-// working one to PATH for its pre-flight, and the hook — which inherits no such thing — runs
-// the other and goes red on an untouched tree. The red looks like a repo problem. It isn't.
-if (process.platform !== 'win32') {
-  const mkTool = (name, body) => {
-    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ristretto-bin-'));
-    const exe = path.join(binDir, name);
-    fs.writeFileSync(exe, `#!/bin/sh\n${body}\n`);
-    fs.chmodSync(exe, 0o755);
-    return binDir;
-  };
-  const goodBin = mkTool('faketool', 'echo "1068 tests passed"; exit 0');
-  const badBin = mkTool('faketool', 'echo "2 tests failed: shader manifest"; exit 1');
-
-  // 25. verify records the toolchain it proved the tree with, and shows it.
-  dir = tmpRepo(JSON.stringify({ gates: { test: 'faketool' } }));
-  r = gate(dir, 'verify', '{}', { PATH: `${goodBin}:${process.env.PATH}` });
-  assert.strictEqual(r.status, 0, 'the good toolchain must verify green');
-  assert.ok(r.stdout.includes(`faketool → ${goodBin}/faketool`), 'verify must show which binary it used');
-  const recorded = JSON.parse(fs.readFileSync(path.join(dir, '.ristretto', 'gate-tools.json'), 'utf8'));
-  assert.strictEqual(recorded.faketool, `${goodBin}/faketool`, 'verify must record the resolved binary');
-
-  // 26. The hook resolving a DIFFERENT binary names the drift, so the red is explained rather
-  //     than blamed on the repo. This is the whole point: the pre-flight proved nothing here.
-  arm(dir);
-  r = gate(dir, 'full', '{}', { PATH: `${badBin}:${process.env.PATH}` });
-  assert.strictEqual(r.status, 2, 'a red gate still blocks');
-  assert.ok(r.stderr.includes('is not the one that was verified'), 'the drift must be called out');
-  assert.ok(r.stderr.includes(goodBin) && r.stderr.includes(badBin), 'both binaries must be named');
-  assert.ok(r.stderr.includes('do not inherit a PATH you exported'), 'the advice must name the actual cause');
-  assert.ok(r.stderr.includes('shader manifest'), 'the underlying failure must still be reported');
-
-  // 27. Same binary → no noise. The warning must only fire on a genuine mismatch.
-  fs.rmSync(path.join(dir, '.ristretto', 'gate-retries'), { force: true });
-  r = gate(dir, 'full', '{}', { PATH: `${goodBin}:${process.env.PATH}` });
-  assert.strictEqual(r.status, 0, 'the verified toolchain must pass');
-  assert.ok(!r.stderr.includes('is not the one that was verified'), 'no drift warning when nothing drifted');
-}
+// 25. noDriftLines: verify proves the tree and says nothing about toolchains; nothing records one.
+dir = tmpRepo(JSON.stringify({ gates: { test: PASS } }));
+r = gate(dir, 'verify');
+assert.strictEqual(r.status, 0, 'verify must pass');
+assert.ok(!/^tools:/m.test(r.stdout), 'no toolchain line');
+assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'gate-tools.json')), 'no toolchain record');
+arm(dir);
+fs.writeFileSync(path.join(dir, '.ristretto.json'), JSON.stringify({ gates: { test: FAIL } }));
+r = gate(dir, 'full');
+assert.ok(!/is not the one that was verified/.test(r.stderr), 'no drift warning');
 
 // --- No orchestrator exemption: the brewer never builds and never arms. ---
 // A Stop is gated only for the session that owns the marker, which is what lets the brewer sit
@@ -776,27 +747,6 @@ assert.ok(!Object.keys(quietAfterStall).some((k) => k.startsWith('test')),
 // 74. And the rope is bounded — no history of buffering may make a genuine hang unkillable.
 assert.ok(/QUIET_CEILING_MS/.test(gateSrc2()),
   'the widened budget must still be capped by the ceiling');
-
-// --- Which binary is this gate actually going to run? ---
-// resolveGateTools read Object.values(gates), so it fed itself formatPaths (an array of globs)
-// and testChanged (an array of objects, stringified to "[object Object]"). Every real command
-// that began with `cd` resolved to the shell builtin. The drift detector recorded three pieces
-// of junk and not one tool — inert on exactly the polyglot configs the docs recommend.
-
-// 75. Only real gate commands, and the program behind a `cd` prefix — never a glob or an object.
-dir = tmpRepo(JSON.stringify({
-  gates: {
-    test: 'cd . && ' + PASS,
-    formatPaths: ['frontend/**/*.{ts,tsx}'],
-    testChanged: [{ match: ['x/**'], cmd: PASS }],
-  },
-}));
-gate(dir, 'verify');
-const tools = JSON.parse(fs.readFileSync(path.join(dir, '.ristretto', 'gate-tools.json'), 'utf8'));
-assert.ok('node' in tools, 'the real program behind a `cd` prefix must be resolved');
-assert.ok(!('cd' in tools), '`cd` is a shell builtin, not a toolchain');
-assert.ok(!Object.keys(tools).some((k) => k.includes('[object') || k.includes('*')),
-  'globs and route objects are not commands and must never be probed as tools');
 
 // 76. A green run clears the stall marker. Left behind, it says a gate is hung long after one is.
 dir = tmpRepo(JSON.stringify({ gates: { test: HANG }, silence: { test: 1 } }));

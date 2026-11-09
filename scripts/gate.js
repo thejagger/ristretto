@@ -235,7 +235,9 @@ const markerPath = path.join(projectDir, '.ristretto', 'pulling');
 const retriesPath = path.join(projectDir, '.ristretto', 'gate-retries');
 const greenPath = path.join(projectDir, '.ristretto', 'gate-green');
 const stalledPath = path.join(projectDir, '.ristretto', 'gate-stalled');
-const toolsPath = path.join(projectDir, '.ristretto', 'gate-tools.json');
+// Written by verify before 0.23, which recorded the toolchain to detect drift. Nothing reads it;
+// the pre-flight knows its name so a leftover isn't reported as unrecognised.
+const legacyToolsPath = path.join(projectDir, '.ristretto', 'gate-tools.json');
 const lockPath = path.join(projectDir, '.ristretto', 'gate-lock');
 const formatBrokenPath = path.join(projectDir, '.ristretto', 'format-broken');
 const baselinePath = path.join(projectDir, '.ristretto', 'baseline.json');
@@ -1006,12 +1008,6 @@ function widenOnProbation(key, usedSec) {
   } catch { /* calibration is an optimisation, never a requirement */ }
 }
 
-// --- Which binary is this gate actually going to run? ---
-// A pre-flight run by the agent and a gate run by the hook inherit different environments. If
-// the agent prepends a workaround toolchain to PATH, `verify` proves a green tree that the hook
-// will never reproduce — and the hook's red looks like a repo problem instead of two Flutters.
-// So verify records what it resolved, and the hook says so plainly when it resolved something else.
-
 // First word of a shell command, minus quotes and any leading VAR=value assignments.
 function firstToken(cmd) {
   for (const word of String(cmd).trim().split(/\s+/)) {
@@ -1019,73 +1015,6 @@ function firstToken(cmd) {
     return word.replace(/^["']|["']$/g, '');
   }
   return '';
-}
-
-function resolveTool(tok) {
-  if (!tok || tok.includes('/') || tok.includes('\\')) return tok || null; // already a path
-  try {
-    const probe = process.platform === 'win32'
-      ? spawnSync('where', [tok], { encoding: 'utf8' })
-      : spawnSync('/bin/sh', ['-c', `command -v ${tok}`], { encoding: 'utf8' });
-    const line = (probe.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean)[0];
-    return line || null;
-  } catch {
-    return null;
-  }
-}
-
-// Shell builtins that begin a command without being the program it runs. `cd sub && real-tool`
-// is the most common command shape in a monorepo, and taking its first word recorded the builtin
-// and never the toolchain — the drift detector then compared nothing against nothing, forever.
-const NOT_A_TOOL = new Set(['cd', 'set', 'export', 'source', '.', 'exec', 'env', 'call', 'pushd', 'popd']);
-
-// Every gate command that is actually a command. `gates` also holds `formatPaths` (an array of
-// globs) and `testChanged` (which may be an array of route objects); stringifying those and taking
-// the first word is how a glob and the literal text "[object" ended up recorded as toolchains.
-function gateCommands() {
-  const out = [];
-  for (const key of ['format', 'lint', 'typecheck', 'test']) {
-    if (typeof gates[key] === 'string' && gates[key]) out.push(gates[key]);
-  }
-  const spec = gates.testChanged;
-  if (typeof spec === 'string' && spec) out.push(spec);
-  else if (Array.isArray(spec)) {
-    for (const entry of spec) {
-      if (entry && typeof entry.cmd === 'string' && entry.cmd) out.push(entry.cmd);
-    }
-  }
-  return out;
-}
-
-// { flutter: "/usr/bin/flutter", npx: "/usr/local/bin/npx" } for every configured gate command.
-// Every segment of every command, because a chained gate runs more than one program and any of
-// them can be the one that resolves differently under the hook.
-function resolveGateTools() {
-  const tools = {};
-  for (const cmd of gateCommands()) {
-    for (const seg of segments(cmd)) {
-      const tok = firstToken(seg);
-      if (!tok || NOT_A_TOOL.has(tok) || tok in tools) continue;
-      tools[tok] = resolveTool(tok);
-    }
-  }
-  return tools;
-}
-
-// Lines describing every tool the hook resolves differently from the recorded verify run.
-function toolDrift(now) {
-  let recorded = null;
-  try { recorded = JSON.parse(fs.readFileSync(toolsPath, 'utf8')); } catch { return []; }
-  const drift = [];
-  for (const [tok, was] of Object.entries(recorded)) {
-    const is = now[tok];
-    if (tok in now && was !== is) {
-      drift.push(`ristretto: '${tok}' is not the one that was verified — verify used ${was || '(unresolved)'}, this gate ran ${is || '(unresolved)'}.`);
-      drift.push(`  A green pre-flight proves nothing about a different toolchain. Put the intended path in .ristretto.json`);
-      drift.push(`  (the hooks do not inherit a PATH you exported in your shell), or fix the install so both resolve the same.`);
-    }
-  }
-  return drift;
 }
 
 // A gate that produced not one byte from start to finish is a different animal from one that
@@ -1435,7 +1364,7 @@ async function main() {
     // no constant naming it (no single file owns that directory), so it stays a literal.
     const known = new Set([
       markerPath, legacyOrchestratingPath, retriesPath, greenPath, stalledPath,
-      toolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
+      legacyToolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
     ].map((p) => path.basename(p)));
     known.add('build');
     for (const rel of allReportPaths()) known.add(path.basename(rel));
@@ -1509,16 +1438,9 @@ async function main() {
       let lastGreen = null;
       try { lastGreen = fs.readFileSync(greenPath, 'utf8'); } catch { /* nothing proven yet */ }
       if (fp !== null && fp === lastGreen) {
-        const drift = toolDrift(resolveGateTools());
-        if (drift.length) {
-          // The cached green was proved with a different toolchain than this run would use, so
-          // it says nothing about this one. Fall through and prove it properly.
-          console.error(drift.join('\n'));
-        } else {
-          console.log('gates: cached green — tree byte-identical to the last proven run, nothing re-run');
-          recordSuite('green', 'cached', '', { cached: true });
-          process.exit(0);
-        }
+        console.log('gates: cached green — tree byte-identical to the last proven run, nothing re-run');
+        recordSuite('green', 'cached', '', { cached: true });
+        process.exit(0);
       }
     }
 
@@ -1540,12 +1462,6 @@ async function main() {
     }
     console.log(`gates: ${r.results.join(' ')}`);
     recordSuite(r.failures ? (r.red ? 'red' : 'unverified') : 'green',r.results.join(' '), r.failures ? r.results.filter((x) => x.endsWith('✗')).map((x) => x.slice(0, -2)).join(', ') : '');
-    // Record and show the toolchain this verdict was produced with, so a hook that resolves
-    // something else can say so instead of surfacing a mystery red on an untouched tree.
-    const tools = resolveGateTools();
-    const shown = Object.entries(tools).map(([tok, at]) => `${tok} → ${at || '(not found)'}`);
-    if (shown.length) console.log(`tools: ${shown.join('  ')}`);
-    try { fs.mkdirSync(path.dirname(toolsPath), { recursive: true }); fs.writeFileSync(toolsPath, JSON.stringify(tools, null, 2)); } catch { /* best-effort */ }
     if (r.failures) {
       console.error(r.failures);
       process.exit(1);
@@ -1614,20 +1530,12 @@ async function main() {
     // the pre-lock check above, just on the far side of a wait that could have taken a while.
     if (r.alreadyProven) process.exit(0);
 
-    // Did the pre-flight prove a green tree with a different toolchain than this hook runs? Only
-    // worth asking once we know the gates are actually about to run — computing it any earlier
-    // paid for a toolchain resolution on paths (a contended lock, an already-proven tree) that
-    // never use it at all.
-    const drift = toolDrift(resolveGateTools());
-    const driftNote = drift.length ? `\n${drift.join('\n')}\n` : '';
-
     if (r.stalled) {
-      console.error(driftNote + r.failures);
+      console.error(r.failures);
       process.exit(0);
     }
 
     if (r.ok) {
-      if (driftNote) console.error(driftNote.trim());
       // The hook only ever sees the two duration hints — the three static checks are pre-flight
       // advice about the config itself, not hook noise on every green stop.
       auditConfig();
@@ -1639,11 +1547,11 @@ async function main() {
     try { retries = parseInt(fs.readFileSync(retriesPath, 'utf8'), 10) || 0; } catch { /* first failure */ }
     if (retries >= MAX_RETRIES) {
       try { fs.unlinkSync(retriesPath); } catch { /* ignore */ }
-      console.error(`${driftNote}ristretto: gates still failing after ${MAX_RETRIES} forced retries — surfacing to user instead of looping.${r.failures}`);
+      console.error(`ristretto: gates still failing after ${MAX_RETRIES} forced retries — surfacing to user instead of looping.${r.failures}`);
       process.exit(0);
     }
     fs.writeFileSync(retriesPath, String(retries + 1));
-    console.error(`${driftNote}ristretto: work is not done — deterministic gates failed. Fix these before stopping. Do NOT weaken, skip, or delete gates/tests to get green.${r.failures}`);
+    console.error(`ristretto: work is not done — deterministic gates failed. Fix these before stopping. Do NOT weaken, skip, or delete gates/tests to get green.${r.failures}`);
     process.exit(2);
   }
 
