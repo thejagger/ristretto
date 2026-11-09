@@ -263,6 +263,22 @@ assert.ok(!/PROJECT IS NEWER/.test(read('commands/prep.md')), 'prep.md must not 
 assert.ok(!/prep \+ pull/i.test(read('commands/help.md')), 'help.md must not describe shot as "prep + pull"');
 assert.ok(!/prep \+ pull/i.test(read('README.md')), 'README.md must not describe shot as "prep + pull"');
 
+// 32. help fits a screen; strata is a finishing option, not a command; prep has no deep flag;
+//     status reads the same folders as the brewer; nothing names what slim-core phases 3–5 cut.
+assert.ok(read('commands/help.md').split(/\r?\n/).length <= 25, 'help.md fits a screen — 25 lines at most');
+assert.ok(!fs.existsSync(path.join(ROOT, 'commands/strata.md')), 'strata is a finishing option of pull, not a command');
+assert.ok(/strata\.mjs" stratify/.test(pull) && /strata-mr\.md/.test(pull), 'pull offers stratify and the MR description');
+assert.ok(!/deep/.test((read('commands/prep.md').match(/^argument-hint:.*$/m) || [''])[0]), 'prep has no deep flag');
+assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads this folder and its direct subfolders');
+{
+  const named = ['commands', 'briefs'].flatMap((d) => fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.md')).map((f) => `${d}/${f}`)).concat('README.md');
+  for (const f of named) {
+    for (const gone of ['reviewer.md', 'closer.md', '/ristretto:strata', 'arm orchestrator', 'notes-only', 'round 2']) {
+      assert.ok(!read(f).includes(gone), `${f} still names "${gone}"`);
+    }
+  }
+}
+
 // 23. README's Depends: sentence: only `done` satisfies, open boxes and all.
 const readmeDepSentence = (read('README.md').match(/A prerequisite counts as finished[^.]*\./) || [''])[0];
 assert.ok(/`done`/.test(readmeDepSentence) && /box/.test(readmeDepSentence),

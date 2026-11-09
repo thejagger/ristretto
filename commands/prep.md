@@ -1,11 +1,11 @@
 ---
 description: Plans features into the roadmap. No code.
-argument-hint: <feature IDs, pasted feature text, or short descriptions> [deep] | facts | overrule <ID> — <what instead>
+argument-hint: <feature IDs, pasted feature text, or short descriptions> | facts | overrule <ID> — <what instead>
 ---
 
 You are in the **PREP** phase of ristretto. You plan; you do **not** write or modify any implementation code. The code is written fresh later, by `pull`.
 
-Inputs to prep: $ARGUMENTS  (add `deep` to force roast mode on every input)
+Inputs to prep: $ARGUMENTS
 
 If the only input is `facts`, skip to **Facts — `prep facts`, only when the user asks** below and plan nothing. An input starting `overrule` goes through **Overrule** below.
 
@@ -89,10 +89,10 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
 ## For each resulting feature
 
-1. **Fast by default; deep on demand or on failure.**
+1. **Fast by default; deep on failure.**
 
    - **Fast (default):** scope clear → write the plan. Push back once on a vague criterion with a sharpened version to confirm.
-   - **Deep (`deep` argument, or automatic):** enter roast mode. **Escalate automatically the moment you cannot write a checkable acceptance criterion, cannot fill `Provides:` for a feature that something else `Depends:` on, or hit a product decision the input does not settle.** Each of those used to become a silent `Blockers:` line, or worse, a decision `brew` discovered at 3am and had to stop on. Here it becomes a conversation, while you are still in the room.
+   - **Deep (automatic):** enter roast mode. **Escalate automatically the moment you cannot write a checkable acceptance criterion, cannot fill `Provides:` for a feature that something else `Depends:` on, or hit a product decision the input does not settle.** Each of those used to become a silent `Blockers:` line, or worse, a decision `brew` discovered at 3am and had to stop on. Here it becomes a conversation, while you are still in the room.
 
    **Roast mode:**
    1. One question at a time. Always attach your **recommended answer** — your best inference — so the user confirms, corrects, or redirects rather than composing from scratch.
