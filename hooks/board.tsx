@@ -68,7 +68,7 @@ let roots: { folder: string | null; root: string }[] = []
 let lastRec: BoardAtWork | null = null
 
 type Raw = { rec: BoardAtWork | null; owner: string | null; marker: boolean }
-type Kept = { sig: string; repo: BoardRepo; raw: Raw; gitDir?: string | null; baseLog?: string | null; sibs: Record<string, Record<string, BoardStatus>> }
+type Kept = { sig: string; rawSig: string; repo: BoardRepo; raw: Raw; gitDir?: string | null; baseLog?: string | null; sibs: Record<string, Record<string, BoardStatus>> }
 // Per repo root: what was read and the signature it was read at.
 const cache = new Map<string, Kept>()
 
@@ -171,6 +171,10 @@ async function git($: EngineInterface, args: string[], cwd: string) {
 // The branch, its base and the features on it (spec 4.1–4.3), and how old the branch is (its
 // oldest commit off the base). Not a git repo: no branch.
 async function readBranchAt($: EngineInterface, root: string, rows: { id: string }[], runList: BoardRecord[], kept: Partial<Kept>) {
+  // A folder that is not its own repo: git would walk up and answer with the parent's branch.
+  const top = await git($, ['rev-parse', '--show-toplevel'], root)
+  const norm = (p: string) => p.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  if (top.exitCode !== 0 || norm(top.stdout) !== norm(root)) return { branch: null, age: null, head: null as string | null }
   const at = await git($, headArgs, root)
   if (at.exitCode !== 0) return { branch: null, age: null, head: null as string | null }
   let head = at.stdout.trim()
@@ -265,15 +269,14 @@ async function readSiblings($: EngineInterface, root: string, board: Board) {
 }
 
 // What changed on disk for a repo, cheaply: the roadmap, the plans, git's HEAD and base reflog,
-// the suite record, the at-work record and the pull marker (and a single repo's siblings).
+// the suite record (and a single repo's siblings). The at-work record and the pull marker have
+// their own signature: a gate touches the marker on every stop, and that re-reads only them.
 async function sigOf($: EngineInterface, root: string, kept: Kept | undefined) {
   if (kept && kept.gitDir === undefined) kept.gitDir = null
   const parts = [
     await mtime($, `${root}/${ROADMAP}`),
     kept ? await planSig($, root, kept.repo.board.rows) : '',
     await mtime($, `${root}/${SUITE}`),
-    await mtime($, `${root}/${AT_WORK}`),
-    await mtime($, `${root}/${MARKER}`),
   ]
   if (kept?.gitDir) parts.push(await mtime($, `${kept.gitDir}/HEAD`), await mtime($, `${kept.gitDir}/logs/HEAD`))
   if (kept?.baseLog) parts.push(await mtime($, kept.baseLog))
@@ -291,6 +294,11 @@ async function refreshRepos($: EngineInterface, force = false) {
     for (const { folder, root } of roots) {
       let kept = cache.get(root)
       const sig = await sigOf($, root, kept)
+      const rawSig = `${await mtime($, `${root}/${AT_WORK}`)}|${await mtime($, `${root}/${MARKER}`)}`
+      if (kept && !force && kept.sig === sig && kept.rawSig !== rawSig) {
+        kept.raw = await readRaw($, root)
+        kept.rawSig = rawSig
+      }
       if (force || !kept || kept.sig !== sig) {
         const name = folder ?? rootName
         const board = await readBoardAt($, root, name)
@@ -304,7 +312,7 @@ async function refreshRepos($: EngineInterface, force = false) {
         const suite = await readSuiteAt($, root)
         const raw = await readRaw($, root)
         const s = folder === null ? await readSiblings($, root, board) : {}
-        kept = { sig: '', repo: { folder, board, branch, suite, runs: Array.isArray(runList) ? runList : [], atWork: { state: 'none', rec: null }, age }, raw, gitDir: next.gitDir, baseLog: next.baseLog, sibs: s }
+        kept = { sig: '', rawSig, repo: { folder, board, branch, suite, runs: Array.isArray(runList) ? runList : [], atWork: { state: 'none', rec: null }, age }, raw, gitDir: next.gitDir, baseLog: next.baseLog, sibs: s }
         kept.sig = await sigOf($, root, kept)
         cache.set(root, kept)
       }
@@ -346,6 +354,18 @@ async function findRoots($: EngineInterface) {
 async function writeRec($: EngineInterface, rec: BoardAtWork) {
   if (!ownRoot) return
   try {
+    // Another session's running record (it took the pull over: its marker, a fresh heartbeat) is
+    // never overwritten. One a dead session left is judged stopped, and the next pull replaces it.
+    const path = `${ownRoot}/${AT_WORK}`
+    if (await $.fs.exists(path)) {
+      const raw = await readRaw($, ownRoot)
+      const there = raw.rec
+      const running = judge(there, { owner: raw.owner, markerExists: raw.marker, now: await $.clock.now() }).state === 'running'
+      if (there && there.session !== sessionId && running) {
+        lastRec = null
+        return
+      }
+    }
     await $.fs.write(`${ownRoot}/${AT_WORK}`, JSON.stringify(rec))
     lastRec = rec
   } catch {
@@ -814,7 +834,7 @@ async function drawPane($: any, e: any) {
   const shownPage = canPress ? await read($, page) : null
   const allFiles = await read($, files)
   // A page's files are its own repo's, keyed by ID as the feature page reads them.
-  const pageFiles = (folder: string | null | undefined) => Object.fromEntries(Object.entries(allFiles).filter(([k]) => k.startsWith(`${folder ?? ''} `)).map(([k, list]) => [k.split(' ')[1], list]))
+  const pageFiles = (folder: string | null | undefined) => Object.fromEntries(Object.entries(allFiles).filter(([k]) => k.startsWith(`${folder ?? ''}\u0000`)).map(([k, list]) => [k.split('\u0000')[1], list]))
   const pg: any = shownPage ? pageOf(shownRepos, shownPage, { ...opts, files: pageFiles((shownPage as any).folder), folders: opened }) : null
   const v: any = pg ? { kind: 'page', page: pg } : timelineOf(shownRepos, opts)
 
@@ -1093,6 +1113,13 @@ async function drawPane($: any, e: any) {
       <Box flexDirection="row" alignItems="center">
         <Text {...(stopped ? { dimColor: true } : w.red ? { color: 'error' } : { color: 'claude' })} wrap="truncate-end">{w.step}</Text>
         {!stopped && <Box flexShrink={0} paddingLeft={1}>{svgTime(w.key, Math.max(0, nowMs - w.startedAt), 'clock', { bold: true })}</Box>}
+        {stopped && w.since !== null && (
+          <Box flexShrink={0} flexDirection="row">
+            <Text dimColor>{' · '}</Text>
+            {svgTime(`${w.key}-ago`, Math.max(0, nowMs - w.since), 'dur', { dimColor: true })}
+            <Text dimColor>{' ago'}</Text>
+          </Box>
+        )}
       </Box>
     )
     const row = lrow({ key: w.key, glyph: stopped ? 'planned' : w.red ? 'gate-red' : 'running', tag: w.tag, id: w.id, open: w.open }, { right, strong: true, shrink: true })

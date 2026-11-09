@@ -535,6 +535,8 @@ const shown = (v) => JSON.stringify(v);
     const board = { name: 't', rows: [], format: { project: declared, plugin: m.formatOf(versionSrc) }, error: null };
     assert.ok(!shown(m.view(board, null, false)).includes('another ristretto format'), 'a project on the current format carries no notice');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
+    // A control byte in the source makes git and grep treat board.tsx as binary.
+    assert.ok(!/[\u0000-\u0008]/.test(tsx), 'board.tsx carries no control bytes (write \\u0000 as an escape)');
     // plugin.json gives the pane's version label only; the format is migrate.js's.
     assert.ok(!/formatOf\([^\n]*plugin\.json/.test(tsx), 'board.tsx must not take the format from plugin.json');
     assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/migrate.js'), 'board.tsx reads the format from migrate.js');

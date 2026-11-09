@@ -15,7 +15,8 @@ const section = (all, cap) => ({ rows: all.slice(0, cap), more: Math.max(0, all.
 const offBase = (r) => !!r.branch && !!r.branch.base && !r.branch.onDefault;
 // No base found off the default branch: nothing to measure the branch by. On the default branch
 // with no remote, the repo is simply on its base.
-const baseUnknown = (r) => !!r.branch && !r.branch.base && !r.branch.onDefault;
+const baseUnknown = (r) => !r.branch || (!r.branch.base && !r.branch.onDefault);
+const unknownLine = (r) => ({ tag: r.folder, branch: r.branch ? r.branch.name : '—', note: 'base unknown' });
 
 // The status a Depends id names: a plain id in this repo, `<folder>/<id>` in the sibling repo of
 // that name, else in `siblings` (the roadmaps of sibling folders the board does not show).
@@ -69,7 +70,9 @@ function workRow({ repo, state, rec }, repos, opts) {
     tag: repo.folder,
     id: rec.id,
     title: plain(row?.title || rec.title || ''),
-    step: state === 'stopped' ? `stopped after ${lastDone ? lastDone.name : 'start'} · ${duration((opts.now ?? 0) - rec.beat)} ago` : rec.step,
+    step: state === 'stopped' ? `stopped after ${lastDone ? lastDone.name : 'start'}` : rec.step,
+    // When it went quiet: the drawing counts the age on from here.
+    since: state === 'stopped' ? rec.beat : null,
     red: !!rec.red,
     effort: rec.effort,
     startedAt: rec.startedAt,
@@ -122,7 +125,7 @@ function footOf(repos, view, work) {
   const open = (repo) => repo.board.rows.filter((r) => r.status !== 'done').length;
   if (view === 'branch') {
     return repos.map((repo) => {
-      if (baseUnknown(repo)) return { tag: repo.folder, branch: repo.branch.name, note: 'base unknown' };
+      if (baseUnknown(repo)) return unknownLine(repo);
       if (!offBase(repo)) return { tag: repo.folder, branch: repo.branch ? repo.branch.name : '—', note: open(repo) ? `${open(repo)} open` : 'nothing open' };
       const state = brewing(repo) ? 'brewing' : repo.suite?.text || 'suite unproven';
       return { tag: repo.folder, branch: repo.branch.name, note: [repo.age, state].filter(Boolean).join(' · ') };
@@ -133,7 +136,11 @@ function footOf(repos, view, work) {
     return [{ tag: null, branch: repo.branch ? repo.branch.name : '—', note: baseUnknown(repo) ? 'base unknown' : brewing(repo) ? 'brewing' : '' }];
   }
   const anyBrewing = repos.some(brewing);
-  return [{ tag: null, branch: `${repos.map((r) => r.folder).join(', ')} on their base branch`, note: anyBrewing ? 'brewing' : 'nothing brewing' }];
+  const known = repos.filter((r) => !baseUnknown(r));
+  return [
+    ...(known.length ? [{ tag: null, branch: `${known.map((r) => r.folder).join(', ')} on their base branch`, note: anyBrewing ? 'brewing' : 'nothing brewing' }] : []),
+    ...repos.filter(baseUnknown).map(unknownLine),
+  ];
 }
 
 function message(repos) {

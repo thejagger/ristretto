@@ -35,6 +35,13 @@ const { pathToFileURL } = require('url');
     assert.strictEqual(m.done, null);
     // No base found: on base, and the foot says so.
     const u = t.timelineOf([repo('api', [planned('p1')], { head: 'feature/x', base: null })], { now: 0 });
+    // Not a git repo (no branch at all): base unknown, in either view, never folded in.
+    const nogit = repo('odd', [planned('o')]);
+    assert.deepStrictEqual(t.timelineOf([repo('api', [planned('a')], brew({ ids: [] })), nogit], { now: 0 }).foot[1], { tag: 'odd', branch: '—', note: 'base unknown' });
+    assert.deepStrictEqual(t.timelineOf([repo('api', [planned('a')], { head: 'main', base: 'main' }), nogit], { now: 0 }).foot, [
+      { tag: null, branch: 'api on their base branch', note: 'nothing brewing' },
+      { tag: 'odd', branch: '—', note: 'base unknown' },
+    ]);
     // On the default branch with no remote to measure it by: on base, not unknown.
     const local = repo('platform', [done('x')], { head: 'main', base: null });
     local.branch.onDefault = true;
@@ -111,7 +118,9 @@ const { pathToFileURL } = require('url');
     // Stopped: no clock, what it stopped after and how long ago.
     const st = t.timelineOf([repo('web', [planned('w')], { atWork: { state: 'stopped', rec: rec('w', { beat: 0 }) } })], { now: 2 * 3600000 });
     assert.strictEqual(st.atWork[0].state, 'stopped');
-    assert.strictEqual(st.atWork[0].step, 'stopped after plan · 2h00m ago');
+    // The age counts on by itself in the drawing (an SVG clock from `since`), never frozen text.
+    assert.strictEqual(st.atWork[0].step, 'stopped after plan');
+    assert.strictEqual(st.atWork[0].since, 0);
     // This session's own record replaces what its file says.
     const own = rec('w', { session: 's1', step: 'review' });
     const mine = t.timelineOf([repo(null, [planned('w')], { atWork: { state: 'running', rec: rec('w', { session: 's1' }) } })], { now: 0, session: 's1', own: { folder: null, rec: own } });

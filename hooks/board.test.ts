@@ -27,7 +27,7 @@ const ROADMAP = table([
   '| b | pw | Waits on blk | normal | planned |',
 ]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[] }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number }
 
 // git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
 function gitFor(prefix: string, head: string, log: string) {
@@ -40,6 +40,7 @@ function gitFor(prefix: string, head: string, log: string) {
     [k(`diff --quiet --end-of-options ${'a'.repeat(40)} HEAD -- . :(exclude)docs/ristretto`)]: { exitCode: 0, stdout: '' },
     [k('rev-parse --absolute-git-dir')]: { exitCode: 0, stdout: `${ROOT}/${prefix ? `${prefix}/` : ''}.git\n` },
     [k('rev-parse --git-common-dir')]: { exitCode: 0, stdout: '.git\n' },
+    [k('rev-parse --show-toplevel')]: { exitCode: 0, stdout: `${ROOT}${prefix ? `/${prefix}` : ''}\n` },
   }
 }
 const SUITE = JSON.stringify({ verdict: 'green', head: 'c'.repeat(40), tree: 'a'.repeat(40), at: 1, gates: 'test ✓', failing: '' })
@@ -88,12 +89,16 @@ function folder(): World {
       'web/.ristretto/pulling': 'w1',
       'platform/docs/ristretto/roadmap.md': table(['| p | plat-done | Done | normal | done |']),
       'notes/readme.md': 'not a repo',
+      // A roadmap in a plain folder inside a git repo: git would answer with the parent's branch.
+      'odd/docs/ristretto/roadmap.md': table(['| o | odd-one | Odd | normal | planned |']),
     },
     mtimes: { 'web/.ristretto/pulling': NOW - 30000 },
     git: {
       ...gitFor('api', 'feature/brew-2026-10-28', '1760000000\tfeat(api-order-title): t\n'),
       ...gitFor('web', 'feature/brew-2026-10-29', ''),
       ...gitFor('platform', 'main', ''),
+      ...gitFor('odd', 'feature/parent', '1760000000\tfeat(odd-one): o\n'),
+      'odd|rev-parse --show-toplevel': { exitCode: 0, stdout: `${ROOT}\n` },
     },
   }
 }
@@ -134,6 +139,7 @@ function install(on: any, w: World, theme = 'dark') {
   })
   on('process.run', ($: any, e: any) => {
     const key = (e.argv as string[]).slice(1).join(' ')
+    w.spawns = (w.spawns ?? 0) + 1
     const at = rel(String(e.init?.cwd ?? ROOT))
     const prefix = at === ROOT || at === '' ? '' : at
     const hit = (e.argv as string[])[0] === 'git' ? w.git[prefix ? `${prefix}|${key}` : key] : undefined
@@ -297,6 +303,56 @@ describe('the at-work record', () => {
   })
 })
 
+describe('two sessions, one repo', () => {
+  test('a session that lost the pull never overwrites the record of the one that took it', async ($, on) => {
+    const w = world()
+    w.files['.ristretto/pulling'] = 's1'
+    w.mtimes = { '.ristretto/pulling': NOW }
+    const clock = await start($, on, w)
+    await pull($, clock, 'p1')
+    await clock.advance(5000)
+    await clock.settle()
+    // Another session took the pull over and wrote its own record.
+    const theirs = { ...JSON.parse(w.files['.ristretto/at-work.json']), session: 's2', id: 'p2', beat: NOW + 5000 }
+    w.files['.ristretto/at-work.json'] = JSON.stringify(theirs)
+    w.files['.ristretto/pulling'] = 's2'
+    w.mtimes = { '.ristretto/pulling': NOW + 5000 }
+    await clock.advance(5000)
+    await clock.settle()
+    await clock.advance(65000)
+    await clock.settle()
+    expect(JSON.parse(w.files['.ristretto/at-work.json'])).toEqual(theirs)
+  })
+})
+
+describe('the poll', () => {
+  test('a gate touching the marker, or a heartbeat, re-reads those two files and runs no git', async ($, on) => {
+    const w = folder()
+    const clock = await start($, on, w)
+    await mount($)
+    const before = w.spawns ?? 0
+    w.mtimes = { ...w.mtimes, 'web/.ristretto/pulling': NOW + 4000 }
+    w.files['web/.ristretto/at-work.json'] = JSON.stringify({ ...JSON.parse(w.files['web/.ristretto/at-work.json']), beat: NOW + 4000 })
+    await clock.advance(5000)
+    await clock.settle()
+    expect(w.spawns ?? 0).toBe(before)
+  })
+})
+
+describe('a record a dead session left', () => {
+  test('is replaced by the next pull here', async ($, on) => {
+    const w = world()
+    w.files['.ristretto/pulling'] = 's1'
+    w.mtimes = { '.ristretto/pulling': NOW }
+    w.files['.ristretto/at-work.json'] = JSON.stringify({ v: 1, session: 's9', id: 'p2', command: 'pull', unattended: true, title: '', startedAt: NOW - 7200000, phase: 'coding', step: 'code', red: false, effort: [], beat: NOW - 3600000, endedAt: null })
+    const clock = await start($, on, w)
+    await pull($, clock, 'p1')
+    const rec = JSON.parse(w.files['.ristretto/at-work.json'])
+    expect(rec.session).toBe('s1')
+    expect(rec.id).toBe('p1')
+  })
+})
+
 describe('a folder of repos', () => {
   test('every repo on one board: needs you tagged, the web session at work, the foot per repo', async ($, on) => {
     const w = folder()
@@ -306,11 +362,24 @@ describe('a folder of repos', () => {
     for (const s of ['needs you · 1', 'api', 'api-special-case-rules', 'done on the brew branches · 1', 'backoffice-feedback', 'api-order-title',
       'at work · 1', 'web-order-title', 'code', 'session “web: brew” · unattended', 'waited on api/api-order-title, done',
       'can start now', 'web-orders-customer-filter', 'api half done', 'next · 1', 'web-flat-rate-orders', 'waits for web-order-title',
-      'feature/brew-2026-10-28', 'feature/brew-2026-10-29', 'brewing', 'platform', 'nothing open']) {
+      'feature/brew-2026-10-28', 'feature/brew-2026-10-29', 'brewing', 'platform', 'nothing open', 'odd', 'base unknown']) {
       expect(t).toContain(s)
     }
+    expect(t).not.toContain('feature/parent')
     expect(t).not.toContain('notes')
     await holdsTheLook(ui, 'folder')
+  })
+
+  test('a session that went quiet: stopped after its phase, the age an SVG clock that counts on', async ($, on) => {
+    const w = folder()
+    const rec = JSON.parse(w.files['web/.ristretto/at-work.json'])
+    w.files['web/.ristretto/at-work.json'] = JSON.stringify({ ...rec, beat: NOW - 20 * 60000 })
+    await start($, on, w)
+    const ui = await mount($)
+    const t = await texts(ui)
+    expect(t).toContain('stopped after plan')
+    expect(t).toContain('ago')
+    expect((await svgs(ui)).some((s: string) => /steps\(10\) infinite/.test(s))).toBe(true)
   })
 
   test('the same id in two repos: two tagged rows, each opening its own plan', async ($, on) => {
