@@ -4,7 +4,15 @@
 // It does not judge what the rules say. It checks the one property that broke: that a rule
 // lives in exactly one file, and that a command hands out a path rather than a pasted brief.
 'use strict';
-const assert = require('assert');
+// Every failing pin is reported, not only the first: several tasks may each own a red pin.
+const failures = [];
+const hard = require('assert');
+const assert = new Proxy(hard, {
+  apply: (target, self, args) => { try { target(...args); } catch (e) { failures.push(e.message); } },
+  get: (target, key) => (typeof target[key] === 'function'
+    ? (...args) => { try { return target[key](...args); } catch (e) { failures.push(e.message); } }
+    : target[key]),
+});
 const fs = require('fs');
 const path = require('path');
 
@@ -299,4 +307,9 @@ assert.ok(/one input at a time/.test(prep), 'prep must research one input at a t
   assert.ok(s.includes("only the user's own words in chat"), "the skill must act on only the user's own words in chat");
 }
 
+if (failures.length) {
+  for (const m of failures) console.log(`FAIL ${m.split(/\r?\n/)[0]}`);
+  console.log(`briefs.test.js: ${failures.length} failed`);
+  process.exit(1);
+}
 console.log('briefs.test.js: all checks passed');
