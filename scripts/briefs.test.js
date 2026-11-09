@@ -22,7 +22,7 @@ const words = (s) => s.split(/\s+/).filter(Boolean).length;
 
 const COMMANDS = ['commands/brew.md', 'commands/pull.md', 'commands/shot.md'];
 const BRIEFS = ['briefs/common.md', 'briefs/planner.md', 'briefs/implementer.md',
-                'briefs/reviewer.md', 'briefs/closer.md', 'briefs/researcher.md'];
+                'briefs/researcher.md'];
 
 // 1. Every brief file exists.
 for (const b of BRIEFS) {
@@ -39,8 +39,6 @@ const FINGERPRINTS = [
   'a user is worse off',     // what red has to mean before a test is written
   'label or key',            // find the value by meaning, never by position
   'Test code where it lives', // shared code is proven once, where it lives
-  'Tag test waste',          // the reviewer tags removable test waste
-  'one legal deletion',      // the trim pass, the only place a test is deleted
   'tick a box',              // manual checks
   'about production',        // never a check about production
   'weaken, skip, or delete', // gates are infrastructure
@@ -110,7 +108,9 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
 // has to know it — raise this only for another rule every role needs. 614 after the conflict
 // rule (2026-10-13), written short to stay under it. 695 with the 0.22 statuses and boxes
 // (2026-10-23): every role reads and writes the plan's two kinds of box — +81, written short.
-assert.ok(words(common) < 696, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// 750 with the git rules moved in from the deleted closer brief (2026-11-09): the feature commit
+// is made by whoever closes, and pull, shot and the fixer all may — so every role reads them.
+assert.ok(words(common) < 750, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
 const impl = read('briefs/implementer.md');
@@ -127,8 +127,9 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 //    1316 when the conflict rule landed (2026-10-13): every role notes a contradicted fact by
 //    script and stops on a binding one in conflict — 28 words, so the target moved by 28.
 //    1429 with the 0.22 statuses and boxes (2026-10-23): +81 in common.md, so the target moved by 81.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1429,
-  'an implementer dispatch must cost well under 1901 words — 1429 is the target, not the baseline');
+//    1483 with the git rules moved into common.md (2026-11-09): +54, the closer's own rules.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1483,
+  'an implementer dispatch must cost well under 1901 words — 1483 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
@@ -140,8 +141,9 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1429,
 // The closer once more with one commit per feature (2026-10-13): +50 in its own brief — the
 // roadmap row and archived plan ride in the feature commit, and a check re-run only adds. A duty.
 // And with the 0.22 statuses and boxes (2026-10-23): +81 in common.md for every role, nothing else.
-const CAPS = { 'briefs/planner.md': [450, 1074], 'briefs/reviewer.md': [450, 1106], 'briefs/closer.md': [400, 1024],
-               'briefs/researcher.md': [700, 1371] };
+// The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
+// Totals moved by the +54 of git rules common.md took over from the closer.
+const CAPS = { 'briefs/planner.md': [450, 1128], 'briefs/researcher.md': [700, 1425] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -149,16 +151,19 @@ for (const [b, [own, total]] of Object.entries(CAPS)) {
   assert.ok(words(t) + words(read('briefs/common.md')) < total, `${b} + common.md exceeds ${total} — no role may pay more than today`);
 }
 
-// 11. The reviewer's three buckets and its fixed final line survive intact.
-const rev = read('briefs/reviewer.md');
-for (const s of ['block', 'note', 'lean', 'review: clean', 'review: notes-only', 'review: blocking']) {
-  assert.ok(rev.includes(s), `reviewer.md must keep "${s}"`);
+// 11. Review is /code-review and closing is a script: the reviewer and closer briefs are gone.
+for (const gone of ['briefs/reviewer.md', 'briefs/closer.md']) {
+  assert.ok(!fs.existsSync(path.join(ROOT, gone)), `${gone} was replaced (review: /code-review, close: close.js)`);
 }
 
-// 12. The closer records the round count — a verdict without it is a measurement thrown away.
-const closer = read('briefs/closer.md');
-assert.ok(closer.includes('rounds: <n>') && closer.includes('open: <b> block'), 'closer.md must give the Evidence review line as a fixed template');
-assert.ok(closer.includes('git add -A') && closer.includes('plain ASCII'), 'the git rules live in closer.md');
+// 12. The git rules every closing role needs live in common.md.
+assert.ok(common.includes('git add -A') && common.includes('plain ASCII'), 'the git rules live in common.md');
+
+// 31. A fix is proven by a test that went red first, and the gates again — no reviewer re-checks it.
+const fixer = impl.slice(impl.indexOf('dispatched as a fixer'));
+assert.ok(impl.includes('dispatched as a fixer'), 'implementer.md keeps the fixer role');
+assert.ok(/red/.test(fixer) && /verify|prove/.test(fixer), 'the fixer proves each fix red→green and re-runs the gates');
+assert.ok(!/trim pass/i.test(impl), 'the trim pass went with the reviewer');
 
 // 13. The config reference keeps only what gate.js cannot detect.
 const cfg = read('reference/config.md');
@@ -192,8 +197,8 @@ assert.ok(/\*\*`done`\*\* → stop[^\n]*\[ \] \[human\][^\n]*Do not re-implement
 assert.ok(/`ready:` → continue to review\. Keep every `decided:/.test(pull), 'pull hands the decisions to the closer');
 // A decision a build took is information in force, never a box or a question: the user only ever
 // overrules one in chat. Twelve boxes for one feature — renames, test harnesses — is how this began.
-assert.ok(/`  - taken: <question> → <ruling>`/.test(read('briefs/closer.md')), 'the closer writes a taken: line, not a box');
-assert.ok(!/- \[ \] <question>/.test(read('briefs/closer.md') + read('briefs/common.md')), 'no decision box anywhere');
+assert.ok(/- taken: \$\{d\.question\} → \$\{d\.ruling\}/.test(read('scripts/close.js')), 'close.js writes a taken: line, not a box');
+assert.ok(!/- \[ \] <question>/.test(read('briefs/common.md')), 'no decision box anywhere');
 for (const f of ['briefs/planner.md', 'briefs/implementer.md']) {
   assert.ok(/only if a user could see/.test(read(f)), `${f} reports only user-visible decisions`);
 }
@@ -272,12 +277,10 @@ assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why m
 // 26. A confirmed domain entry binds every role like CLAUDE.md; an unconfirmed one never does.
 assert.ok(/docs\/ristretto\/domain\//.test(common) && /unconfirmed ones are context, never binding/.test(common),
   'common.md must make confirmed domain entries binding and unconfirmed ones context only');
-assert.ok(/confirmed domain entry/.test(rev), 'reviewer.md must block on a violated confirmed domain entry');
 
 // 27. Outside a research run nothing checks domain/ in code, so the builder roles are told: a
-//     fixer must never "resolve" a domain block by rewording the entry, and the reviewer blocks it.
+//     fixer must never "resolve" a domain block by rewording the entry.
 assert.ok(/no agent edits them/.test(common), 'common.md must forbid every role from editing a confirmed domain entry');
-assert.ok(/violated or edited/.test(rev), 'reviewer.md must block a diff that edits a confirmed domain entry');
 assert.ok(!/never changes a confirmed entry is checked in code/.test(read('README.md')),
   'README must not claim code guards domain/ everywhere — it guards research runs');
 

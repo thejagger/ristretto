@@ -20,7 +20,7 @@ Finish with `node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" prove`, run with the t
 
 ## Do not commit or touch the roadmap
 
-An independent review runs after you.
+`/code-review` runs after you, then the close.
 
 ## Skip, never guess
 
@@ -43,9 +43,7 @@ Never lower a tier yourself, and never reach for `blocked:` instead — `blocked
 
 ## If you were dispatched as a fixer
 
-Your input is a findings list instead of a build plan. Every `block` and every `test`-tagged finding is mandatory. Clear the other notes and leans in the same pass, unless a fix is riskier than the win — say which you left. Everything else above is unchanged, including prove.
-
-A **trim pass** gets only `test` findings, on a green tree, and no review follows. Delete or merge exactly what each finding names, touch no product code, and never remove a criterion's only proof unless the finding names the test that still holds it. The one legal deletion of a test: a reviewer ordered it, not a red gate.
+Your input is the `/code-review` findings chosen for fixing, instead of a build plan. Fix exactly those. For each, first write a test that reproduces it and watch it go red, then make it green. Finish with prove as above; the caller runs `gate.js verify` again. No review follows, because the red-then-green test is the proof. A finding no test can reproduce: leave it, and say so. Everything else above is unchanged.
 
 ## Final message
 

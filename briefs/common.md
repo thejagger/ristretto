@@ -44,3 +44,8 @@ The suite is a shared cost, paid again at every stop, by every feature, for the 
 - **How, not that**: evidence is how each criterion was proven — red→green test names, command output, measurements.
 - **"Implemented successfully" is not evidence.**
 - **A criterion waiting on a manual check is `pending human`**, never proven; its box stays open.
+
+## Commits
+
+- **One per feature, at close:** code, plan and roadmap row, `feat(<FEATURE-ID>): <summary>`, plain ASCII, or `git commit -F <path>`.
+- **Stage only what you touched**, never `git add -A`. Never push, force, reset or open a PR. `--amend` only fixes the message you just committed, disclosed.
