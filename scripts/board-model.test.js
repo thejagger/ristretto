@@ -90,8 +90,10 @@ const shown = (v) => JSON.stringify(v);
       assert.strictEqual(got.id, 'f-1', `${file}: id not read from: ${line}`);
       roles.add(got.role);
     }
-    assert.deepStrictEqual([...roles].sort(), ['closer', 'fixer', 'implementer', 'planner', 'reviewer'],
-      'brew.md must still carry a brief for every role the pane shows');
+    // 0.23: pull is the one flow and dispatches the planner and the fixer; it implements in its own
+    // turn, review is /code-review and closing is close.js, so those roles get no subagent brief.
+    assert.deepStrictEqual([...roles].sort(), ['fixer', 'planner'],
+      'pull.md must carry a brief for every role it dispatches');
     // The prompt the model sends has no leading "> ".
     assert.deepStrictEqual(m.parseBrief('REVIEWER for ristretto feature **pw-galerie**.\nDiff: x'), { role: 'reviewer', id: 'pw-galerie' });
     assert.strictEqual(m.parseBrief('Explore the repo for ristretto usages'), null);
