@@ -13,7 +13,9 @@ const section = (all, cap) => ({ rows: all.slice(0, cap), more: Math.max(0, all.
 
 // A repo's base is known and the repo is not on it: its branch is the story.
 const offBase = (r) => !!r.branch && !!r.branch.base && !r.branch.onDefault;
-const baseUnknown = (r) => !!r.branch && !r.branch.base;
+// No base found off the default branch: nothing to measure the branch by. On the default branch
+// with no remote, the repo is simply on its base.
+const baseUnknown = (r) => !!r.branch && !r.branch.base && !r.branch.onDefault;
 
 // The status a Depends id names: a plain id in this repo, `<folder>/<id>` in the sibling repo of
 // that name, else in `siblings` (the roadmaps of sibling folders the board does not show).

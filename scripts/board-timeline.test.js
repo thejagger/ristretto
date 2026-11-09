@@ -35,6 +35,10 @@ const { pathToFileURL } = require('url');
     assert.strictEqual(m.done, null);
     // No base found: on base, and the foot says so.
     const u = t.timelineOf([repo('api', [planned('p1')], { head: 'feature/x', base: null })], { now: 0 });
+    // On the default branch with no remote to measure it by: on base, not unknown.
+    const local = repo('platform', [done('x')], { head: 'main', base: null });
+    local.branch.onDefault = true;
+    assert.deepStrictEqual(t.timelineOf([repo('api', [planned('a')], brew({ ids: [] })), local], { now: 0 }).foot[1], { tag: 'platform', branch: 'main', note: 'nothing open' });
     assert.strictEqual(u.view, 'base');
   }
 

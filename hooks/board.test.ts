@@ -1,22 +1,22 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
-// The board as the desktop shows it, on a small repo held in memory: files and git answered by
-// hooks beneath the plugin. What a person sees (cards, rows, the band), what presses, and the
-// rendering rules the desktop taught us (spec 0.2): draw on change only, no clock read while
-// drawing, presses without Buttons, hairline cards, theme-key text.
+// The board as the desktop shows it, on repos held in memory: files and git answered by hooks
+// beneath the plugin. The Timeline (spec 2026-11-09): the branch decides the view, a folder of
+// repos is one board with every row tagged, and the session doing a pull leaves its run in
+// .ristretto/at-work.json for the board at the folder. The rendering rules the desktop taught us
+// still hold: draw on change only, no clock read while drawing, presses without Buttons, theme keys.
 
 const PANE = { title: 'ristretto', isFocused: false, bodyColumns: 52, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } as any
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns: 80, scroll: { offset: 0, bodyRows: 4 }, view: {} } as any
 const VIEW = { columns: 52, rows: 80, isFullscreen: true } as any
 const ROOT = '/repo'
+const NOW = Date.UTC(2026, 9, 14, 12, 0)
 const THEME_KEYS = new Set(['text', 'subtle', 'inactive', 'claude', 'error', 'success', 'warning', 'permission'])
+const REFS = 'for-each-ref --format=%(refname) refs/heads/main refs/remotes/origin/main refs/heads/master refs/remotes/origin/master refs/heads/development refs/remotes/origin/development refs/heads/develop refs/remotes/origin/develop'
 
-const ROADMAP = [
-  '# Ristretto Roadmap',
-  '<!-- ristretto-format: 0.23 -->',
-  '',
-  '| Flight | Feature | Title | Tier | Status |',
-  '|---|---|---|---|---|',
+const table = (rows: string[]) => ['# Ristretto Roadmap', '<!-- ristretto-format: 0.23 -->', '', '| Flight | Feature | Title | Tier | Status |', '|---|---|---|---|---|', ...rows, ''].join('\n')
+
+const ROADMAP = table([
   '| a | d-old | An old one | normal | done |',
   '| a | d-here | Done here | normal | done |',
   '| a | human-here | Needs a person | normal | done |',
@@ -25,34 +25,75 @@ const ROADMAP = [
   '| b | p1 | Planned 1 | normal | planned |',
   '| b | p2 | Planned 2 | normal | planned |',
   '| b | pw | Waits on blk | normal | planned |',
-  '',
-  '- **blk** — waiting on Anatol: the API doc',
-].join('\n')
+]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number> }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[] }
+
+// git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
+function gitFor(prefix: string, head: string, log: string) {
+  const k = (s: string) => (prefix ? `${prefix}|${s}` : s)
+  return {
+    [k('rev-parse --abbrev-ref HEAD')]: { exitCode: 0, stdout: `${head}\n` },
+    [k(REFS)]: { exitCode: 0, stdout: 'refs/heads/main\n' },
+    [k('log --format=%ct%x09%s refs/heads/main..HEAD --')]: { exitCode: 0, stdout: log },
+    [k('rev-parse HEAD')]: { exitCode: 0, stdout: `${'c'.repeat(40)}\n` },
+    [k(`diff --quiet --end-of-options ${'a'.repeat(40)} HEAD -- . :(exclude)docs/ristretto`)]: { exitCode: 0, stdout: '' },
+    [k('rev-parse --absolute-git-dir')]: { exitCode: 0, stdout: `${ROOT}/${prefix ? `${prefix}/` : ''}.git\n` },
+    [k('rev-parse --git-common-dir')]: { exitCode: 0, stdout: '.git\n' },
+  }
+}
+const SUITE = JSON.stringify({ verdict: 'green', head: 'c'.repeat(40), tree: 'a'.repeat(40), at: 1, gates: 'test ✓', failing: '' })
 
 function world(): World {
   return {
     session: 's1',
+    writes: [],
+    seen: [],
     files: {
       '.git/logs/refs/heads/main': 'one move\n',
       'docs/ristretto/roadmap.md': ROADMAP,
       'docs/ristretto/plans/human-here.md': '- Acceptance:\n  - [x] [human] a\n  - [ ] [human] b\n',
       'docs/ristretto/plans/review-here.md': '- Acceptance:\n  - [ ] [human] x\n  - [ ] [human] y\n\n## Open findings\n\n- block · a.js:1 · one\n- block · b.js:2 · two\n',
       'docs/ristretto/plans/pw.md': '- Depends: blk\n',
-      '.ristretto/suite.json': JSON.stringify({ verdict: 'green', head: 'c'.repeat(40), tree: 'a'.repeat(40), at: 1, gates: 'test ✓', failing: '' }),
+      '.ristretto/suite.json': SUITE,
     },
+    git: gitFor('', 'brew/x', '1760440000\tdocs(blk): blocked\n1760430000\tfeat(review-here): r\n1760420000\tfeat(human-here): h\n1760410000\tfeat(d-here): d\n'),
+  }
+}
+
+// sisi: api and web on brew branches, platform on main; web's session pulls web-order-title.
+function folder(): World {
+  const rec = { v: 1, session: 'w1', id: 'web-order-title', command: 'pull', unattended: true, title: '', startedAt: NOW - 720000, phase: 'coding', step: 'code', red: false, effort: [{ name: 'plan', state: 'done' }, { name: 'code', state: 'current', progress: 0.5 }, { name: 'review', state: 'todo' }, { name: 'close', state: 'todo' }], beat: NOW - 30000, endedAt: null }
+  return {
+    session: 's1',
+    writes: [],
+    seen: [],
+    files: {
+      'api/docs/ristretto/roadmap.md': table([
+        '| backoffice-feedback | api-order-title | Bestelltitel neben der Nummer | normal | done |',
+        '| backoffice-feedback | api-special-case-rules | Spezialfälle als Regel | normal | blocked |',
+        '| backoffice-feedback | dup | The same id in api | normal | planned |',
+      ]) + '\n- **api-special-case-rules** — waits on your collection of special cases\n',
+      'api/.ristretto/suite.json': SUITE,
+      'web/docs/ristretto/roadmap.md': table([
+        '| backoffice-feedback | web-order-title | Bestelltitel im Office | normal | planned |',
+        '| backoffice-feedback | web-orders-customer-filter | Nach Kunde filtern | easy | planned |',
+        '| backoffice-feedback | web-flat-rate-orders | Pauschal im Office | normal | planned |',
+        '| backoffice-feedback | dup | The same id in web | normal | planned |',
+      ]),
+      'web/docs/ristretto/plans/web-order-title.md': '- Depends: api/api-order-title\n',
+      'web/docs/ristretto/plans/web-orders-customer-filter.md': '- Depends: api/api-order-title\n',
+      'web/docs/ristretto/plans/web-flat-rate-orders.md': '- Depends: web-order-title\n',
+      'web/.ristretto/at-work.json': JSON.stringify(rec),
+      'web/.ristretto/pulling': 'w1',
+      'platform/docs/ristretto/roadmap.md': table(['| p | plat-done | Done | normal | done |']),
+      'notes/readme.md': 'not a repo',
+    },
+    mtimes: { 'web/.ristretto/pulling': NOW - 30000 },
     git: {
-      'rev-parse --abbrev-ref HEAD': { exitCode: 0, stdout: 'brew/x\n' },
-      'for-each-ref --format=%(refname) refs/heads/main refs/heads/master refs/remotes/origin/main refs/remotes/origin/master': { exitCode: 0, stdout: 'refs/heads/main\n' },
-      'log --format=%ct%x09%s refs/heads/main..HEAD --': {
-        exitCode: 0,
-        stdout: '1760440000\tdocs(blk): blocked\n1760430000\tfeat(review-here): r\n1760420000\tfeat(human-here): h\n1760410000\tfeat(d-here): d\n',
-      },
-      'rev-parse HEAD': { exitCode: 0, stdout: `${'c'.repeat(40)}\n` },
-      [`diff --quiet --end-of-options ${'a'.repeat(40)} HEAD -- . :(exclude)docs/ristretto`]: { exitCode: 0, stdout: '' },
-      'rev-parse --absolute-git-dir': { exitCode: 0, stdout: '/repo/.git\n' },
-      'rev-parse --git-common-dir': { exitCode: 0, stdout: '.git\n' },
+      ...gitFor('api', 'feature/brew-2026-10-28', '1760000000\tfeat(api-order-title): t\n'),
+      ...gitFor('web', 'feature/brew-2026-10-29', ''),
+      ...gitFor('platform', 'main', ''),
     },
   }
 }
@@ -66,19 +107,36 @@ function install(on: any, w: World, theme = 'dark') {
   on('session.id', () => ({ value: w.session }) as any)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as any)
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd ?? ROOT }) as any)
-  on('fs.exists', ($: any, e: any) => ({ value: rel(e.path) in w.files || isDir(e.path) }) as any)
+  on('fs.exists', ($: any, e: any) => {
+    w.seen.push(rel(e.path))
+    return { value: rel(e.path) in w.files || isDir(e.path) } as any
+  })
   on('fs.read', ($: any, e: any) => {
+    w.seen.push(rel(e.path))
+    if (/\.claude-plugin\/plugin\.json$/.test(String(e.path).replace(/\\/g, '/'))) return { value: JSON.stringify({ name: 'ristretto', version: '0.23.0' }) } as any
     if (!(rel(e.path) in w.files)) throw new Error(`ENOENT ${e.path}`)
     return { value: w.files[rel(e.path)] } as any
+  })
+  on('fs.write', ($: any, e: any) => {
+    w.files[rel(e.path)] = e.text
+    w.writes.push(rel(e.path))
+    return { value: undefined } as any
   })
   on('fs.stat', ($: any, e: any) => {
     if (!(rel(e.path) in w.files) && !isDir(e.path)) throw new Error(`ENOENT ${e.path}`)
     return { value: { kind: isDir(e.path) ? 'dir' : 'file', size: 1, mtimeMs: w.mtimes?.[rel(e.path)] ?? (w.files[rel(e.path)] ?? '').length } } as any
   })
-  on('fs.list', () => ({ value: [] }) as any)
+  on('fs.list', ($: any, e: any) => {
+    const dir = rel(e.path) === ROOT ? '' : `${rel(e.path)}/`
+    const names = new Set<string>()
+    for (const f of Object.keys(w.files)) if (f.startsWith(dir)) names.add(f.slice(dir.length).split('/')[0])
+    return { value: [...names].map(name => ({ name, kind: Object.keys(w.files).some(f => f.startsWith(`${dir}${name}/`)) ? 'dir' : 'file', size: 1, mtimeMs: 1, isLink: false })) } as any
+  })
   on('process.run', ($: any, e: any) => {
     const key = (e.argv as string[]).slice(1).join(' ')
-    const hit = (e.argv as string[])[0] === 'git' ? w.git[key] : undefined
+    const at = rel(String(e.init?.cwd ?? ROOT))
+    const prefix = at === ROOT || at === '' ? '' : at
+    const hit = (e.argv as string[])[0] === 'git' ? w.git[prefix ? `${prefix}|${key}` : key] : undefined
     return { value: { exitCode: hit ? hit.exitCode : 1, stdout: hit ? hit.stdout : '', stderr: '' } } as any
   })
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
@@ -87,7 +145,7 @@ function install(on: any, w: World, theme = 'dark') {
 }
 
 async function start($: any, on: any, w = world(), theme = 'dark') {
-  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 14, 12, 0) })
+  const clock = mock.clock(on, { now: NOW })
   install(on, w, theme)
   await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true } as any)
   await clock.settle()
@@ -116,101 +174,63 @@ async function holdsTheLook(ui: any, where: string) {
   }
   for (const src of await svgs(ui)) if (src.length > 131072) throw new Error(`${where}: an SVG of ${src.length} chars`)
 }
+const pull = async ($: any, clock: any, id: string) => {
+  await $.command.run({ command: 'ristretto:pull', args: `${id} unattended` } as any).catch(() => {})
+  await $.tool.call({ tool: 'Agent', prompt: `> PLANNER for ristretto feature **${id}**`, description: 'plan', subagent_type: 'general-purpose' } as any).catch(() => {})
+  await clock.settle()
+}
 
-describe('the overview', () => {
-  test('idle: the branch first, what holds it, what needs you, what is next, what is done', async ($, on) => {
+describe('one repo on a brew branch', () => {
+  test('the branch story: needs you, done on this branch, can start now, next, the foot, the version', async ($, on) => {
     await start($, on)
     const ui = await mount($)
     const t = await texts(ui)
-    for (const w of ['Branch', 'brew/x', '3 features', '1 check open', '2 findings · 2 checks open', 'suite green', 'last commit', 'Needs you', 'blk', 'waits on Anatol',
-      'Up next', 'p1', 'next', 'p2', 'queued', '1 waiting on others', 'Done', '1 on this branch', '2 in all', 'History']) {
+    for (const w of ['repo', 'v0.23.0', 'needs you · 3', 'blk', 'waits on Anatol', '1 check open', '2 findings · 2 checks open',
+      'done on this branch · 1', 'd-here', 'can start now · 2', 'p1', 'next', 'p2', 'next · 1', 'pw', 'waits for blk', 'brew/x', 'suite green']) {
       expect(t).toContain(w)
     }
-    // A blocked feature whose only commit is its roadmap edit does not hold the branch.
-    expect(t).not.toMatch(/blocked · waits on Anatol/)
-    expect(t).not.toContain('ahead')
-    await holdsTheLook(ui, 'idle')
+    // Merged long ago, not this branch's: no row. Nothing of the old cards is left.
+    expect(t).not.toContain('d-old')
+    for (const gone of ['Brewing', 'Branch', 'Domain facts', 'Up next', 'History', 'ahead']) expect(t).not.toContain(gone)
+    await holdsTheLook(ui, 'branch view')
   })
 
-  test('cards are Claude\'s: a hairline round border, no fill', async ($, on) => {
-    await start($, on)
-    const ui = await mount($)
-    const cards = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props.borderStyle === 'round')
-    expect(cards.length).toBeGreaterThan(3)
-    for (const c of cards) {
-      expect(c.props.borderColor).toBe('#2D2D2D')
-      expect(c.props.backgroundColor).toBeUndefined()
-    }
-  })
-
-  test('the light theme takes the light hairline; text stays theme keys', async ($, on) => {
-    await start($, on, world(), 'light')
-    const ui = await mount($)
-    const cards = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props.borderStyle === 'round')
-    for (const c of cards) expect(c.props.borderColor).toBe('#E3E1DA')
-    await holdsTheLook(ui, 'light')
-  })
-
-  test('no Button in the pane: titles fold, rows open their page, ← Board goes back', async ($, on) => {
+  test('rows open their page, ← Board goes back; no Button in the pane', async ($, on) => {
     await start($, on)
     const ui = await mount($)
     expect((await ui.findAll({ type: 'Button' })).length).toBe(0)
-    // The title folds its card, a summary on the right; again unfolds it.
-    await press(ui, 'fold-next')
+    await press(ui, 'pr-need--review-here')
     let t = await texts(ui)
-    expect(t).toContain('2 ready · 1 waiting')
-    expect(t).not.toContain('queued')
-    await press(ui, 'fold-next')
-    expect(await texts(ui)).toContain('queued')
-    // A row presses anywhere on its line.
-    await press(ui, 'pr-hold-review-here')
-    t = await texts(ui)
     expect(t).toContain('Needs a look')
-    expect(t).toContain('Review')
-    expect(t).toContain('one')
     expect(t).toContain('Board')
     await press(ui, 'pr-back')
-    expect(await texts(ui)).toContain('Up next')
-    // History and the queue are pages too.
-    await press(ui, 'pr-more-history')
-    expect(await texts(ui)).toContain('d-old')
-    await press(ui, 'pr-back')
-    await press(ui, 'pr-more-next')
-    expect(await texts(ui)).toContain('waits on blk')
+    expect(await texts(ui)).toContain('can start now')
   })
 
-  test('VS Code has no press areas: a row opens by its ID\'s Button; mobile draws the overview with no presses', async ($, on) => {
-    await start($, on)
-    const vs = await mount($, 'vscode')
-    // VS Code draws no Client: the ID is the row's Button, a title folds by its Button, ← Board goes back.
-    expect((await vs.findAll({ type: 'Client' })).length).toBe(0)
-    await vs.press({ key: 'fold-next' })
-    expect(await texts(vs)).not.toContain('queued')
-    await vs.press({ key: 'fold-next' })
-    await vs.press({ key: 'open-hold-review-here' })
-    expect(await texts(vs)).toContain('Needs a look')
-    await vs.press({ key: 'back-btn' })
-    expect(await texts(vs)).toContain('Up next')
-    const phone = await mount($, 'mobile')
-    expect((await phone.findAll({ type: 'Button' })).length).toBe(0)
-    expect(await texts(phone)).toContain('brew/x')
-  })
-
-  test('the terminal draws the overview in glyphs', async ($, on) => {
+  test('the terminal draws the timeline in glyphs, press areas blank', async ($, on) => {
     await start($, on)
     const ui = await mount($, 'terminal')
     const t = await texts(ui)
     expect(t).toContain('brew/x')
-    expect(t).toContain('1 check open')
-    // The terminal resolves an Svg but draws it as an empty box: marks must be glyphs there.
     expect(t).toMatch(/[✓◐○✕]/)
     expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
-    // A press area's space would cover the cell under it there (a title's first letter, a
-    // row's glyph): in the terminal every press area draws nothing; the desktop keeps its space.
-    const areas = await ui.findAll({ type: 'Client' })
-    expect(areas.length).toBeGreaterThan(0)
-    for (const a of areas) expect(a.props.props.blank).toBe(true)
-    for (const a of await (await mount($, 'desktop')).findAll({ type: 'Client' })) expect(a.props.props.blank).toBe(false)
+    for (const a of await ui.findAll({ type: 'Client' })) expect(a.props.props.blank).toBe(true)
+  })
+
+  test('on the base branch only what is open: no done rows', async ($, on) => {
+    const w = world()
+    w.git['rev-parse --abbrev-ref HEAD'] = { exitCode: 0, stdout: 'main\n' }
+    await start($, on, w)
+    const t = await texts(await mount($))
+    expect(t).toContain('can start now')
+    expect(t).not.toContain('done on')
+  })
+
+  test('brew detection by the orchestrating marker is gone', async ($, on) => {
+    const w = world()
+    await start($, on, w)
+    await mount($)
+    expect(w.seen.some(p => p.includes('orchestrating'))).toBe(false)
   })
 })
 
@@ -226,120 +246,137 @@ describe('the rendering rules', () => {
     expect(await svgs(ui)).toEqual(s0)
   })
 
-  test('a running brew: the feature at work with its SVG clock, the effort bar phase-locked, the roles', async ($, on) => {
+  test('a pull at work here: the SVG clock, the effort bar phase-locked, its session line', async ($, on) => {
     const clock = await start($, on)
-    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
-    await $.tool.call({ tool: 'Agent', prompt: '> PLANNER for ristretto feature **p1**', description: 'plan', subagent_type: 'general-purpose' } as any).catch(() => {})
-    await clock.settle()
+    await pull($, clock, 'p1')
     const ui = await mount($)
     const t = await texts(ui)
-    expect(t).toContain('Brewing')
+    expect(t).toContain('at work · 1')
     expect(t).toContain('p1')
+    expect(t).toContain('session “repo: brew” · unattended')
     const src = await svgs(ui)
-    // The running time is an SVG whose digits a stepped animation rolls; the bar is phase-locked.
     expect(src.some((s: string) => /steps\(10\) infinite/.test(s))).toBe(true)
     expect(src.some((s: string) => /height="21"/.test(s) && /animation-delay/.test(s))).toBe(true)
-    const s0 = await svgs(ui)
-    await clock.advance(7000)
-    await ui.drawn()
-    expect(await svgs(ui)).toEqual(s0)
-    await holdsTheLook(ui, 'running')
+    await holdsTheLook(ui, 'at work')
   })
 })
 
-describe('between features', () => {
-  test('a brew between features (or restarted mid-brew) still shows the rest of the brew and its tally', async ($, on) => {
-    const clock = await start($, on)
-    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
-    await clock.settle()
-    const ui = await mount($)
-    const t = await texts(ui)
-    expect(t).toContain('Brewing')
-    expect(t).toContain('starting')
-    expect(t).toContain('p1')
-    expect(t).toContain('next')
-    expect(t).toMatch(/0 of \d+ brewed/)
-  })
-})
-
-describe('the edges', () => {
-  test('the terminal draws no emoji: the band starts with its counts, the cup is drawn in text', async ($, on) => {
-    const w = world()
-    w.files['docs/ristretto/roadmap.md'] = ROADMAP.split('\n').map(l => l.replace(/\| (blocked|planned) \|$/, '| done |')).join('\n')
-    // Every box ticked and no finding left: nothing asks a person.
-    w.files['docs/ristretto/plans/human-here.md'] = '- Acceptance:\n  - [x] [human] a\n'
-    w.files['docs/ristretto/plans/review-here.md'] = '- Acceptance:\n  - [x] [human] x\n'
-    await start($, on, w)
-    const term = await band($, 'terminal')
-    expect(await texts(term)).not.toContain('☕')
-    const cupPane = await mount($, 'terminal')
-    const t = await texts(cupPane)
-    expect(t).toContain('brewed')
-    expect(t).not.toContain('☕')
-  })
-
-  test('the base branch moving (a fetch, a merge elsewhere) is read on the next poll', async ($, on) => {
+describe('the at-work record', () => {
+  test('a pull here writes it once per shown change; the heartbeat after a minute redraws nothing', async ($, on) => {
     const w = world()
     const clock = await start($, on, w)
+    await pull($, clock, 'p1')
+    const rec = JSON.parse(w.files['.ristretto/at-work.json'])
+    expect(rec.id).toBe('p1')
+    expect(rec.session).toBe('s1')
+    expect(rec.unattended).toBe(true)
+    const writes = w.writes.length
     const ui = await mount($)
-    expect(await texts(ui)).toContain('3 features')
-    // main took d-here: only two features are ahead of it now.
-    w.git['log --format=%ct%x09%s refs/heads/main..HEAD --'] = { exitCode: 0, stdout: '1760430000\tfeat(review-here): r\n1760420000\tfeat(human-here): h\n' }
-    w.files['.git/logs/refs/heads/main'] = 'one move\nanother move\n'
-    await clock.advance(5000)
+    const t0 = await texts(ui)
+    await clock.advance(30_000)
     await clock.settle()
+    expect(w.writes.length).toBe(writes)
+    await clock.advance(35_000)
+    await clock.settle()
+    expect(w.writes.length).toBe(writes + 1)
+    const beat = JSON.parse(w.files['.ristretto/at-work.json'])
+    expect(beat.beat).toBeGreaterThan(rec.beat)
+    expect(beat.startedAt).toBe(rec.startedAt)
     await ui.drawn()
-    expect(await texts(ui)).toContain('2 features')
+    expect(await texts(ui)).toBe(t0)
   })
 
-  test('a brew snapshot is kept per session: a restart finds its own, never another session\'s', async ($, on) => {
-    const now = Date.UTC(2026, 9, 14, 12, 0)
-    const snap = { startedAt: now - 600000, ids: ['p1', 'p2', 'pw'], reruns: [] }
-    // Restarted mid-brew: the marker is this session's, brew's orchestrating marker is there.
-    const mine = world()
-    mine.files['.ristretto/pulling'] = 's1'
-    mine.files['.ristretto/orchestrating'] = ''
-    mine.mtimes = { '.ristretto/pulling': now }
-    mine.store = { 'brew:/repo:s1': snap }
-    await start($, on, mine)
-    expect(await texts(await mount($))).toMatch(/0 of 2 brewed/)
-  })
-
-  test('another session\'s brew snapshot is not taken (nor cleared) by this one', async ($, on) => {
-    const now = Date.UTC(2026, 9, 14, 12, 0)
+  test('the run ending (the session moving on) writes endedAt', async ($, on) => {
     const w = world()
-    w.files['.ristretto/pulling'] = 's1'
-    w.files['.ristretto/orchestrating'] = ''
-    w.mtimes = { '.ristretto/pulling': now }
-    w.store = { 'brew:/repo:s2': { startedAt: now - 600000, ids: ['p1', 'p2', 'pw'], reruns: [] } }
+    const clock = await start($, on, w)
+    await pull($, clock, 'p1')
+    // The session moves on (`pull next` before it names its feature): the run it left has ended.
+    await $.command.run({ command: 'ristretto:pull', args: 'next' } as any).catch(() => {})
+    await clock.settle()
+    expect(JSON.parse(w.files['.ristretto/at-work.json']).endedAt).not.toBeNull()
+  })
+})
+
+describe('a folder of repos', () => {
+  test('every repo on one board: needs you tagged, the web session at work, the foot per repo', async ($, on) => {
+    const w = folder()
     await start($, on, w)
-    expect(await texts(await mount($))).not.toMatch(/of 2 brewed/)
+    const ui = await mount($)
+    const t = await texts(ui)
+    for (const s of ['needs you · 1', 'api', 'api-special-case-rules', 'done on the brew branches · 1', 'backoffice-feedback', 'api-order-title',
+      'at work · 1', 'web-order-title', 'code', 'session “web: brew” · unattended', 'waited on api/api-order-title, done',
+      'can start now', 'web-orders-customer-filter', 'api half done', 'next · 1', 'web-flat-rate-orders', 'waits for web-order-title',
+      'feature/brew-2026-10-28', 'feature/brew-2026-10-29', 'brewing', 'platform', 'nothing open']) {
+      expect(t).toContain(s)
+    }
+    expect(t).not.toContain('notes')
+    await holdsTheLook(ui, 'folder')
   })
 
+  test('the same id in two repos: two tagged rows, each opening its own plan', async ($, on) => {
+    await start($, on, folder())
+    const ui = await mount($)
+    const t = await texts(ui)
+    expect(t.split('\n').filter(l => l === 'dup').length).toBe(2)
+    await press(ui, 'pr-free-web-dup')
+    expect(await texts(ui)).toContain('The same id in web')
+  })
+
+  test('after the merge: every repo on main, no done rows, nothing brewing', async ($, on) => {
+    const w = folder()
+    for (const f of ['api', 'web']) w.git[`${f}|rev-parse --abbrev-ref HEAD`] = { exitCode: 0, stdout: 'main\n' }
+    delete w.files['web/.ristretto/at-work.json']
+    delete w.files['web/.ristretto/pulling']
+    await start($, on, w)
+    const t = await texts(await mount($))
+    expect(t).not.toContain('done on')
+    expect(t).toContain('api, platform, web on their base branch')
+    expect(t).toContain('nothing brewing')
+    expect(t).toContain('web-order-title')
+  })
+
+  test('the band names the brewing feature with its repo', async ($, on) => {
+    await start($, on, folder())
+    const t = await texts(await band($))
+    expect(t).toContain('web')
+    expect(t).toContain('web-order-title')
+    expect(t).toContain('code')
+    expect(t).toContain('1 need you')
+  })
 })
 
 describe('the band', () => {
-  test('idle: what is open and who is needed; the board toggle', async ($, on) => {
-    await start($, on)
+  test('idle: what is next, how many can start, who is needed; the board toggle', async ($, on) => {
+    const w = world()
+    w.git['rev-parse --abbrev-ref HEAD'] = { exitCode: 0, stdout: 'main\n' }
+    await start($, on, w)
     const ui = await band($)
     const t = await texts(ui)
-    expect(t).toContain('4 open')
-    expect(t).toContain('1 need you')
-    expect(t).not.toMatch(/ahead|\d+\/\d+/)
+    expect(t).toContain('next')
+    expect(t).toContain('p1')
+    expect(t).toContain('2 can start')
+    expect(t).toContain('3 need you')
     expect((await ui.findAll({ type: 'Button' })).length).toBe(1)
+  })
+
+  test('a brew branch with nothing running: what it holds', async ($, on) => {
+    await start($, on)
+    expect(await texts(await band($))).toContain('1 done on this branch')
   })
 
   test('running: the cup, a 96px chip, the ID and its step', async ($, on) => {
     const clock = await start($, on)
-    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
-    await $.tool.call({ tool: 'Agent', prompt: '> PLANNER for ristretto feature **p1**', description: 'plan', subagent_type: 'general-purpose' } as any).catch(() => {})
-    await clock.settle()
+    await pull($, clock, 'p1')
     const ui = await band($)
     const t = await texts(ui)
     expect(t).toContain('p1')
     expect(t).toContain('plan')
     expect((await svgs(ui)).some((s: string) => /width="96" height="14"/.test(s))).toBe(true)
-    const term = await band($, 'terminal')
-    expect(await texts(term)).toMatch(/[▓▒░·█▪]/)
+    expect(await texts(await band($, 'terminal'))).toMatch(/[▓▒░·█▪]/)
+  })
+
+  test('the terminal draws no emoji', async ($, on) => {
+    await start($, on)
+    expect(await texts(await band($, 'terminal'))).not.toContain('☕')
   })
 })

@@ -535,14 +535,13 @@ const shown = (v) => JSON.stringify(v);
     const board = { name: 't', rows: [], format: { project: declared, plugin: m.formatOf(versionSrc) }, error: null };
     assert.ok(!shown(m.view(board, null, false)).includes('another ristretto format'), 'a project on the current format carries no notice');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
-    assert.ok(!tsx.includes('plugin.json'), 'board.tsx must not take the format from plugin.json');
+    // plugin.json gives the pane's version label only; the format is migrate.js's.
+    assert.ok(!/formatOf\([^\n]*plugin\.json/.test(tsx), 'board.tsx must not take the format from plugin.json');
     assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/migrate.js'), 'board.tsx reads the format from migrate.js');
-    // The pane never draws an input field, and acts on domain files only through board-domain.
+    // The pane never draws an input field, and no domain facts since the Timeline (spec 2026-11-09).
     assert.ok(!/\bInput\b/.test(tsx), 'no input fields in the pane');
-    assert.ok(tsx.includes("from './board-domain.mjs'"), 'domain edits come from board-domain.mjs');
+    assert.ok(!tsx.includes('board-domain'), 'the board draws no domain facts');
     assert.ok(!/\b(commitArgs|addArgs|confirmIn|removeIn|restoreIn|lockOf|signatureOf|pendingOf)\b/.test(tsx), 'the board confirms, removes and commits nothing');
-    const rd = tsx.slice(tsx.indexOf('async function refreshDomain'));
-    assert.ok(!/'git'/.test(rd.slice(0, rd.indexOf('\nasync function', 10))), 'facts are read from the files alone');
     // Rendering rules 1 and 2 (spec 0.2): one timer, the poll, and no clock read while drawing —
     // the engine redraws a drawing that read the clock, and every redraw rebuilds every image.
     const drawing = tsx.slice(tsx.indexOf('function bandLine'));
@@ -553,7 +552,7 @@ const shown = (v) => JSON.stringify(v);
     const svgSrc = fs.readFileSync(path.join(ROOT, 'hooks', 'board-svg.mjs'), 'utf8');
     assert.ok(/\bfacts: \(\) => BOOK\(/.test(svgSrc) && /'fact-conflict': \(\) => `\$\{BOOK\(/.test(svgSrc), 'facts have their own icon');
     assert.ok(!/'person'[^\n]*Domain facts|Domain facts[^\n]*'person'/.test(tsx), 'the person icon is not the facts icon');
-    assert.ok(/c\.kind === 'needs'/.test(tsx), 'the Needs you card (conflict rows among its rows) is drawn');
+    assert.ok(/card\('needs'/.test(tsx), 'the Needs you card is drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
     assert.ok(/featureLogArgs\(id\)/.test(tsx) && /sumFiles\(/.test(tsx), 'the Files card finds a feature\'s commits by its ID');
     // Final review #5: the Commit cell is the roadmap's text, not a trusted argument.
@@ -596,7 +595,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.bandOf(ready, null, false, { branch, suite: { state: 'unproven', text: 'suite unproven', failing: '' } }).idle.ready, false, 'never ready on an unproven suite');
     assert.strictEqual(m.bandOf({ ...board, error: 'no-roadmap', rows: [] }, null, false, {}), null, 'no roadmap: no band');
     const tsx = fs.readFileSync(path.join(ROOT, 'hooks', 'board.tsx'), 'utf8');
-    assert.ok(/component: 'AbovePrompt'/.test(tsx) && /bandOf\(/.test(tsx), 'the band is drawn above the prompt');
+    assert.ok(/component: 'AbovePrompt'/.test(tsx) && /timelineBandOf\(/.test(tsx), 'the band is drawn above the prompt');
     assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
   }
 

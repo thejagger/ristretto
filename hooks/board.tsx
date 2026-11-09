@@ -1,21 +1,27 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardBranch, BoardBrew, BoardDomain, BoardFile, BoardLive, BoardPage, BoardPlan, BoardRecord, BoardRole, BoardRun, BoardStarted, BoardSuite } from '../types'
-import { EMPTY_BOARD, bandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, view } from './board-model.mjs'
-import { EMPTY_DOMAIN, entriesOf, markOlder } from './board-domain.mjs'
+import type { Board, BoardAtWork, BoardFile, BoardLive, BoardPage, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
+import { EMPTY_BOARD, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText } from './board-model.mjs'
 import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
-import { baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
+import { BASES, ago, baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
-import { HAIR, HUE, INK, LEGEND, PHASE, back as backArrow, chev12, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, square, stacked, svgClock, statusGlyph } from './board-svg.mjs'
+import { HAIR, HUE, INK, PHASE, back as backArrow, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, svgClock, statusGlyph } from './board-svg.mjs'
 import { buttonKeeper } from './board-keep.mjs'
-import { parseChecks, parseDecisions, parsePlan } from './board-plan.mjs'
+import { parseChecks, parseDecisions, parsePlan, siblingOf } from './board-plan.mjs'
 import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
+import { endedOf, judge, needsBeat, recordOf, sameShown } from './board-atwork.mjs'
+import { pageOf, timelineBandOf, timelineOf } from './board-timeline.mjs'
 
-// The roadmap board: a read-only view of docs/ristretto/roadmap.md, of the branch the session is
-// on and of the run this session is doing. It observes and never answers: every hook passes its
-// event on unchanged, and the board starts nothing (the person acts in the chat). Decisions live
-// in board-model.mjs; this module reads, keeps state and draws.
+// The roadmap board, the Timeline (spec 2026-11-09): a read-only view of one repo, or of every
+// direct subfolder of the session's folder that holds a roadmap. The branch decides the view: off
+// its base, a repo tells its branch's story; on its base, only what is open. It observes and never
+// answers: every hook passes its event on unchanged, and the board starts nothing (the person acts
+// in the chat). Decisions live in board-timeline.mjs; this module reads, keeps state and draws.
+//
+// The session doing a pull leaves its run in that repo's .ristretto/at-work.json (gitignored), so
+// the board in the folder's chat can show what each repo session pulls. That file is written on a
+// shown change and, at most once a minute, as a heartbeat: never an atom, so it redraws nothing.
 //
 // How it draws (the desktop, measured; spec 0.2): only when something changes, never on a timer.
 // A drawing never reads the clock (the engine redraws a drawing that did, every few seconds, and
@@ -26,26 +32,19 @@ import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase,
 const PANE = 'ristretto-board'
 const ROADMAP = 'docs/ristretto/roadmap.md'
 const MARKER = '.ristretto/pulling'
-const ORCHESTRATING = '.ristretto/orchestrating'
 const SUITE = '.ristretto/suite.json'
+const AT_WORK = '.ristretto/at-work.json'
 
-// A repo file by its absolute path. A relative path would resolve against the working
-// directory, which a shell `cd` in the session moves: one `cd docs/ristretto/plans` and the
-// board said there was no roadmap. The project root does not move with it.
-async function repo($: EngineInterface, path: string) {
-  return `${await $.session.root()}/${path}`
-}
-
-const board = atom({ plugin: 'ristretto', key: 'board' } as const, EMPTY_BOARD as Board)
+const repos = atom({ plugin: 'ristretto', key: 'repos' } as const, [] as BoardRepo[])
+// The roadmap statuses of sibling folders a single repo's plans name (`api/<id>`).
+const siblings = atom({ plugin: 'ristretto', key: 'siblings' } as const, {} as Record<string, Record<string, BoardStatus>>)
+// This session's own run as it last wrote it: the drawing shows it over its own file.
+const ownRec = atom({ plugin: 'ristretto', key: 'ownRec' } as const, null as BoardAtWork | null)
 const live = atom({ plugin: 'ristretto', key: 'live' } as const, null as BoardLive | null)
-const elsewhere = atom({ plugin: 'ristretto', key: 'elsewhere' } as const, false)
 const page = atom({ plugin: 'ristretto', key: 'page' } as const, null as BoardPage | null)
-const domain = atom({ plugin: 'ristretto', key: 'domain' } as const, EMPTY_DOMAIN as BoardDomain)
 // Whether the board's pane is open: the band's toggle follows it.
 const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
-// The one fact opened to its full text, as `<file>\u0000<title>`.
-const openFact = atom({ plugin: 'ristretto', key: 'openFact' } as const, null as string | null)
-// A feature's files (its commits, found by ID), and the folders opened by hand.
+// A feature's files (its commits, found by ID) keyed `<folder>\u0000<id>`, and the folders opened by hand.
 const files = atom({ plugin: 'ristretto', key: 'files' } as const, {} as Record<string, BoardFile[]>)
 const folders = atom({ plugin: 'ristretto', key: 'folders' } as const, {} as Record<string, Record<string, boolean>>)
 // The run in progress, counted as it goes (tokens, gate time): the drawing never reads it, so a
@@ -53,23 +52,25 @@ const folders = atom({ plugin: 'ristretto', key: 'folders' } as const, {} as Rec
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
 const started = atom({ plugin: 'ristretto', key: 'started' } as const, null as BoardStarted | null)
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
-const branch = atom({ plugin: 'ristretto', key: 'branch' } as const, null as BoardBranch | null)
-const suite = atom({ plugin: 'ristretto', key: 'suite' } as const, null as BoardSuite | null)
-const brew = atom({ plugin: 'ristretto', key: 'brew' } as const, null as BoardBrew | null)
 const roles = atom({ plugin: 'ristretto', key: 'roles' } as const, {} as Record<string, BoardRole[]>)
 const drawnAt = atom({ plugin: 'ristretto', key: 'drawnAt' } as const, 0)
-// Cards folded by their title, by card key, for the session.
-const folds = atom({ plugin: 'ristretto', key: 'folds' } as const, {} as Record<string, boolean>)
 
-let roadmapMtime = -1
-let plansSig = ''
 let timers: { cancel: () => void }[] = []
 let storeKey = ''
-let brewKey = ''
-let gitDir: string | null | undefined
-// The base ref's reflog (`<common git dir>/logs/<ref>`), once the branch is read.
-let baseLog: string | null = null
-let lastSig = ''
+let sessionId = ''
+let version = ''
+let pluginFormat = ''
+let rootName = ''
+// The session's own repo, when its root holds a roadmap; null at a folder of repos.
+let ownRoot: string | null = null
+let roots: { folder: string | null; root: string }[] = []
+// What this session last wrote to its own at-work file.
+let lastRec: BoardAtWork | null = null
+
+type Raw = { rec: BoardAtWork | null; owner: string | null; marker: boolean }
+type Kept = { sig: string; repo: BoardRepo; raw: Raw; gitDir?: string | null; baseLog?: string | null; sibs: Record<string, Record<string, BoardStatus>> }
+// Per repo root: what was read and the signature it was read at.
+const cache = new Map<string, Kept>()
 
 // The time the handler that changed what is shown changed it: what a drawing counts its clocks
 // and phase-locks its animations from.
@@ -93,200 +94,281 @@ async function closePane($: EngineInterface) {
   await update($, paneOpen, () => false)
 }
 
-// The plans' mtimes in roadmap order: a box ticked in a plan redraws the board.
-async function planSig($: EngineInterface, rows: { plan: string }[]) {
-  const parts: string[] = []
-  for (const row of rows) {
-    if (!row.plan) continue
-    const p = await repo($, `docs/ristretto/${row.plan}`)
-    parts.push((await $.fs.exists(p)) ? String((await $.fs.stat(p)).mtimeMs) : '-')
+async function mtime($: EngineInterface, p: string) {
+  try {
+    return (await $.fs.exists(p)) ? String((await $.fs.stat(p)).mtimeMs) : '-'
+  } catch {
+    return '-'
   }
+}
+
+// The plans' mtimes in roadmap order: a box ticked in a plan redraws the board.
+async function planSig($: EngineInterface, root: string, rows: { plan: string }[]) {
+  const parts: string[] = []
+  for (const row of rows) if (row.plan) parts.push(await mtime($, `${root}/docs/ristretto/${row.plan}`))
   return parts.join(',')
 }
 
-async function refreshBoard($: EngineInterface) {
+// A repo's roadmap and what every plan says, its manual checks and decisions with it. A plan that
+// cannot be read is simply absent. A blocked row with no reason in the roadmap says why from its
+// plan's Blockers. Paths are absolute: a shell `cd` in the session never moves them.
+async function readBoardAt($: EngineInterface, root: string, name: string): Promise<Board> {
   try {
-    if (!(await $.fs.exists(await repo($, ROADMAP)))) {
-      roadmapMtime = -1
-      { const v = { ...EMPTY_BOARD, error: 'no-roadmap' }; if (!same(await read($, board), v)) { await update($, board, () => v); await stamp($) } }
-      return
-    }
-    const mtime = (await $.fs.stat(await repo($, ROADMAP))).mtimeMs
-    const parsed = parseRoadmap(String(await $.fs.read(await repo($, ROADMAP))))
-    // What every plan says, its manual checks and decisions with it: a done row may still wait
-    // on a person or carry open findings. A plan that cannot be read is simply absent. A blocked
-    // row with no reason in the roadmap says why from its plan's Blockers.
-    const shownPage = await read($, page)
-    const opened = shownPage?.kind === 'feature' ? shownPage.id : null
-    const plans: Record<string, BoardPlan> = {}
+    if (!(await $.fs.exists(`${root}/${ROADMAP}`))) return { ...EMPTY_BOARD, name, error: 'no-roadmap' }
+    const parsed = parseRoadmap(String(await $.fs.read(`${root}/${ROADMAP}`)))
+    const plans: Board['plans'] = {}
     const checks: Board['checks'] = {}
     const decisions: Board['decisions'] = {}
     for (const row of parsed.rows) {
       if (!row.plan) continue
       try {
-        const text = String(await $.fs.read(await repo($, `docs/ristretto/${row.plan}`)))
+        const text = String(await $.fs.read(`${root}/docs/ristretto/${row.plan}`))
         checks[row.id] = parseChecks(text) as Board['checks'][string]
         decisions[row.id] = parseDecisions(text) as Board['decisions'][string]
-        plans[row.id] = parsePlan(text) as BoardPlan
+        plans[row.id] = parsePlan(text) as Board['plans'][string]
       } catch {
         // The opened row says its plan was not found.
       }
       if (row.status === 'blocked' && !row.reason) row.reason = plans[row.id]?.blockers[0] ?? ''
     }
-    plansSig = await planSig($, parsed.rows)
-    let plugin = ''
-    try {
-      plugin = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
-    } catch {
-      // Without the plugin's format the format line is skipped; the board itself still draws.
-    }
-    const name = (await $.session.root()).split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
-    { const v = { name, rows: parsed.rows, format: { project: parsed.format, plugin }, error: parsed.error, plans, checks, decisions }; if (!same(await read($, board), v)) { await update($, board, () => v); await stamp($) } }
-    roadmapMtime = mtime
-    const shownRow = opened ? parsed.rows.find(r => r.id === opened) : null
-    if (shownRow) await loadFiles($, shownRow.id, shownRow.commit)
+    return { name, rows: parsed.rows, format: { project: parsed.format, plugin: pluginFormat }, error: parsed.error, plans, checks, decisions }
   } catch (err) {
-    roadmapMtime = -1 // a failed read is retried by the next poll, not kept until the file changes
-    { const v = { ...(await read($, board)), error: String(err).slice(0, 80) }; if (!same(await read($, board), v)) { await update($, board, () => v); await stamp($) } }
+    return { ...EMPTY_BOARD, name, error: String(err).slice(0, 80) }
   }
 }
 
 // What a feature's commits changed, found by its ID in their subjects (`feat(<ID>): …`), re-read
-// whenever its page opens or the roadmap changes — a squash or a fix after review shows at once.
-// A row from before that rule may only carry a hash in its Commit cell: that is the roadmap's
-// text, not a trusted argument, so only a hash reaches git, after --end-of-options.
-async function loadFiles($: EngineInterface, id: string, commit: string) {
+// whenever its page opens. A row from before that rule may only carry a hash in its Commit cell:
+// that is the roadmap's text, not a trusted argument, so only a hash reaches git, after
+// --end-of-options.
+async function loadFiles($: EngineInterface, folder: string | null, id: string) {
   try {
-    const root = await $.session.root()
-    const byId = await $.process.run(['git', ...featureLogArgs(id)], { cwd: root })
+    const at = roots.find(r => r.folder === folder)
+    if (!at) return
+    const commit = cache.get(at.root)?.repo.board.rows.find(r => r.id === id)?.commit ?? ''
+    const byId = await git($, featureLogArgs(id), at.root)
     let list = byId.exitCode === 0 ? sumFiles(parseNumstat(byId.stdout)) : []
     if (list.length === 0 && /^[0-9a-f]{4,40}$/i.test(commit)) {
-      const shown = await $.process.run(['git', 'show', '--numstat', '--format=', '--end-of-options', commit], { cwd: root })
+      const shown = await git($, ['show', '--numstat', '--format=', '--end-of-options', commit], at.root)
       if (shown.exitCode === 0) list = parseNumstat(shown.stdout)
     }
-    { const v = { ...(await read($, files)), [id]: list }; if (!same(await read($, files), v)) { await update($, files, () => v); await stamp($) } }
+    const key = `${folder ?? ''}\u0000${id}`
+    { const v = { ...(await read($, files)), [key]: list }; if (!same(await read($, files), v)) { await update($, files, () => v); await stamp($) } }
   } catch {
-    // The card shows the plan's files meanwhile; the next refresh tries again.
+    // The card shows the plan's files meanwhile; the next open tries again.
   }
 }
 
-const DOMAIN = 'docs/ristretto/domain'
-let domainSig = ''
-
-// Domain facts as the files say them, re-read when a file changes. The board only shows them:
-// a fact becomes binding, or a conflict is settled, in the chat (prep).
-async function refreshDomain($: EngineInterface, force = false) {
+// git in a repo, by argv: never a shell.
+async function git($: EngineInterface, args: string[], cwd: string) {
   try {
-    const dir = `${await $.session.root()}/${DOMAIN}`
-    const listed = (await $.fs.exists(dir)) ? (await $.fs.list(dir)).filter(e => e.kind === 'file' && e.name.endsWith('.md')) : []
-    const sig = listed.map(e => `${e.name}:${e.mtimeMs}`).sort().join('|')
-    if (!force && sig === domainSig) return
-    domainSig = sig
-    const tree = []
-    for (const e of listed) tree.push(...entriesOf(e.name, String(await $.fs.read(`${dir}/${e.name}`))))
-    { const v = { tree: markOlder(tree) }; if (!same(await read($, domain), v)) { await update($, domain, () => v); await stamp($) } }
-  } catch {
-    // The next poll tries again.
-  }
-}
-
-// git, from the session root, by argv: never a shell.
-async function git($: EngineInterface, args: string[]) {
-  try {
-    return await $.process.run(['git', ...args], { cwd: await $.session.root() })
+    return await $.process.run(['git', ...args], { cwd })
   } catch {
     return { exitCode: 1, stdout: '', stderr: '' }
   }
 }
 
-// The branch, its base and the features on it (spec 4.1–4.3). Not a git repo: no Branch card.
-async function refreshBranch($: EngineInterface) {
-  try {
-    const at = await git($, headArgs)
-    if (at.exitCode !== 0) {
-      { const v = null; if (!same(await read($, branch), v)) { await update($, branch, () => v); await stamp($) } }
-      return
+// The branch, its base and the features on it (spec 4.1–4.3), and how old the branch is (its
+// oldest commit off the base). Not a git repo: no branch.
+async function readBranchAt($: EngineInterface, root: string, rows: { id: string }[], runList: BoardRecord[], kept: Partial<Kept>) {
+  const at = await git($, headArgs, root)
+  if (at.exitCode !== 0) return { branch: null, age: null, head: null as string | null }
+  let head = at.stdout.trim()
+  if (head === 'HEAD') head = (await git($, shortHeadArgs, root)).stdout.trim() || 'HEAD'
+  const origin = await git($, baseArgs.originHead, root)
+  const listed = await git($, baseArgs.refs, root)
+  const originHead = origin.exitCode === 0 ? origin.stdout : ''
+  const refs = listed.exitCode === 0 ? listed.stdout : ''
+  // Whether local main is behind origin/main: refs from git's own output, never an option.
+  const have = new Set(refs.split(/\r?\n/).map(s => s.trim()).filter(Boolean))
+  const behind = new Map<string, boolean>()
+  for (const n of BASES) {
+    const local = `refs/heads/${n}`
+    const remote = `refs/remotes/origin/${n}`
+    if (have.has(local) && (have.has(remote) || originHead.trim() === remote)) {
+      behind.set(`${local}|${remote}`, (await git($, ['merge-base', '--is-ancestor', local, remote], root)).exitCode === 0)
     }
-    let head = at.stdout.trim()
-    if (head === 'HEAD') head = (await git($, shortHeadArgs)).stdout.trim() || 'HEAD'
-    const origin = await git($, baseArgs.originHead)
-    const listed = await git($, baseArgs.refs)
-    const originHead = origin.exitCode === 0 ? origin.stdout : ''
-    const refs = listed.exitCode === 0 ? listed.stdout : ''
-    // Whether local main is behind origin/main: refs from git's own output, never an option.
-    const have = new Set(refs.split(/\r?\n/).map(s => s.trim()).filter(Boolean))
-    const behind = new Map<string, boolean>()
-    for (const n of ['main', 'master']) {
-      const local = `refs/heads/${n}`
-      const remote = `refs/remotes/origin/${n}`
-      if (have.has(local) && (have.has(remote) || originHead.trim() === remote)) {
-        behind.set(`${local}|${remote}`, (await git($, ['merge-base', '--is-ancestor', local, remote])).exitCode === 0)
-      }
-    }
-    const base = parseBase({ head, originHead, refs, isAncestor: (a: string, b: string) => behind.get(`${a}|${b}`) ?? false })
-    let commits: { at: number; subject: string }[] = []
-    baseLog = null
-    if (base) {
-      const common = (await git($, ['rev-parse', '--git-common-dir'])).stdout.trim()
-      if (common) baseLog = `${/^([A-Za-z]:)?[\\/]/.test(common) ? common : `${await $.session.root()}/${common}`}/logs/${base.ref}`
-      const log = await git($, logArgs(base.ref))
-      if (log.exitCode === 0) commits = parseLog(log.stdout) as typeof commits
-    }
-    // A feature is a roadmap row, or the plan of one that left the roadmap.
-    const rows = new Set((await read($, board)).rows.map(r => r.id))
-    const left = new Set<string>()
-    for (const c of commits) {
-      const id = isDocs(c.subject) ? null : featureIdOf(c.subject)
-      if (id && !rows.has(id) && !left.has(id) && (await $.fs.exists(await repo($, `docs/ristretto/plans/${id}.md`)))) left.add(id)
-    }
-    const onDefault = head === defaultBranch({ originHead, refs })
-    const next = branchOf({ head, base, commits, known: (id: string) => rows.has(id) || left.has(id), runs: await read($, runs), now: await $.clock.now(), onDefault })
-    { const v = next; if (!same(await read($, branch), v)) { await update($, branch, () => v); await stamp($) } }
-  } catch {
-    // The next turn tries again.
   }
+  const base = parseBase({ head, originHead, refs, isAncestor: (a: string, b: string) => behind.get(`${a}|${b}`) ?? false })
+  let commits: { at: number; subject: string }[] = []
+  kept.baseLog = null
+  if (base) {
+    const common = (await git($, ['rev-parse', '--git-common-dir'], root)).stdout.trim()
+    if (common) kept.baseLog = `${/^([A-Za-z]:)?[\\/]/.test(common) ? common : `${root}/${common}`}/logs/${base.ref}`
+    const log = await git($, logArgs(base.ref), root)
+    if (log.exitCode === 0) commits = parseLog(log.stdout) as typeof commits
+  }
+  // A feature is a roadmap row, or the plan of one that left the roadmap.
+  const ids = new Set(rows.map(r => r.id))
+  const left = new Set<string>()
+  for (const c of commits) {
+    const id = isDocs(c.subject) ? null : featureIdOf(c.subject)
+    if (id && !ids.has(id) && !left.has(id) && (await $.fs.exists(`${root}/docs/ristretto/plans/${id}.md`))) left.add(id)
+  }
+  const now = await $.clock.now()
+  const onDefault = head === defaultBranch({ originHead, refs })
+  const branch = branchOf({ head, base, commits, known: (id: string) => ids.has(id) || left.has(id), runs: runList, now, onDefault })
+  const age = commits.length ? ago(Math.min(...commits.map(c => c.at)), now) : null
+  return { branch, age, head }
 }
 
 // The full-suite verdict, current only while it proves the code that is there (spec 4.5).
-async function readSuite($: EngineInterface) {
+async function readSuiteAt($: EngineInterface, root: string) {
+  let record: any = null
   try {
-    let record: any = null
-    try {
-      if (await $.fs.exists(await repo($, SUITE))) record = JSON.parse(String(await $.fs.read(await repo($, SUITE))))
-    } catch {
-      record = null // half-written or unreadable: unproven
-    }
-    const at = await git($, ['rev-parse', 'HEAD'])
-    const head = at.exitCode === 0 ? at.stdout.trim() : null
-    const args = suiteArgs(record?.tree)
-    const treeMatches = args ? (await git($, args)).exitCode === 0 : false
-    { const v = suiteOf(record, { treeMatches, head }); if (!same(await read($, suite), v)) { await update($, suite, () => v); await stamp($) } }
+    if (await $.fs.exists(`${root}/${SUITE}`)) record = JSON.parse(String(await $.fs.read(`${root}/${SUITE}`)))
   } catch {
-    // The next turn tries again.
+    record = null // half-written or unreadable: unproven
+  }
+  const at = await git($, ['rev-parse', 'HEAD'], root)
+  const head = at.exitCode === 0 ? at.stdout.trim() : null
+  const args = suiteArgs(record?.tree)
+  const treeMatches = args ? (await git($, args, root)).exitCode === 0 : false
+  return suiteOf(record, { treeMatches, head }) as BoardRepo['suite']
+}
+
+// A repo's at-work record and its pull marker, as the folder board judges them.
+async function readRaw($: EngineInterface, root: string): Promise<Raw> {
+  let rec: BoardAtWork | null = null
+  try {
+    if (await $.fs.exists(`${root}/${AT_WORK}`)) rec = JSON.parse(String(await $.fs.read(`${root}/${AT_WORK}`)))
+  } catch {
+    rec = null // half-written: no record until the next write
+  }
+  let owner: string | null = null
+  let marker = false
+  try {
+    marker = await $.fs.exists(`${root}/${MARKER}`)
+    if (marker) owner = String(await $.fs.read(`${root}/${MARKER}`)).trim()
+  } catch {
+    marker = false
+  }
+  return { rec, owner, marker }
+}
+
+// The sibling folders a single repo's plans name, and their roadmap statuses.
+async function readSiblings($: EngineInterface, root: string, board: Board) {
+  const names = new Set<string>()
+  for (const plan of Object.values(board.plans)) for (const id of plan?.depends ?? []) { const s = siblingOf(id); if (s) names.add(s.folder) }
+  const parent = root.replace(/[\\/][^\\/]+[\\/]?$/, '')
+  const out: Record<string, Record<string, BoardStatus>> = {}
+  for (const f of names) {
+    try {
+      const p = `${parent}/${f}/${ROADMAP}`
+      if (!(await $.fs.exists(p))) continue
+      out[f] = Object.fromEntries(parseRoadmap(String(await $.fs.read(p))).rows.map((r: any) => [r.id, r.status]))
+    } catch {
+      // Unreadable: its features are not found.
+    }
+  }
+  return out
+}
+
+// What changed on disk for a repo, cheaply: the roadmap, the plans, git's HEAD and base reflog,
+// the suite record, the at-work record and the pull marker (and a single repo's siblings).
+async function sigOf($: EngineInterface, root: string, kept: Kept | undefined) {
+  if (kept && kept.gitDir === undefined) kept.gitDir = null
+  const parts = [
+    await mtime($, `${root}/${ROADMAP}`),
+    kept ? await planSig($, root, kept.repo.board.rows) : '',
+    await mtime($, `${root}/${SUITE}`),
+    await mtime($, `${root}/${AT_WORK}`),
+    await mtime($, `${root}/${MARKER}`),
+  ]
+  if (kept?.gitDir) parts.push(await mtime($, `${kept.gitDir}/HEAD`), await mtime($, `${kept.gitDir}/logs/HEAD`))
+  if (kept?.baseLog) parts.push(await mtime($, kept.baseLog))
+  if (kept) for (const f of Object.keys(kept.sibs)) parts.push(await mtime($, `${root.replace(/[\\/][^\\/]+[\\/]?$/, '')}/${f}/${ROADMAP}`))
+  return parts.join('|')
+}
+
+// Every repo the board shows, re-read where something changed; the at-work records judged again
+// on every poll (a quiet heartbeat turns a run into a stopped one). Written only when it changed.
+async function refreshRepos($: EngineInterface, force = false) {
+  try {
+    const now = await $.clock.now()
+    const out: BoardRepo[] = []
+    let sibs: Record<string, Record<string, BoardStatus>> = {}
+    for (const { folder, root } of roots) {
+      let kept = cache.get(root)
+      const sig = await sigOf($, root, kept)
+      if (force || !kept || kept.sig !== sig) {
+        const name = folder ?? rootName
+        const board = await readBoardAt($, root, name)
+        const runList = root === ownRoot ? await read($, runs) : (((await $.store.get(`runs:${root}`)) as BoardRecord[] | undefined) ?? [])
+        const next: Partial<Kept> = { gitDir: kept?.gitDir }
+        if (next.gitDir === undefined || next.gitDir === null) {
+          const at = await git($, ['rev-parse', '--absolute-git-dir'], root)
+          next.gitDir = at.exitCode === 0 ? at.stdout.trim() : null
+        }
+        const { branch, age } = await readBranchAt($, root, board.rows, Array.isArray(runList) ? runList : [], next)
+        const suite = await readSuiteAt($, root)
+        const raw = await readRaw($, root)
+        const s = folder === null ? await readSiblings($, root, board) : {}
+        kept = { sig: '', repo: { folder, board, branch, suite, runs: Array.isArray(runList) ? runList : [], atWork: { state: 'none', rec: null }, age }, raw, gitDir: next.gitDir, baseLog: next.baseLog, sibs: s }
+        kept.sig = await sigOf($, root, kept)
+        cache.set(root, kept)
+      }
+      const j = judge(kept.raw.rec, { owner: kept.raw.owner, markerExists: kept.raw.marker, now }) as BoardRepo['atWork']
+      // A running record's heartbeat is not drawn: only a stopped one says how long ago.
+      const atWork = j.state === 'running' && j.rec ? { state: j.state, rec: { ...j.rec, beat: 0 } } : j
+      out.push({ ...kept.repo, atWork })
+      sibs = { ...sibs, ...kept.sibs }
+    }
+    { const v = out; if (!same(await read($, repos), v)) { await update($, repos, () => v); await stamp($) } }
+    { const v = sibs; if (!same(await read($, siblings), v)) { await update($, siblings, () => v); await stamp($) } }
+  } catch {
+    // The next poll tries again.
   }
 }
 
-// A cheap signature of what git and the suite record are: the poll reads the branch again only
-// when it moved (a commit, a checkout, a verify).
-async function gitSig($: EngineInterface) {
-  try {
-    if (gitDir === undefined) {
-      const at = await git($, ['rev-parse', '--absolute-git-dir'])
-      gitDir = at.exitCode === 0 ? at.stdout.trim() : null
-    }
-    const paths = [...(gitDir ? [`${gitDir}/HEAD`, `${gitDir}/logs/HEAD`] : []), ...(baseLog ? [baseLog] : []), await repo($, SUITE)]
-    const parts: string[] = []
-    for (const p of paths) {
-      try {
-        parts.push(String((await $.fs.stat(p)).mtimeMs))
-      } catch {
-        parts.push('-')
-      }
-    }
-    return parts.join('|')
-  } catch {
-    return ''
+// The repos this board shows: the session's own when its root holds a roadmap, else each direct
+// subfolder that does (a folder of repos, as sisi's api, web and platform).
+async function findRoots($: EngineInterface) {
+  const root = await $.session.root()
+  rootName = root.split(/[\\/]/).filter(Boolean).pop() || 'roadmap'
+  if (await $.fs.exists(`${root}/${ROADMAP}`)) {
+    ownRoot = root
+    return [{ folder: null, root }]
   }
+  ownRoot = null
+  const found: { folder: string | null; root: string }[] = []
+  try {
+    for (const e of await $.fs.list(root)) {
+      if (e.kind !== 'dir' || e.name.startsWith('.')) continue
+      if (await $.fs.exists(`${root}/${e.name}/${ROADMAP}`)) found.push({ folder: e.name, root: `${root}/${e.name}` })
+    }
+  } catch {
+    // An unreadable folder shows no repos.
+  }
+  return found.sort((a, b) => String(a.folder).localeCompare(String(b.folder)))
+}
+
+async function writeRec($: EngineInterface, rec: BoardAtWork) {
+  if (!ownRoot) return
+  try {
+    await $.fs.write(`${ownRoot}/${AT_WORK}`, JSON.stringify(rec))
+    lastRec = rec
+  } catch {
+    // The next change or heartbeat writes it again.
+  }
+}
+
+// This session's run, left for the board at the folder: written when what it shows changed, and
+// once more with endedAt when the run ends. The drawing reads `ownRec`; the heartbeat never is.
+async function publish($: EngineInterface, after: BoardLive | null) {
+  if (!ownRoot) return
+  const now = await $.clock.now()
+  let next: BoardAtWork | null = null
+  if (after && after.id) {
+    const title = cache.get(ownRoot)?.repo.board.rows.find(r => r.id === after.id)?.title ?? ''
+    const rec = recordOf(after, { session: sessionId, title: plain(title), now, prev: lastRec }) as BoardAtWork
+    if (!sameShown(lastRec, rec)) next = rec
+  } else if (lastRec && lastRec.endedAt === null) {
+    next = endedOf(lastRec, now) as BoardAtWork
+  }
+  if (!next) return
+  await writeRec($, next)
+  { const v = next; if (!same(await read($, ownRec), v)) { await update($, ownRec, () => v); await stamp($) } }
 }
 
 async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
@@ -295,6 +377,7 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
     const before = await read($, live)
     const after = fold(before, obs, now)
     { const v = after; if (!same(await read($, live), v)) { await update($, live, () => v); await stamp($) } }
+    await publish($, after)
     await account($)
     // pull's and shot's implementer, fixer and closer follow their brief in the main loop: the
     // phase change names them, on the session's model (spec 4.8).
@@ -309,25 +392,8 @@ async function observe($: EngineInterface, obs: Parameters<typeof fold>[1]) {
       await update($, roles, r => addRole(r, role, model, now))
       await stamp($)
     }
-    await settleBrew($, after, obs)
   } catch {
     // An observation that fails leaves the board as it was; it must never fail the event.
-  }
-}
-
-// This brew's snapshot: a check re-run's brief joins it; the run's end clears it.
-async function settleBrew($: EngineInterface, after: BoardLive | null, obs: any) {
-  const snap = await read($, brew)
-  if (!snap) return
-  if (!after) {
-    { const v = null; if (!same(await read($, brew), v)) { await update($, brew, () => v); await stamp($) } }
-    if (brewKey) await $.store.set(brewKey, null)
-    return
-  }
-  if (after.command === 'brew' && obs.kind === 'brief' && !snap.ids.includes(obs.id)) {
-    const next = { ...snap, ids: [...snap.ids, obs.id] }
-    { const v = next; if (!same(await read($, brew), v)) { await update($, brew, () => v); await stamp($) } }
-    if (brewKey) await $.store.set(brewKey, next)
   }
 }
 
@@ -357,10 +423,10 @@ async function account($: EngineInterface) {
   { const v = begun ? { id: begun.id, startedAt: begun.startedAt } : null; if (!same(await read($, started), v)) { await update($, started, () => v); await stamp($) } }
   // A feature's run starting again starts its roles over.
   if (begun && (await read($, roles))[begun.id]?.length) await update($, roles, r => ({ ...r, [begun.id]: [] }))
-  if (!closing) return
-  await refreshBoard($)
+  if (!closing || !ownRoot) return
+  await refreshRepos($, true)
   const ended: BoardRun = closing
-  const status = (await read($, board)).rows.find(r => r.id === ended.id)?.status ?? 'unknown'
+  const status = cache.get(ownRoot)?.repo.board.rows.find(r => r.id === ended.id)?.status ?? 'unknown'
   // Another session in this repo may have kept runs since this one loaded them: add to what
   // the store holds now, not to this session's copy.
   const stored = storeKey ? await $.store.get(storeKey) : null
@@ -369,41 +435,31 @@ async function account($: EngineInterface) {
   if (storeKey) await $.store.set(storeKey, next)
 }
 
-// Whose run the marker is, from the session id gate.js writes into it and its age.
+// Whose run the pull marker is, from the session id gate.js writes into it and its age: what
+// the fold needs to know the run started and when it ended. The session's own repo only.
 async function observeMarker($: EngineInterface) {
+  if (!ownRoot) return
   try {
     let owner: string | null = null
     let idleMs: number | null = null
-    if (await $.fs.exists(await repo($, MARKER))) {
-      owner = String(await $.fs.read(await repo($, MARKER))).trim()
-      idleMs = (await $.clock.now()) - (await $.fs.stat(await repo($, MARKER))).mtimeMs
+    if (await $.fs.exists(`${ownRoot}/${MARKER}`)) {
+      owner = String(await $.fs.read(`${ownRoot}/${MARKER}`)).trim()
+      idleMs = (await $.clock.now()) - (await $.fs.stat(`${ownRoot}/${MARKER}`)).mtimeMs
     }
-    const state = markerState(owner, idleMs, await $.session.id())
-    { const v = state === 'other'; if (!same(await read($, elsewhere), v)) { await update($, elsewhere, () => v); await stamp($) } }
-    await observe($, { kind: 'marker', state })
-    // A run this session armed but did not see start (a restart mid-brew): only brew writes the
-    // orchestrating marker, so that says which command it is.
-    const current = await read($, live)
-    if (current && !current.command && (await $.fs.exists(await repo($, ORCHESTRATING)))) { const v = { ...current, command: 'brew' as const }; if (!same(await read($, live), v)) { await update($, live, () => v); await stamp($) } }
+    await observe($, { kind: 'marker', state: markerState(owner, idleMs, sessionId) })
   } catch {
     // The next poll tries again.
   }
 }
 
-// Every 5 s: what changed on disk, read again; nothing changed, nothing written.
+// Every 5 s: what changed on disk, read again; nothing changed, nothing written. A run at work
+// here refreshes its heartbeat at most once a minute: a file write, never an atom.
 async function poll($: EngineInterface) {
   try {
     await observeMarker($)
-    const exists = await $.fs.exists(await repo($, ROADMAP))
-    const mtime = exists ? (await $.fs.stat(await repo($, ROADMAP))).mtimeMs : -1
-    if (mtime !== roadmapMtime || (await planSig($, (await read($, board)).rows)) !== plansSig) await refreshBoard($)
-    await refreshDomain($)
-    const sig = await gitSig($)
-    if (sig !== lastSig) {
-      lastSig = sig
-      await refreshBranch($)
-      await readSuite($)
-    }
+    await refreshRepos($)
+    const now = await $.clock.now()
+    if (lastRec && needsBeat(lastRec, now)) await writeRec($, { ...lastRec, beat: now })
   } catch {
     // The next tick tries again.
   }
@@ -435,6 +491,18 @@ const pressRuns = new Map<string, () => void>()
 // The model alias each feature's latest Agent call named, for a spawn that resolves none.
 const aliasOf = new Map<string, string>()
 
+// What the drawing hands the Timeline: this session's own record over its own file.
+async function timelineOpts($: EngineInterface, nowMs: number) {
+  const own = await read($, ownRec)
+  return {
+    now: nowMs,
+    session: sessionId,
+    own: own && own.endedAt === null && ownRoot ? { folder: null, rec: own } : null,
+    siblings: await read($, siblings),
+    name: rootName,
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const begun = await next(e)
@@ -442,40 +510,36 @@ export const register: Register = on => {
     // The one timer: a poll that writes only what changed. No clock tick: running times count up
     // inside their SVG.
     timers = [$.clock.every(5000, () => void poll($))]
-    const root = await $.session.root()
+    sessionId = await $.session.id()
+    cache.clear()
+    lastRec = null
+    roots = await findRoots($)
     // Run records live in the engine's store, per repo, so the history outlives the session.
-    storeKey = `runs:${root}`
-    brewKey = `brew:${root}:${await $.session.id()}`
-    gitDir = undefined
-    const kept = await $.store.get(storeKey)
+    storeKey = ownRoot ? `runs:${ownRoot}` : ''
+    const kept = storeKey ? await $.store.get(storeKey) : null
     await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
-    // A brew this session was running before a restart keeps its snapshot while the marker is ours.
-    const snap = (await $.store.get(brewKey)) as BoardBrew | null
-    if (snap && Array.isArray(snap.ids)) await update($, brew, () => snap)
-    await readTheme($)
-    await refreshBoard($)
-    await refreshDomain($, true)
-    await refreshBranch($)
-    await readSuite($)
-    await poll($)
-    lastSig = await gitSig($)
-    if (snap && !(await read($, live))) {
-      await update($, brew, () => null)
-      await $.store.set(brewKey, null)
+    try {
+      pluginFormat = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
+    } catch {
+      // Without the plugin's format the format notice is skipped; the board itself still draws.
     }
+    try {
+      version = String(JSON.parse(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`))).version ?? '')
+    } catch {
+      version = ''
+    }
+    await readTheme($)
+    await refreshRepos($, true)
+    await poll($)
     await stamp($)
     return begun
   })
 
-  // A press area (board-press.tsx) was clicked: a card's title folds it, a row runs its press.
+  // A press area (board-press.tsx) was clicked: a row runs its press.
   on('ui.message', async ($, e, next) => {
     const id = (e.data as any)?.press
     if (typeof id === 'string' && id.startsWith('run:')) {
       pressRuns.get(id.slice(4))?.()
-      return {}
-    }
-    if (typeof id === 'string' && id.startsWith('fold:')) {
-      await toggleFold($, id.slice(5))
       return {}
     }
     return next(e)
@@ -497,10 +561,8 @@ export const register: Register = on => {
   // The band above the prompt: the main thing only, and the board toggle.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
-      const boardValue = await read($, board)
-      const b = bandOf(boardValue, await read($, live), await read($, elsewhere), {
-        branch: await read($, branch), suite: await read($, suite), plans: boardValue.plans, checks: boardValue.checks, decisions: boardValue.decisions, domain: await read($, domain),
-      })
+      const nowMs = await read($, drawnAt)
+      const b = timelineBandOf(await read($, repos), await timelineOpts($, nowMs))
       if (!b) return next(e)
       const els = $.ui.resolve(e) as any
       let toggle: any = null
@@ -509,7 +571,7 @@ export const register: Register = on => {
         const label = open ? 'hide board' : 'board'
         toggle = keeper.keep(`band|${e.surface}|toggle`, label, () => void (open ? closePane($) : openPane($)), (onPress: () => void) => <els.Button key="band-toggle" onPress={onPress}>{label}</els.Button>)
       }
-      return bandLine(els, b, await read($, drawnAt), toggle, e.surface)
+      return bandLine(els, b, nowMs, toggle, e.surface, ownRoot !== null)
     } catch {
       return next(e)
     }
@@ -526,26 +588,13 @@ export const register: Register = on => {
     // A bare /ristretto:status opens the board where it docks beside the transcript, at once
     // and with no model turn; a filter, or a layout that would put it inline, gets the text
     // roadmap from commands/status.md as before.
-    if (e.command === 'ristretto:status' && e.args.trim() === '' && e.presentation.isFullscreen && (await $.fs.exists(await repo($, ROADMAP)))) {
-      await refreshBoard($)
+    if (e.command === 'ristretto:status' && e.args.trim() === '' && e.presentation.isFullscreen && roots.length > 0) {
+      await refreshRepos($, true)
       await openPane($)
       return { text: 'Roadmap opened in the side pane — /ristretto:status <filter> prints it as text.' }
     }
     const hit = /^ristretto:(pull|shot|brew)$/.exec(e.command)
-    if (hit) {
-      try {
-        // brew's set as it starts: every planned row (spec 4.6).
-        if (hit[1] === 'brew') {
-          const b = await read($, board)
-          const snap = { startedAt: await $.clock.now(), ids: b.rows.filter(r => r.status === 'planned').map(r => r.id) }
-          { const v = snap; if (!same(await read($, brew), v)) { await update($, brew, () => v); await stamp($) } }
-          if (brewKey) await $.store.set(brewKey, snap)
-        }
-      } catch {
-        // Without the snapshot the Brewing card shows no tally.
-      }
-      await observe($, { kind: 'command', command: hit[1] as 'pull' | 'shot' | 'brew', args: e.args })
-    }
+    if (hit) await observe($, { kind: 'command', command: hit[1] as 'pull' | 'shot' | 'brew', args: e.args })
     return next(e)
   })
 
@@ -593,13 +642,13 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const ran = await next(e)
-    if (isRoadmap(e.file_path)) await refreshBoard($)
+    if (isRoadmap(e.file_path)) await refreshRepos($, true)
     return ran
   })
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const ran = await next(e)
-    if (isRoadmap(e.file_path)) await refreshBoard($)
+    if (isRoadmap(e.file_path)) await refreshRepos($, true)
     return ran
   })
 
@@ -637,14 +686,11 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    await refreshBoard($)
     if (e.agentId === undefined) {
       await observeMarker($)
       await observe($, { kind: 'main-turn-end', interrupted: e.reason === 'aborted' || e.reason === 'error' })
-      await refreshBranch($)
-      await readSuite($)
-      lastSig = await gitSig($)
     }
+    await refreshRepos($)
     return done
   })
 
@@ -657,11 +703,6 @@ export const register: Register = on => {
       return <Text color="error" wrap="wrap">{`ristretto board: ${String((err as any)?.stack ?? err).slice(0, 600)}`}</Text>
     }
   })
-}
-
-async function toggleFold($: EngineInterface, cardKey: string) {
-  await update($, folds, (all: Record<string, boolean>) => ({ ...all, [cardKey]: !all[cardKey] }))
-  await stamp($)
 }
 
 // Every Button is built once and handed back on each draw, so it keeps its press handle across
@@ -687,10 +728,10 @@ const STATUS: Record<string, [string, string]> = {
 // overflows its slot and gets scaled (the pixels would blur).
 const pxFor = (cells: number) => Math.max(120, Math.min(1400, Math.floor(cells * 7.4)))
 
-// The band, one line: the cup, the run's chip while one runs, the words in theme keys, who is
-// needed, and the board toggle right. Each part sits in its own box with its own one-line Text;
-// the ID gives way first; a part that starts a box starts with a no-break space.
-function bandLine(els: any, b: any, nowMs: number, toggle: any, surface: string) {
+// The band, one line: the cup, the run's chip while one pull runs, the words in theme keys
+// (each brewing feature with its repo at a folder), who is needed, and the board toggle right.
+// Each part sits in its own box with its own one-line Text; the ID gives way first.
+function bandLine(els: any, b: any, nowMs: number, toggle: any, surface: string, single: boolean) {
   const { Box, Text, Svg } = els
   const rich = !!Svg && surface !== 'terminal'
   const running = !!b.running
@@ -698,33 +739,47 @@ function bandLine(els: any, b: any, nowMs: number, toggle: any, surface: string)
     <Box key={key} flexShrink={shrink} overflow="hidden"><Text {...props} wrap="truncate-end">{text}</Text></Box>
   )
   const lead = rich
-    ? <Box key="cup" flexShrink={0}><Svg alt={running ? 'brewing' : 'ristretto'} width={16} height={16} source={cup({ size: 16, live: running && !!b.running.id })} /></Box>
+    ? <Box key="cup" flexShrink={0}><Svg alt={running ? 'brewing' : 'ristretto'} width={16} height={16} source={cup({ size: 16, live: running })} /></Box>
     : null
   let bar: any = null
-  let words: any[]
+  const words: any[] = []
   let need = 0
   if (running) {
-    const r = b.running
-    need = r.needYou
-    if (r.effort) {
+    const ps = b.running.parts
+    need = b.running.needYou
+    const one = ps.length === 1 && ps[0].effort ? ps[0] : null
+    if (one) {
       bar = rich
-        ? <Box key="bar" flexShrink={0}><Svg alt={`${r.id} ${r.step}`} width={96} height={14} source={phaseLock((chip as any)({ phases: r.effort.phases, red: r.red, width: 96 }), nowMs)} /></Box>
+        ? <Box key="bar" flexShrink={0}><Svg alt={`${one.id} ${one.step}`} width={96} height={14} source={phaseLock((chip as any)({ phases: one.effort, red: one.red, width: 96 }), nowMs)} /></Box>
         : (
           <Box key="bar" flexShrink={0} flexDirection="row">
-            {(terminalSegments as any)({ cells: 12, phases: r.effort.phases, red: r.red, frame: 0 }).map((s: any, i: number) => (
-              <Text key={`seg-${i}`} {...(s.state === 'done' ? { color: 'success' } : s.state === 'current' ? { color: r.red ? 'error' : 'claude' } : { color: 'inactive' })}>{s.text}</Text>
+            {(terminalSegments as any)({ cells: 12, phases: one.effort, red: one.red, frame: 0 }).map((s: any, i: number) => (
+              <Text key={`seg-${i}`} {...(s.state === 'done' ? { color: 'success' } : s.state === 'current' ? { color: one.red ? 'error' : 'claude' } : { color: 'inactive' })}>{s.text}</Text>
             ))}
           </Box>
         )
     }
-    words = r.id
-      ? [part('id', r.id, { bold: true }, 1), part('step', ` ${r.step}`, { color: r.red ? 'error' : 'claude' }, 0)]
-      : [part('step', r.step, { dimColor: true }, 1)]
-  } else if (b.idle.ready) {
-    words = [part('ready', 'ready to ship', { color: 'success' }, 0)]
+    ps.forEach((p: any, i: number) => {
+      if (i) words.push(part(`sep-${i}`, ' · ', { dimColor: true }, 0))
+      if (p.tag) words.push(part(`tag-${i}`, `${p.tag} `, { dimColor: true }, 0))
+      words.push(part(`id-${i}`, p.id, { bold: true }, 1))
+      words.push(part(`step-${i}`, ` ${p.step}`, { color: p.red ? 'error' : 'claude' }, 0))
+    })
+  } else if (b.finished) {
+    need = b.finished.needYou
+    const where = single ? 'this branch' : `${b.finished.branches} brew branch${b.finished.branches === 1 ? '' : 'es'}`
+    words.push(part('done', `${b.finished.done} done on ${where}`, { color: 'success' }, 0))
   } else {
     need = b.idle.needYou
-    words = [part('open', `${b.idle.open} open`, {}, 0)]
+    const n = b.idle.next
+    if (n) {
+      words.push(part('nx', 'next ', { color: 'claude' }, 0))
+      if (n.tag) words.push(part('nt', `${n.tag} `, { dimColor: true }, 0))
+      words.push(part('ni', n.id, { bold: true }, 1))
+      words.push(part('nc', ` · ${b.idle.canStart} can start`, { dimColor: true }, 0))
+    } else {
+      words.push(part('none', 'nothing to start', { dimColor: true }, 0))
+    }
   }
   return (
     <Box flexDirection="row" alignItems="center" justifyContent="space-between" gap={1}>
@@ -752,37 +807,23 @@ async function drawPane($: any, e: any) {
   const rich = !!Svg && e.surface !== 'terminal'
   const canPress = e.surface !== 'mobile' && (!!Client || !!Button)
   const nowMs = await read($, drawnAt)
-  const current = await read($, live)
-  const boardValue = await read($, board)
-  const facts = await read($, domain)
-  const folded = await read($, folds)
   const opened = await read($, folders)
   const cols = Math.max(30, Number(e.props.bodyColumns) || 48)
-  const begun = await read($, started)
-  const v: any = view(boardValue, current, await read($, elsewhere), {
-    page: canPress ? await read($, page) : null,
-    plans: boardValue.plans,
-    checks: boardValue.checks,
-    decisions: boardValue.decisions,
-    files: await read($, files),
-    folders: opened,
-    runs: await read($, runs),
-    domain: facts,
-    branch: await read($, branch),
-    suite: await read($, suite),
-    snapshot: await read($, brew),
-    roles: await read($, roles),
-    run: begun,
-    drawnAt: nowMs,
-  })
+  const shownRepos = await read($, repos)
+  const opts = await timelineOpts($, nowMs)
+  const shownPage = canPress ? await read($, page) : null
+  const allFiles = await read($, files)
+  // A page's files are its own repo's, keyed by ID as the feature page reads them.
+  const pageFiles = (folder: string | null | undefined) => Object.fromEntries(Object.entries(allFiles).filter(([k]) => k.startsWith(`${folder ?? ''} `)).map(([k, list]) => [k.split(' ')[1], list]))
+  const pg: any = shownPage ? pageOf(shownRepos, shownPage, { ...opts, files: pageFiles((shownPage as any).folder), folders: opened }) : null
+  const v: any = pg ? { kind: 'page', page: pg } : timelineOf(shownRepos, opts)
 
   // A new page stamps the time its clocks count from, then refreshes behind it: the press
   // returns before any file or git read, so the pane redraws on the first click.
   const go = (to: BoardPage | null) => void (async () => {
     await stamp($)
     await update($, page, () => to)
-    await refreshBoard($)
-    if (to?.kind === 'domain') await refreshDomain($, true)
+    if (to?.kind === 'feature') await loadFiles($, to.folder ?? null, to.id)
   })()
   const held = (key: string, look: string, run: () => void, build: (onPress: () => void) => any) =>
     keeper.keep(`pane|${e.surface}|${key}`, look, run, build)
@@ -852,28 +893,6 @@ async function drawPane($: any, e: any) {
     )
     : <Box key={key} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>{blocks.filter(Boolean)}</Box>
 
-  // A title that folds its card: bold, a small chevron, and while folded a dim summary right.
-  const foldTitle = (cardKey: string, title: string, summary: any) => {
-    const isFolded = !!folded[cardKey]
-    const chev = rich ? img(chev12(isFolded ? 'right' : 'down'), isFolded ? 'open' : 'fold') : <Text dimColor>{isFolded ? '›' : '˅'}</Text>
-    const run = () => void toggleFold($, cardKey)
-    return (
-      <Box key={`fold-${cardKey}`} flexDirection="row" alignItems="center">
-        <Box flexShrink={0} position="relative" flexDirection="row" alignItems="center">
-          {pressText(`fold-${cardKey}`, `${title}|${isFolded}`, run, <Text bold>{`${title} `}</Text>)}
-          {chev}
-          {canPress && Client && (
-            <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-              <Client key={`fold-${cardKey}`} module="./board-press.tsx" width="100%" height="100%" props={{ id: `fold:${cardKey}`, blank }} />
-            </Box>
-          )}
-        </Box>
-        <Box flexGrow={1} />
-        {isFolded && summary && <Box flexShrink={1} overflow="hidden">{summary}</Box>}
-      </Box>
-    )
-  }
-  const isFolded = (k: string) => !!folded[k]
 
   // A legend row: a coloured square or a mark, the ID, on the right what it waits on in its
   // tone, and a dim ›. The whole line presses.
@@ -882,7 +901,9 @@ async function drawPane($: any, e: any) {
     const run = r.run ?? (() => go(r.open))
     const pressable = !!(r.open || r.run)
     const lead = o.hex && rich ? img(square(o.hex), r.glyph) : markEl(r.glyph)
-    const id = <Text bold={!!o.strong} wrap="truncate-end">{r.id}</Text>
+    const id = r.tag
+      ? <Text wrap="truncate-end">{[<Text key="tag" dimColor>{`${r.tag} `}</Text>, <Text key="id" bold={!!o.strong}>{r.id}</Text>]}</Text>
+      : <Text bold={!!o.strong} wrap="truncate-end">{r.id}</Text>
     return (
       <Box key={`lrow-${k}`} flexDirection="row" alignItems="center" {...(pressable && Client ? { position: 'relative', overflow: 'hidden' } : {})}>
         <Box flexShrink={0} paddingRight={1}>{lead}</Box>
@@ -895,7 +916,7 @@ async function drawPane($: any, e: any) {
       </Box>
     )
   }
-  const detailEl = (r: any) => <Text {...toneOf(r.tone)} wrap="truncate-end">{`${r.detail}${r.tag === 'next' ? ' · next' : ''}`}</Text>
+  const detailEl = (r: any) => <Text {...toneOf(r.tone)} wrap="truncate-end">{r.detail}</Text>
   // A quiet way on, as Claude's "Show more": dim words, no chevron, the whole line presses.
   const more = (key: string, text: string, to: BoardPage) => (
     <Box key={`more-${key}`} flexDirection="row" position="relative">
@@ -968,30 +989,19 @@ async function drawPane($: any, e: any) {
 
   if (v.kind === 'message') return <Text dimColor>{v.text}</Text>
 
-  if (v.kind === 'cup') {
-    return (
-      <Box flexDirection="column" alignItems="center" paddingY={1}>
-        {rich ? img(cup({ size: 64, live: false }), 'all brewed') : CUP_TEXT.map((line, i) => <Text key={`cup-${i}`} color="claude">{line}</Text>)}
-        <Text bold>{`all ${v.total} brewed`}</Text>
-        <Text dimColor>roadmap clear</Text>
-      </Box>
-    )
-  }
-
   if (v.kind === 'page') {
     const p = v.page
     if (p.kind === 'feature') return shell([backLine, ...featureCards(p)])
-    if (p.kind === 'domain') return shell([backLine, ...domainCards(p, await read($, openFact))])
     if (p.kind === 'history') {
       return shell([backLine, card('history', [
-        headline('h-history', <Text bold>History</Text>, <Text dimColor>{`${p.n} done`}</Text>),
+        headline('h-history', <Text bold>Done on the branch</Text>, <Text dimColor>{`${p.n} done`}</Text>),
         ...titleGap('h-g0'),
         ...p.rows.map((r: any) => doneRow(r)),
       ])])
     }
     if (p.kind === 'queue') {
       return shell([backLine, card('queue', [
-        headline('q-head', <Text bold>Up next</Text>, <Text dimColor>{`${p.eligible.length} ready`}</Text>),
+        headline('q-head', <Text bold>Can start now</Text>, <Text dimColor>{`${p.eligible.length}`}</Text>),
         ...titleGap('q-g0'),
         ...p.eligible.map((r: any) => lrow(r, { right: detailEl(r) })),
         ...p.waiting.flatMap((g: any) => [
@@ -1003,149 +1013,98 @@ async function drawPane($: any, e: any) {
     }
   }
 
-  const out: any[] = v.notices.map((n: any) => <Text key={n.key} dimColor wrap="truncate-end">{n.text}</Text>)
-  for (const c of v.cards) {
-    if (c.kind === 'brewing') out.push(brewingCard(c))
-    else if (c.kind === 'branch') out.push(branchCard(c))
-    else if (c.kind === 'needs') out.push(needsCard(c))
-    else if (c.kind === 'next') out.push(nextCard(c))
-    else if (c.kind === 'done') out.push(doneCard(c))
-    else if (c.kind === 'facts') out.push(factsCard(c))
-  }
-  return shell(out)
+  // ---- the timeline ---------------------------------------------------------------------------
 
-  // ---- the cards ------------------------------------------------------------------------------
-
-  // The branch, like Claude's Context card: a headline, a stacked bar of its features by state,
-  // a legend of what holds it, and a footer. Never "ahead of" anything.
-  function branchCard(c: any) {
-    const summary = c.ready
-      ? <Text color="success" wrap="truncate-end">ready to ship</Text>
-      : <Text dimColor wrap="truncate-end">{c.holds.length ? `${c.holds.length} hold it` : c.footer}</Text>
-    const head = foldTitle('branch', 'Branch', summary)
-    if (isFolded('branch')) return card('branch', [head])
-    const hex = (x: any) => (x.glyph === 'findings' ? LEGEND.review : x.glyph === 'person' ? LEGEND.human : undefined)
-    const holders = c.holds.map((x: any) => lrow(x, { hex: hex(x), right: detailEl(x), shrink: true }))
-    if (c.compact) {
-      return card('branch', [head, ...titleGap('bn-g0'), ...(c.ready ? [headline('bn-ready', <Text color="success">ready to ship</Text>)] : holders.length ? holders : [note('bn-none', c.footer)])])
-    }
-    if (!c.scoped) {
-      return card('branch', [
-        head,
-        ...titleGap('bn-g0'),
-        headline('bn-head', <Text bold wrap="truncate-middle">{c.branch}</Text>),
-        strip(6, 'bn-g1'),
-        note('bn-foot', c.footer),
-      ])
-    }
-    return card('branch', [
-      head,
-      ...titleGap('bn-g0'),
-      headline('bn-head', <Text bold wrap="truncate-middle">{c.branch}</Text>, <Text dimColor>{`${c.features} feature${c.features === 1 ? '' : 's'}`}</Text>),
-      strip(6, 'bn-g1'),
-      rich && <Box key="bn-bar" flexDirection="row">{img(stacked([{ n: c.bar.done, hex: LEGEND.done }, { n: c.bar.review, hex: LEGEND.review }, { n: c.bar.human, hex: LEGEND.human }], pxFor(cols - 4), theme), `${c.bar.done} done, ${c.holds.length} hold it`)}</Box>,
-      strip(8, 'bn-g2'),
-      ...(c.ready
-        ? [headline('bn-ready', <Text color="success">ready to ship</Text>, <Text dimColor>{`${c.done} done`}</Text>)]
-        : [
-          ...holders,
-          headline('bn-done', (
-            <Box flexDirection="row" alignItems="center">
-              <Box flexShrink={0} paddingRight={1}>{rich ? img(square(LEGEND.done), 'done') : markEl('done')}</Box>
-              <Text dimColor>{`${c.done} done`}</Text>
-            </Box>
-          )),
-        ]),
-      strip(8, 'bn-g3'),
-      note('bn-foot', c.footer, c.suite.state === 'red' ? { color: 'error' } : { dimColor: true }),
-    ])
-  }
-
-  // The run: the feature at work with its clock, the effort bar (the one special thing), the
-  // gate line when red, Role / Model / Time, the rest of this brew, and the tally as the footer.
-  function brewingCard(c: any) {
-    const lane = c.inset
-    const restRight = (r: any) => (
-      <Box flexDirection="row" alignItems="center">
-        <Text {...toneOf(r.tone)} wrap="truncate-end">{r.detail}</Text>
-        {r.meta ? <Box flexShrink={0} paddingLeft={1}><Text dimColor>{r.meta}</Text></Box> : null}
+  const single = ownRoot !== null
+  const head = headline('head', <Text bold wrap="truncate-end">{v.name || rootName}</Text>, version ? <Text dimColor>{`v${version}`}</Text> : undefined)
+  const empty = !v.needs.total && !(v.done && v.done.total) && !v.atWork.length && !v.idle.length && !v.startNow.total && !v.next.total
+  if (empty) {
+    return shell([head, (
+      <Box key="cup" flexDirection="column" alignItems="center" paddingY={1}>
+        {rich ? img(cup({ size: 64, live: false }), 'roadmap clear') : CUP_TEXT.map((line, i) => <Text key={`cup-${i}`} color="claude">{line}</Text>)}
+        <Text dimColor>roadmap clear</Text>
       </Box>
-    )
-    const t = c.tally
-    const foot = t && (
-      <Box key="bw-foot" flexDirection="row">
-        <Text dimColor>{'brew\u00a0'}</Text>
-        {minEl(c.clock, 'brew', { dimColor: true })}
-        <Text dimColor wrap="truncate-end">{`\u00a0· ${t.brewed} of ${t.total} brewed${t.blocked ? ` · ${t.blocked} blocked` : ''}${t.toGo ? ` · ${t.toGo} to go` : ''}`}</Text>
-      </Box>
-    )
-    // The rest of this brew and its tally: drawn between features too, and after a restart
-    // mid-brew before the next brief names the feature at work.
-    const rest = [
-      c.rows.length > 0 && strip(10, 'bw-g4'),
-      ...c.rows.map((r: any) => lrow(r, { right: restRight(r), shrink: true })),
-      (c.more > 0 || c.moreBrewed > 0) && more('brew-more', [c.more > 0 ? `+${c.more} queued` : '', c.moreBrewed > 0 ? `+${c.moreBrewed} brewed` : ''].filter(Boolean).join(' · '), { kind: 'queue' }),
-      !!foot && strip(8, 'bw-g6'),
-      foot,
-    ]
-    if (!lane) {
-      const head = foldTitle('brewing', c.title, <Text dimColor wrap="truncate-end">{c.text ?? 'starting'}</Text>)
-      if (isFolded('brewing')) return card('brewing', [head])
-      return card('brewing', [head, ...titleGap('bw-g0'), note('bw-text', c.text ?? 'starting'), ...rest])
+    )])
+  }
+  const caption = (key: string, text: string, props: any = { dimColor: true }) => <Box key={key} flexDirection="row"><Text {...props} wrap="truncate-end">{text}</Text></Box>
+  const plugin = (/^(\d+\.\d+)/.exec(pluginFormat) || [])[1]
+  const stale = !!plugin && shownRepos.some((r: any) => r.board.format.project && r.board.format.project !== plugin)
+
+  const needs = v.needs.total > 0 && card('needs', [
+    caption('nd-cap', `needs you · ${v.needs.total}`, { color: 'permission' }),
+    strip(6, 'nd-g0'),
+    ...v.needs.rows.map((r: any) => lrow(r, { right: detailEl(r), shrink: true })),
+    v.needs.more > 0 && more('needs', `+${v.needs.more} more`, { kind: 'queue' }),
+  ])
+
+  const line: any[] = []
+  if (v.done && v.done.total) {
+    line.push(caption('dn-cap', `done on ${single ? 'this branch' : 'the brew branches'} · ${v.done.total}`))
+    for (const g of v.done.groups) {
+      if (g.flight) line.push(caption(`dn-f-${g.flight}`, g.flight))
+      line.push(...g.rows.map((r: any) => doneRow(r)))
     }
-    const step = lane.status
-    const summary = (
-      <Text wrap="truncate-end">{[
-        <Text key="i">{lane.id}</Text>,
-        <Text key="s" {...(lane.red ? { color: 'error' } : { color: 'claude' })}>{`\u00a0${lane.red ? 'gate red' : step}`}</Text>,
-      ]}</Text>
-    )
-    const head = foldTitle('brewing', c.title, summary)
-    if (isFolded('brewing')) return card('brewing', [head])
-    const open = () => go({ kind: 'feature', id: lane.id })
-    return card('brewing', [
-      head,
-      ...titleGap('bw-g0'),
-      <Box key="bw-head" flexDirection="row" alignItems="center" {...(Client ? { position: 'relative', overflow: 'hidden' } : {})}>
-        <Box flexShrink={0} paddingRight={1}>{markEl(lane.red ? 'gate-red' : 'running')}</Box>
-        <Box flexGrow={1} flexShrink={1} overflow="hidden">{pressText('open-bw-head', lane.id, open, <Text bold wrap="truncate-end">{lane.id}</Text>)}</Box>
-        <Box flexShrink={0} paddingLeft={1}>{tmEl(lane.elapsed, 'bw-head', { bold: true })}</Box>
-        {pressArea('bw-head', open)}
-      </Box>,
-      !!lane.title && <Box key="bw-title"><Text dimColor wrap="truncate-end">{lane.title}</Text></Box>,
-      strip(8, 'bw-g1'),
-      effortEl('bw-effort', lane.effort),
-      lane.gate && strip(6, 'bw-g2'),
-      lane.gate && (
-        <Box key="bw-gate" flexDirection="row" alignItems="center" gap={1}>
-          <Box flexShrink={0}>{markEl('gate-red')}</Box>
-          <Box flexShrink={1}><Text color="error" wrap="wrap">{lane.gate.text}</Text></Box>
+    if (v.done.more > 0) line.push(more('done', `+${v.done.more} more`, { kind: 'history' }))
+  }
+  if (v.atWork.length || v.idle.length) {
+    if (line.length) line.push(strip(8, 'aw-g'))
+    line.push(caption('aw-cap', `at work · ${v.atWork.length}`))
+    for (const w of v.atWork) line.push(...workEls(w))
+    for (const i of v.idle) line.push(lrow({ key: `idle-${i.folder}`, glyph: 'done', tag: null, id: `${i.folder}: brew has nothing left it can pull` }, { right: <Text dimColor>{`${i.needYou} need you`}</Text>, shrink: true }))
+  }
+  if (v.startNow.total) {
+    if (line.length) line.push(strip(8, 'sn-g'))
+    line.push(caption('sn-cap', `can start now · ${v.startNow.total}`))
+    line.push(...v.startNow.rows.map((r: any) => lrow(r, { right: detailEl(r), strong: r.glyph === 'next' })))
+    if (v.startNow.more > 0) line.push(more('start', `+${v.startNow.more} more`, { kind: 'queue' }))
+  }
+  if (v.next.total) {
+    if (line.length) line.push(strip(8, 'nx-g'))
+    line.push(caption('nx-cap', `next · ${v.next.total}`))
+    line.push(...v.next.rows.map((r: any) => lrow(r, { right: detailEl(r), shrink: true })))
+    if (v.next.more > 0) line.push(more('next', `+${v.next.more} more`, { kind: 'queue' }))
+  }
+  const foot = (
+    <Box key="foot" flexDirection="column">
+      {v.foot.map((f: any, i: number) => (
+        <Box key={`foot-${i}`} flexDirection="row" alignItems="center">
+          {f.tag && <Box flexShrink={0} paddingRight={1}><Text dimColor>{f.tag}</Text></Box>}
+          <Box flexGrow={1} flexShrink={1} overflow="hidden"><Text wrap="truncate-middle">{f.branch}</Text></Box>
+          {f.note && <Box flexShrink={0} paddingLeft={1}><Text dimColor>{f.note}</Text></Box>}
         </Box>
-      ),
-      lane.roles.length > 0 && strip(8, 'bw-g3'),
-      lane.roles.length > 0 && roleTable('bw-roles', lane.roles),
-      ...rest,
+      ))}
+    </Box>
+  )
+  return shell([
+    head,
+    stale && note('format', 'written for another ristretto format — the next prep/pull/brew brings it up to date'),
+    needs,
+    line.length > 0 && <Box key="line" flexDirection="column">{line.filter(Boolean)}</Box>,
+    foot,
+  ])
+
+  // ---- the rows -------------------------------------------------------------------------------
+
+  // A feature at work: its row with the step and an SVG clock, then its card with the title, the
+  // effort bar (the one special thing) and the session it runs in. A stopped one has no clock.
+  function workEls(w: any) {
+    const stopped = w.state === 'stopped'
+    const right = (
+      <Box flexDirection="row" alignItems="center">
+        <Text {...(stopped ? { dimColor: true } : w.red ? { color: 'error' } : { color: 'claude' })} wrap="truncate-end">{w.step}</Text>
+        {!stopped && <Box flexShrink={0} paddingLeft={1}>{svgTime(w.key, Math.max(0, nowMs - w.startedAt), 'clock', { bold: true })}</Box>}
+      </Box>
+    )
+    const row = lrow({ key: w.key, glyph: stopped ? 'planned' : w.red ? 'gate-red' : 'running', tag: w.tag, id: w.id, open: w.open }, { right, strong: true, shrink: true })
+    const sub = [w.label, w.waited].filter(Boolean).join(' · ')
+    const box = card(`${w.key}-card`, [
+      !!w.title && note(`${w.key}-t`, w.title),
+      !stopped && !!w.effort && strip(6, `${w.key}-g`),
+      !stopped && !!w.effort && effortEl(`${w.key}-e`, { phases: w.effort, red: w.red, step: w.step }),
+      !!sub && strip(6, `${w.key}-g2`),
+      !!sub && note(`${w.key}-s`, sub),
     ])
-  }
-
-
-  function needsCard(c: any) {
-    const head = foldTitle('needs', 'Needs you', <Text color="permission">{`${c.rows.length}`}</Text>)
-    if (isFolded('needs')) return card('needs', [head])
-    return card('needs', [head, ...titleGap('nd-g0'), ...c.rows.map((r: any) => lrow(r, { right: detailEl(r), shrink: true }))])
-  }
-
-  function nextCard(c: any) {
-    const extra = [c.more > 0 ? `+${c.more} more` : '', c.waiting > 0 ? `${c.waiting} waiting on others` : ''].filter(Boolean).join(' · ')
-    const head = foldTitle('next', 'Up next', <Text dimColor>{`${c.eligible} ready${c.waiting ? ` · ${c.waiting} waiting` : ''}`}</Text>)
-    if (isFolded('next')) return card('next', [head])
-    return card('next', [
-      head,
-      ...titleGap('nx-g0'),
-      ...c.rows.map((r: any) => lrow(r, { right: detailEl(r) })),
-      !!extra && strip(6, 'nx-g1'),
-      !!extra && more('next', extra, { kind: 'queue' }),
-    ])
+    return [row, box]
   }
 
   // A done feature: its time and its own split, never compared with another's.
@@ -1160,40 +1119,6 @@ async function drawPane($: any, e: any) {
     })
   }
 
-  function doneCard(c: any) {
-    const where = c.recent ? 'recently' : `${c.n} on this branch`
-    if (c.compact) {
-      return card('done', [lrow({ key: 'done-compact', glyph: 'done', id: 'Done', open: { kind: 'history' } }, { right: <Text dimColor wrap="truncate-end">{`${where} · ${c.total} in all`}</Text>, shrink: true })])
-    }
-    const title = c.recent ? 'Recently done' : 'Done'
-    const head = foldTitle('done', title, <Text dimColor>{c.recent ? `${c.total} in all` : where}</Text>)
-    if (isFolded('done')) return card('done', [head])
-    return card('done', [
-      head,
-      ...titleGap('dn-g0'),
-      headline('dn-head', <Text bold>{c.recent ? `${c.rows.length} newest` : where}</Text>, <Text dimColor>{`${c.total} in all`}</Text>),
-      c.rows.length > 0 && strip(6, 'dn-g1'),
-      ...c.rows.map((r: any) => doneRow(r)),
-      strip(6, 'dn-g2'),
-      more('history', 'History', { kind: 'history' }),
-    ])
-  }
-
-  // The facts: one line, as the side pane's "› MCP tools 262".
-  function factsCard(c: any) {
-    return card('facts', [
-      lrow({ key: 'facts', glyph: c.conflicts ? 'fact-conflict' : 'facts', id: 'Domain facts', open: { kind: 'domain' } }, {
-        right: (
-          <Text wrap="truncate-end">{[
-            <Text key="n" dimColor>{`${c.n} · ${c.binding} binding`}</Text>,
-            ...(c.conflicts ? [<Text key="c" color="warning">{` · ${c.conflicts} in conflict`}</Text>] : []),
-          ]}</Text>
-        ),
-        shrink: true,
-      }),
-    ])
-  }
-
   // ---- pages ----------------------------------------------------------------------------------
 
   // A feature's page: what it is and where it stands, then what waits on the person, what done
@@ -1204,7 +1129,7 @@ async function drawPane($: any, e: any) {
     // A decision the build took is information, already in force — never a question.
     const taken = d.decisions.filter((x: any) => x.taken)
     const asks = d.checks.some((x: any) => !x.done)
-    const hint = p.status === 'blocked' ? `settle it in the chat: /ristretto:prep ${p.id} deep`
+    const hint = p.status === 'blocked' ? `settle it in the chat: /ristretto:prep ${p.id}`
       : asks ? `say 'manual checks done' in the chat`
         : null
     const head = card('f-head', [
@@ -1223,7 +1148,7 @@ async function drawPane($: any, e: any) {
       d.deps.length > 0 && note('deps', 'Depends on', { bold: true, dimColor: true }),
       ...d.deps.map((x: any) => lrow({
         key: `dep-${x.id}`, glyph: x.ok ? 'done' : x.status === 'blocked' ? 'blocked' : 'planned', id: x.id,
-        open: x.status === 'missing' ? undefined : { kind: 'feature', id: x.id },
+        open: x.status === 'missing' ? undefined : (siblingOf(x.id) ? { kind: 'feature', id: siblingOf(x.id)!.id, folder: siblingOf(x.id)!.folder } : { kind: 'feature', id: x.id, folder: p.tag ?? null }),
       }, { right: <Text dimColor wrap="truncate-end">{x.status === 'missing' ? '(not on the roadmap)' : x.status}</Text>, shrink: true })),
       !!p.split && strip(10, 'fh-g5'),
       !!p.split && headline('ft', <Text bold>Time</Text>, <Text dimColor>{`${duration(d.run.ms)}${d.run.runs > 1 ? ` · ${d.run.runs} runs` : ''}`}</Text>),
@@ -1354,43 +1279,5 @@ async function drawPane($: any, e: any) {
     // What waits on the person comes right after the head.
     const home = p.status === 'blocked' ? blockers : asks ? checks : d.findings.length > 0 ? review : null
     return [head, home, acceptance, filesCard, ...[blockers, review, checks, decided].filter(x => x && x !== home)].filter(Boolean)
-  }
-
-  // The facts as information: per file, in conflict first, then binding, then context. A fact
-  // opens to its full text in place; nothing is confirmed or settled here (that is prep's).
-  function domainCards(p: any, openedFact: string | null): any[] {
-    const cards: any[] = [card('d-head', [
-      headline('dh', <Text bold {...(p.conflicts ? { color: 'warning' } : {})}>Domain facts</Text>, <Text dimColor>{String(p.n)}</Text>),
-      strip(4, 'dh-g'),
-      note('dh-sum', `${p.binding} binding${p.conflicts ? ` · ${p.conflicts} in conflict` : ''} · binding facts hold the builder and the reviewer; the rest is context · optional: /ristretto:prep facts`),
-    ])]
-    for (const g of p.groups) {
-      cards.push(card(`d-${g.file}`, [
-        headline(`dg-${g.file}`, <Text bold>{g.name}</Text>, <Text dimColor>{String(g.rows.length)}</Text>),
-        strip(4, `dg-${g.file}-g`),
-        ...g.rows.flatMap((f: any) => {
-          const id = `${g.file}\u0000${f.title}`
-          const isOpen = openedFact === id
-          const tags = [f.state === 'confirmed' ? 'binding' : '', f.older ? 'older version' : '', f.conflict ? 'in conflict' : ''].filter(Boolean).join(' · ')
-          const r = lrow({
-            key: `fact-${g.file}-${f.title}`, glyph: f.conflict ? 'fact-conflict' : 'facts', id: plain(f.title),
-            run: () => void (async () => {
-              await update($, openFact, (o: string | null) => (o === id ? null : id))
-              await stamp($)
-            })(),
-          }, { right: <Text {...(f.conflict ? { color: 'warning' } : f.state === 'confirmed' ? { color: 'success' } : { dimColor: true })} wrap="truncate-end">{tags || plain(f.text)}</Text>, shrink: true })
-          if (!isOpen) return [r]
-          return [r, (
-            <Box key={`full-${g.file}-${f.title}`} flexDirection="column" paddingLeft={2}>
-              <Text wrap="wrap">{md(f.text, `ft-${f.title}`)}</Text>
-              {f.source !== '' && <Text dimColor wrap="wrap">{f.source}</Text>}
-              {f.by !== '' && <Text color="subtle" wrap="wrap">{f.by}</Text>}
-              {f.conflict && <Text color="warning" wrap="wrap">{`conflict: ${plain(f.conflict.what)}${f.conflict.source ? ` (${f.conflict.source})` : ''}${f.conflict.by ? `, noticed by ${f.conflict.by}` : ''}`}</Text>}
-            </Box>
-          )]
-        }),
-      ]))
-    }
-    return cards
   }
 }
