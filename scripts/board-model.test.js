@@ -98,11 +98,7 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(m.parseBrief('REVIEWER for ristretto feature **pw-galerie**.\nDiff: x'), { role: 'reviewer', id: 'pw-galerie' });
     assert.strictEqual(m.parseBrief('Explore the repo for ristretto usages'), null);
 
-    // Reviewer verdicts are read out of briefs/reviewer.md for the same reason.
-    const verdicts = fs.readFileSync(path.join(ROOT, 'briefs', 'reviewer.md'), 'utf8')
-      .split(/\r?\n/).filter((l) => /^- `review: /.test(l)).map((l) => /`([^`]+)`/.exec(l)[1]);
-    assert.ok(verdicts.length >= 3, 'briefs/reviewer.md must still list its verdict lines');
-    for (const v of verdicts) assert.ok(m.parseReport('reviewer', `findings...\n${v}`), `verdict not recognised: ${v}`);
+    // briefs/reviewer.md went in 0.23 (review is /code-review); runs recorded before still read.
     assert.strictEqual(m.parseReport('reviewer', 'review: blocking (2)'), 'blocking');
     assert.strictEqual(m.parseReport('reviewer', 'review: notes-only (1 note, 0 lean)'), 'clean');
     assert.strictEqual(m.parseReport('planner', 'planned: .ristretto/build/f-1.md'), 'planned');
@@ -612,9 +608,10 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/Should they bind the build/.test(prep) && !/stays context: domain/.test(prep), 'prep never asks whether a fact binds');
     assert.ok(!/domain facts in conflict/.test(read('commands/status.md')), 'status has no facts to-do line');
     // One commit per feature, found by its ID; the plan never moves and nothing re-runs a check.
-    const closer = read('briefs/closer.md');
-    assert.ok(/one commit holds code, plan and roadmap row/.test(closer) && /change no other cell/.test(closer) && !/archiv/i.test(closer), 'the closer commits once and only sets the status');
-    assert.ok(!/re-run/.test(closer), 'the user\'s word ticks a box; nothing re-runs a check');
+    // 0.23: the closer brief is close.js plus common.md's Commits; the rules stay.
+    assert.ok(/code, plan and roadmap row/.test(read('briefs/common.md')), 'one commit holds code, plan and roadmap row');
+    assert.ok(/cells\[status\] = 'done'/.test(read('scripts/close.js')) && !/archiv/i.test(read('scripts/close.js')), 'close.js only sets the status (and the tier on an escalation)');
+    assert.ok(!/re-run/.test(read('scripts/close.js')), 'the user\'s word ticks a box; nothing re-runs a check');
     assert.ok(/no plan link, date, file list or hash/.test(prep), 'the roadmap holds order and status only');
   }
 
