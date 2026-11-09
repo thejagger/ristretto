@@ -76,10 +76,9 @@ for (const c of COMMANDS) {
   assert.ok(words(read(c)) < 2500, `${c} is ${words(read(c))} words — a command is a flow, not a brief`);
 }
 
-// 4. Every command runs the format check and hands off to briefs by path.
-for (const c of COMMANDS) {
-  assert.ok(/migrate\.js" check/.test(read(c)), `${c} must run the format check`);
-}
+// 4. The build flow runs the format check. shot follows pull's flow and the brewer never builds,
+//    so pull is the one place it lives.
+assert.ok(/migrate\.js" check/.test(read('commands/pull.md')), 'pull.md must run the format check');
 
 // 5. Every brief is reachable: each one is named by at least one command or by common.md.
 //    grind and prep dispatch the researcher; they are not in COMMANDS (no word cap, no gate flow).
@@ -184,17 +183,34 @@ for (const f of [...COMMANDS, ...BRIEFS]) {
   }
 }
 
-// 15. pull is a flow: it hands out paths, arms through gate.js, and carries no tier branch.
+// 15. pull is the one build flow: it hands out paths, arms through gate.js, reviews once with
+//     /code-review, closes through close.js, and runs attended or unattended.
 const pull = read('commands/pull.md');
-assert.ok(words(pull) < 1400, `pull.md is ${words(pull)} words — was 8961`);
+assert.ok(words(pull) < 1900, `pull.md is ${words(pull)} words — was 8961`);
 assert.ok(/implementer\.md/.test(pull), 'pull must read the implementer brief, not restate it');
 assert.ok(/gate\.js" arm/.test(pull) && /gate\.js" disarm/.test(pull), 'pull must arm and disarm through gate.js');
-assert.ok(/gate\.js" state/.test(pull), 'pull must run the state pre-flight');
+assert.ok(/gate\.js" state/.test(pull) && /gate\.js" verify/.test(pull), 'pull must run the state pre-flight and verify');
 assert.ok(!/\.ristretto\/gate-retries/.test(pull), 'pull must not know gate.js state filenames any more');
-assert.ok(!/`easy`\s*→|Tier.*easy.*→/.test(pull), 'pull is the normal path — no tier branch');
+for (const s of ['close.js', '/code-review', 'unattended', 'pulled: <ID>', 'blocked: <ID>']) {
+  assert.ok(pull.includes(s), `pull.md must carry "${s}"`);
+}
+for (const gone of ['reviewer.md', 'closer.md', 'round 2']) {
+  assert.ok(!pull.includes(gone), `pull.md must not name "${gone}" — review is one /code-review`);
+}
+const step = (re) => pull.search(re);
+assert.ok(step(/^## \d+\. Prove/m) < step(/^## \d+\. Review/m) && step(/^## \d+\. Review/m) < step(/^## \d+\. Close/m),
+  'verify, then review, then close');
+// pullEffortByTier
+assert.ok(pull.includes('`/code-review medium') || /medium/.test(pull), 'easy features review at medium');
+assert.ok(/\/code-review <level> <absolute path/.test(pull) && /`high`/.test(pull) && /`medium`/.test(pull), 'the review names its level by tier and the repo path');
+// pullStashNamesPaths — a blocked unattended pull parks only its own files, never the user's.
+assert.ok(/git stash push/.test(pull) && /ristretto <ID> blocked/.test(pull) && /left alone/.test(pull),
+  'a blocked unattended pull parks its own paths in a named stash, never the left-alone files');
+assert.ok(!/git restore/.test(pull), 'pull never restores work away');
+// pullTakesBrewerRulings — the brewer's decided: lines reach close.js with the build's own.
+assert.ok(/decided:[^\n]*(arguments|brewer)/i.test(pull) && /decisions/.test(pull), 'the brewer\'s decided: lines go to close.js');
 // A done feature is never re-built: pull names its commit and what its plan still leaves open.
 assert.ok(/\*\*`done`\*\* → stop[^\n]*\[ \] \[human\][^\n]*Do not re-implement/.test(pull), 'pull on a done row lists its open boxes and stops');
-assert.ok(/`ready:` → continue to review\. Keep every `decided:/.test(pull), 'pull hands the decisions to the closer');
 // A decision a build took is information in force, never a box or a question: the user only ever
 // overrules one in chat. Twelve boxes for one feature — renames, test harnesses — is how this began.
 assert.ok(/- taken: \$\{d\.question\} → \$\{d\.ruling\}/.test(read('scripts/close.js')), 'close.js writes a taken: line, not a box');
@@ -209,8 +225,8 @@ assert.ok(/## Overrule/.test(read('commands/prep.md')), 'prep takes an overrule'
 
 // 16. shot is the easy path against an existing plan — it no longer writes one.
 const shot = read('commands/shot.md');
-assert.ok(words(shot) < 800, `shot.md is ${words(shot)} words`);
-assert.ok(/implementer\.md/.test(shot), 'shot must read the implementer brief');
+assert.ok(shot.split(/\r?\n/).length < 40, `shot.md is ${shot.split(/\r?\n/).length} lines — it follows pull's flow`);
+assert.ok(/commands\/pull\.md/.test(shot) && /skip the planner/.test(shot), 'shot follows pull.md and skips the planner');
 assert.ok(!/Add a `planned` row|in prep's format/.test(shot), 'shot no longer writes plans — prep always runs first');
 assert.ok(/prep/.test(shot), 'shot must say prep runs first');
 

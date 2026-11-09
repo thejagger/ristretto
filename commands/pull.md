@@ -1,11 +1,27 @@
 ---
-description: Builds a planned feature — normal path, with a planner.
-argument-hint: <feature ID, or "next"> [nocommit]
+description: Builds a planned feature — normal path, with a planner; the brewer sends it unattended.
+argument-hint: <feature ID, or "next"> [unattended] [nocommit] [decided: <question> → <ruling>]...
 ---
 
-You are in the **PULL** phase of ristretto. You implement exactly one feature, directly, in auto mode — there is no approval gate. Closing the feature is **your** job at the end, never the user's.
+You are in the **PULL** phase of ristretto: one feature, built in auto mode and closed by you, never by the user. pull is the one build flow — `shot` is this flow without the planner, and the brewer sends it `unattended`.
 
-Target: $ARGUMENTS  (a feature ID, or `next` = the top `planned` row in the roadmap; add `nocommit` to skip the commit at the end)
+Target: $ARGUMENTS
+- a feature ID, or `next` = the top eligible `planned` row
+- `unattended` — the brewer sent it; nobody is there to answer (box below)
+- `nocommit` — skip the commit at the end
+- `decided: <question> → <ruling>` lines — the brewer's rulings; they go to the close with the build's own decisions
+
+If `shot` sent you here: skip the planner (step 7) and review at `medium`. That is the only difference.
+
+> **`unattended` changes only this:**
+> 1. You never ask. Whatever would be a question becomes a one-line report and a stop.
+> 2. Review fixes only confirmed findings (step 10).
+> 3. A named feature with unfinished `Depends:` is built anyway — the brewer chose the order — and the report says so.
+> 4. On an `easy` row, step 7 is skipped as in shot. An `escalate:` then goes on with step 7 instead of stopping.
+> 5. Finishing options (step 13) are listed, not asked.
+> 6. Your last line is exactly one of:
+>    `pulled: <ID> <hash> — <n> check(s) open, <m> decision(s) taken, <k> finding(s) open`
+>    `blocked: <ID> — <who or what>`
 
 ## 0. Check the format version
 
@@ -13,19 +29,20 @@ Target: $ARGUMENTS  (a feature ID, or `next` = the top `planned` row in the road
 node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say that the project was migrated; resolve the target (step 1) off the migrated roadmap, then create and switch to step 6's branch (`feature/<FEATURE-ID>`, or reuse it) and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.22` — never on the default branch. If step 1 stops instead, leave the migration uncommitted and say so. Then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say so; resolve the target (step 1) off the migrated roadmap, then switch to step 6's branch and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.22` — never on the default branch. If step 1 stops, leave the migration uncommitted and say so. Exit 3 → the project is newer than this plugin: stop, report a stale install. Exit 2 → cannot tell: stop.
 
 ## 1. Resolve the target — trust the roadmap
 
-Read `docs/ristretto/roadmap.md`; take it at its word, don't second-guess it against the code.
+Read `docs/ristretto/roadmap.md`; take it at its word.
 
+- **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). A feature is built in its repo, never from the parent folder, where no gate fires: in the desktop app start a session in that repo with this same command; elsewhere tell the user to open it there. Stop here.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
-- **`blocked`** → surface the recorded reason, ask whether to proceed anyway — the block may have been resolved outside the roadmap.
-- **`next`** → the top `planned` row whose `Depends:` are all satisfied. Only `done` satisfies a dependency; `blocked` withholds. If every `planned` row is blocked, stop and say what each is waiting on. A named ID (not `next`) with an unfinished `Depends:` → warn and ask before proceeding.
+- **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause — proceed.
+- **`next`** → the top `planned` row whose `Depends:` are all `done`. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
 
 ## 2. Read the plan
 
-Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` is binding — acceptance criteria, `Provides:`/`Consumes:`, decisions. `## Approach` is guidance, may be stale.
+`docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds: criteria, `Provides:`/`Consumes:`, decisions. `## Approach` is guidance and may be stale. Its `Tier` is in the roadmap row.
 
 ## 3. Pre-flight
 
@@ -33,11 +50,11 @@ Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` is binding — accept
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. A marker armed by another live session, a dirty tree, or a leftover build plan → show what it printed and stop. A tree it marks PROVEN GREEN is finished work, not a problem — tell the user to commit it, never discard it. `unrecognised: <n> file(s)` is informational only, never a reason to stop. `left alone:` names untracked files that predate the run — the user's, never dirty: don't move, ignore, commit, or delete them.
+Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard it. `unrecognised:` is informational. `left alone:` names the user's untracked files — never move, ignore, commit, stash or delete them.
 
 ## 4. Complete the gates config
 
-Read `.ristretto.json` — create it, or add whatever key its pre-flight later names as missing, following `${CLAUDE_PLUGIN_ROOT}/reference/config.md`. Read the repo's `CLAUDE.md` / `AGENTS.md` first; adopt whatever tooling the repo already uses, never impose new tools. `.ristretto.json` belongs in git; add `.ristretto/` to `.gitignore` if it isn't there.
+Read `.ristretto.json` — create it, or add whatever key the pre-flight names missing, per `${CLAUDE_PLUGIN_ROOT}/reference/config.md`. Read `CLAUDE.md` / `AGENTS.md` first; adopt the repo's tooling, never impose new tools. `.ristretto.json` belongs in git, `.ristretto/` in `.gitignore`.
 
 ## 5. Arm
 
@@ -45,27 +62,31 @@ Read `.ristretto.json` — create it, or add whatever key its pre-flight later n
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" arm
 ```
 
-Exit 1 only if it cannot write its marker — stop and report if so.
+Exit 1 only if it cannot write its marker — stop and report.
 
-## 6. Branch
+## 6. Branch, and parked work
 
-Create and switch to `feature/<FEATURE-ID>`, or reuse it if you're already there. Never push, never set an upstream.
+Attended: create or reuse `feature/<FEATURE-ID>`. Unattended: stay on the current branch unless it is the default branch; then create `feature/<FEATURE-ID>`. Never push, never set an upstream.
+
+Then: if `git stash list` shows `ristretto <FEATURE-ID> blocked`, this feature was parked by an earlier unattended pull. `git stash apply` that entry, and drop it once it applied cleanly. A conflict → step 12.
 
 ## 7. Plan against the current code
 
-Dispatch a **planner** subagent — fresh context, capable model:
+Skipped for shot and for an unattended `easy` row. Dispatch a **planner** subagent — fresh context, capable model:
 
 > PLANNER for ristretto feature **<FEATURE-ID>**.
 > Plan: `docs/ristretto/plans/<FEATURE-ID>.md`
 > Read `${CLAUDE_PLUGIN_ROOT}/briefs/planner.md` and follow it.
 
-`blocked: <reason>` → set the roadmap row `blocked` with that reason, disarm (step 12), stop — no branch cleanup needed. `planned: ...` → continue; the implementer works from `.ristretto/build/<FEATURE-ID>.md`, never from `## Approach`.
+`blocked: <reason>` → step 12. `planned: …` → continue; keep its `decided:` lines.
 
 ## 8. Implement
 
 Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself.
 
-`blocked: <reason>` → set the roadmap row `blocked` with that reason, disarm (step 12), stop. `ready:` → continue to review. Keep every `decided: <question> → <ruling>` line the planner and the implementer returned: the closer writes each into the plan as an open box.
+- `blocked: <reason>` → step 12.
+- `escalate: <trigger>` (easy path only) → attended (shot): stop, disarm, and offer `/ristretto:pull <FEATURE-ID>`; never touch the `Tier` cell. Unattended: go to step 7, then implement again; the trigger goes to the close as `escalated`.
+- `ready:` → continue. Keep its `decided:` lines.
 
 ## 9. Prove the whole repo
 
@@ -73,39 +94,66 @@ Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" verify
 ```
 
-The implementer's `prove` only ever proved the feature's own files — `verify` runs lint, typecheck, and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green — you are the implementer here too (read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md`'s rules; no gate is ever weakened). A gate killed as hung is unverified, not proven broken — find what it's waiting on before going on.
+Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green; you are the implementer here too, and no gate is ever weakened. A gate killed as hung is unverified, not proven broken — find what it waits on.
 
-## 10. Review — capped at 2 rounds, never a ping-pong
+## 10. Review — one `/code-review`
 
-Skip only when the diff is trivial: roughly < 15 changed lines and no new logic (no new functions, branches, or loops). When in doubt, review.
+Skip only when the diff is trivial: under ~15 changed lines and no new logic. When in doubt, review.
 
-Dispatch a **reviewer** subagent — fresh context, capable model:
+Run `/code-review <level> <absolute path of this repo>`. The level is `medium` when the feature was built on the easy path (shot, or an unattended `easy` row that did not escalate), `high` otherwise; attended, the user may name another. Always pass the path: without it the review reads the session's folder, which at a folder of repos is the wrong one.
 
-> REVIEWER for ristretto feature **<FEATURE-ID>**.
-> Diff: <files touched / branch vs merge-base>
-> Read `${CLAUDE_PLUGIN_ROOT}/briefs/reviewer.md` and follow it.
+- **Attended:** show the findings, numbered. The user picks what to fix and may give a reason for what they skip.
+- **Unattended:** fix only the findings labelled confirmed correctness bugs. If the review gives no labels, fix those it presents as correctness bugs with a concrete failing input.
 
-- `review: clean` or `review: notes-only` → proceed to close (step 11). The notes and leans get copied verbatim into `## Open findings` there — do not fix them, do not round for them. The one exception: `test`-tagged findings get a **trim pass** first — follow `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` as the fixer with only those findings; no review round follows, and the closer records them as trimmed, not open.
-- `review: blocking (n)` → fix every block (read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself as the fixer, findings in hand instead of a build plan; clear notes and leans in the same pass unless a fix is riskier than the win, and say which you left). Then dispatch a **second, fresh** reviewer — round 2 only — to verify the round-1 blocks and any new block the fixes introduced in files the fixer touched; a block elsewhere is reported, not a new round.
-- Blocks still open after round 2 → hard stop: do **not** commit. Surface the findings to the user and leave the work in the tree — never `git restore` it, the gates are green and only an opinion is unresolved. Disarm (step 12) and stop.
+Fixes go to a **fixer** subagent:
 
-  **`pull` stops here where `brew` would close with the findings left open, and the difference is you** — a question asked now is answered in seconds.
+> IMPLEMENTER for ristretto feature **<FEATURE-ID>** — fixer.
+> Findings: <the chosen ones, verbatim>
+> Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
+
+Then step 9's `verify` again. No second review: each fix's red-then-green test is its proof. Every finding not fixed goes verbatim to the close's findings, a skipped one with the user's reason.
 
 ## 11. Close
 
-Read `${CLAUDE_PLUGIN_ROOT}/briefs/closer.md` and follow it yourself. If `nocommit` was passed, skip the commit and say the changes are left uncommitted for the user to commit themselves; everything else in the brief — `Provides:`, the decisions you were handed, `## Evidence`, the roadmap row — still applies.
+1. Correct `Provides:` in the plan to what was built — the next planner reads it as fact.
+2. Write the close input to `.ristretto/close-<FEATURE-ID>.json`:
+   - `evidence` — one line for each criterion, `<n>: <how it was proven>` (red→green test names, command output), `<n>: pending human` where a manual check waits; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
+   - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
+   - `findings` — what review left open
+   - `escalated` — the trigger, or null
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> < .ristretto/close-<FEATURE-ID>.json` (add `--repo <dir>` only at a folder of repos), then delete that file. It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan.
+4. Commit, per `${CLAUDE_PLUGIN_ROOT}/briefs/common.md`'s Commits: code, plan and roadmap row in one `feat(<FEATURE-ID>): …`. `nocommit` → skip and say it is left uncommitted.
 
-## 12. Disarm
+## 12. Blocked
+
+Set the roadmap row's status to `blocked — <reason>`, nothing else.
+
+- **Attended:** leave the work in the tree, surface the reason, go to step 14.
+- **Unattended:** park the work so the next pull in this repo starts clean:
+  `git stash push -u -m "ristretto <ID> blocked <YYYY-MM-DD>" -- <every path this feature touched>`
+  Only this feature's paths — never the `left alone:` files from step 3, and never discard anything. Then commit only the roadmap row: `docs(<FEATURE-ID>): blocked - <reason>`. Step 14, then the `blocked:` line, naming the stash.
+
+## 13. Finishing options
+
+When the feature is committed, offer what applies — attended: ask; unattended: list:
+
+- leave the branch as it is
+- **split docs from code**, only when the branch carries `docs/ristretto/` changes: `node "${CLAUDE_PLUGIN_ROOT}/scripts/strata.mjs" stratify <base>..HEAD --pr-branch <branch>-mr --subject "docs(ristretto): <summary>"` builds a fresh branch with the code commits replayed and the planning in one commit, and never touches this one. Trust its `verified` field; `false` → say so and stop.
+- **write the MR description**: follow `${CLAUDE_PLUGIN_ROOT}/briefs/strata-mr.md`.
+
+## 14. Disarm
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" disarm
 ```
 
-Always — on a normal close, a `blocked:` stop, or an open-findings stop.
+Always — after a close, a block, or any stop above.
 
 ## When done
 
-Print a short summary: what changed, which criteria are satisfied, the review verdict (including any `lean` findings deliberately left open), the branch and commit (or that it's left uncommitted), and confirm the plan was closed and the roadmap updated. List the plan's open manual checks, then the decisions taken during the build — information, already in force:
+Unattended: only the last line from the box above.
+
+Attended: what changed, which criteria hold, the review (fixed, left open), branch and commit (or uncommitted). Then the plan's open checks and the decisions taken — information, in force:
 
 ```
 🔧 1 check open — docs/ristretto/plans/<FEATURE-ID>.md
@@ -124,7 +172,7 @@ End with a little cup:
   c[__]  ☕ shot pulled
 ```
 
-If closing this feature left **zero** open features on the roadmap, celebrate instead with the full milestone cup:
+If this left **zero** open features on the roadmap, the milestone cup instead:
 
 ```
    ) )  ( (
