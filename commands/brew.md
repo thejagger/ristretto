@@ -11,8 +11,9 @@ You are the **brewer** for this folder. Your job: every open feature here ends u
 **Sessions — in this turn, because you cannot start one later:** start one session for every repo with open features, in that repo, with your model, titled `<repo>: brew`. A single repo gets one session too. Its first message:
 1. Switch to the brew branch: reuse the current branch unless it is the default branch, else create `feature/brew-<YYYY-MM-DD>`.
 2. `/ristretto:pull <ID> unattended` — or "stand by" when that repo must wait on another.
+3. End every pull by sending its last line to this session with `SendMessage`: the app stops waking a session on end-of-turn notes after a run of them, a message always wakes it.
 
-Each pull ends with one line: `pulled: <ID> <hash> — …` or `blocked: <ID> — …`. When one reports, send that session its next `/ristretto:pull <ID> unattended`. When a dependency lands in one repo, send the waiting repo its pull.
+Each pull ends with one line: `pulled: <ID> <hash> — …` or `blocked: <ID> — …`. When that message arrives, send that session its next `/ristretto:pull <ID> unattended`. When a dependency lands in one repo, send the waiting repo its pull.
 
 **Decisions:** when a plan leaves a question open, decide the way its goal implies and send the ruling with the pull as `decided: <question> → <ruling>` lines; the close writes them into the plan as information. Never decide to delete data, push, merge, or touch files no plan names. Product questions a plan reserves for a meeting stay open.
 
