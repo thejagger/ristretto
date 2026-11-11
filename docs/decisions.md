@@ -151,3 +151,34 @@ naming the test that still proves the case, and left the one fix that needs new 
 untagged. A trim pass on a cheap model, given only those four findings, applied all of them:
 22 test blocks removed or merged and 278 spec lines deleted. The user specs went from 95 tests to 71, and
 `prove` passed on the full suite with only the four failures the repo baseline already tolerated.
+
+## The 87 KB build plan and the five-hour threshold
+
+One unattended brew of a new repo (five features, 2026-11-10/11) showed two costs that every
+feature paid.
+
+**The planner was a second implementer.** Its build plans ran 41, 72 and 87 KB, about three
+quarters of each inside code fences, implementation included; one planner compiled a spike to
+check a library. Planning took 24-40 minutes of each 49-63 minute pull, the implementer then
+needed 13-19 minutes to transcribe it, and the plans were too large for the pull session to
+implement itself. The brief had asked for it: exact signatures, test code, no placeholders.
+
+**A criterion was doing three jobs** - spec, test order and done-definition. Criteria averaged 37
+words and 2.3 sentences; fifteen of them became 39 tests and 1,061 test lines beside 1,178 lines
+of source. A limit written before any data existed ("at most 10 % loud") met 23.6 % and held the
+flight for five hours, and was then moved to 30 %. A range ("1-3 versions, unless merged") passed
+while every real case returned one. The ruling-versus-criterion rule was already in prep, as
+about 1,400 words of prose, and every plan still carried arrangement and copy as criteria.
+
+**The rules:** a plan line is a criterion, a ruling or a measure. A criterion is one sentence and
+one behaviour, at most five per feature, any number names its source, and it must fail on the
+empty answer. A `[measure]` is run and recorded, asserts nothing and never blocks; a measure that
+comes back empty or the same for every case is the first finding. The build plan is one page -
+paths, signatures, test names - with no code and nothing built or run.
+
+**Where they live now:** `commands/prep.md` step 2, `briefs/planner.md`, `briefs/common.md`
+(Tests), `briefs/implementer.md`, `commands/pull.md` step 11. No format change: `[auto]` and
+`[human]` plans stay valid, and no script reads `[measure]`.
+
+**Not replayed before landing.** The first prep and the first pull under these rules are the
+test: count criteria per feature, build-plan size, and planner minutes against the numbers above.

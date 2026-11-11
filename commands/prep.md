@@ -108,29 +108,29 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
    This is where a `planned` feature that later blocks comes from, every time: a flight adds a dimension, and the next feature's contract simply never mentions it. Asking the question costs a line; not asking it costs a whole brew.
 
-2. **Make every acceptance criterion checkable** — by a test, a measurement, or a binary observation. This is the contract `pull` and `brew` are held to; a vague criterion makes the gates meaningless.
-   - ✗ "improve the list" → ✓ "list renders 500 items in <100ms"
-   - ✗ "better error handling" → ✓ "every failed API call shows a retry action within 1s"
+2. **Sort every line of the input into one of three places.** A ticket's acceptance list is mostly design detail, and every line left in `Acceptance:` becomes tests. So before writing a criterion, decide what the line is:
 
-   Push back **once** on a vague input, offering a sharpened version to confirm. If a criterion still can't be made checkable, that is the escalation trigger in step 1 — roast it out. Only what survives the roast unanswered lands in `Blockers:`, naming who or what can answer it; `brew` will skip the feature, and the blocked row names exactly what refinement is missing. Never write an unmeasurable criterion, and never invent one the user didn't confirm.
+   - **Criterion** → `Acceptance:`. One thing the feature does that can come out wrong for a user: a wrong value, a lost record, a dead link, an unhandled error, data in the wrong order where the order is the product. It becomes a test.
+   - **Ruling** → `Decisions:`. How it is built or arranged: order, position, count, wording, a default, styling, the mechanism, and anything the feature *never* does. It binds the implementer exactly as firmly, and the review checks it by reading. It never becomes a test, so it can be changed later without arguing with a red one.
+   - **Measure** → `Acceptance:`, marked `[measure]`. A number only a real run can give: a quality score, a share, a latency, a result over sample cases. `pull` runs it and writes the number into Evidence. It asserts nothing, so it never fails a build and never blocks one.
 
-   **A ruling is not a criterion. Roast mode produces both, and only one of them earns a test.**
+   **A criterion has this shape; a line that doesn't fit is a ruling, a measure, or two criteria:**
 
-   Roast mode's whole job is to settle questions, and the answers land in `Decisions:`. What must not happen is the same answer being restated in `Acceptance:` — because every `[auto]` line becomes tests, so a decision copied up there is *the user's design choice, pinned by an assertion*. Two costs, and the second is the worse one: the suite carries tests that prove nothing a user can observe, and the decision can never be revisited without a red test to argue with. Measured on a real contract: of eleven `[auto]` criteria, three were rulings in disguise — "navigation works without JavaScript" (the ruling was *server-rendered, navigated by query string*), "no more than one database query per month displayed", and a token rule already enforced repo-wide.
+   - **One sentence, one behaviour.** A second sentence or an "and" is a second criterion or a ruling.
+   - **At most five per feature.** A sixth means rulings are hiding in the list, or the feature is two.
+   - **A number names where it came from**: `(spec §7)`, `(<who>, <date>)`, `(measured <date>)`. A number nobody gave and nothing measured is a guess: write the line as a `[measure]` without it. The limit is set once a person has seen the real number, and only then is it a criterion.
+   - **It fails on the empty answer.** If the feature could return nothing, a single item, or its fallback every time and the line still held, sharpen it until it would not: "returns 1–3 routes" holds when every request gets one.
+   - **Already proven is cited, not ordered again**: `already enforced by <test>; must stay green`. Logic a sibling already carries: rule in `Decisions:` where the shared code lives, and the criterion cites the existing proof plus one wiring test. Re-point only the sibling this feature would have copied from; others carrying the same copy are a suggestion in the report.
 
-   The test is **who can see it**. A user can see that the previous-month link works; a user cannot see whether it works by query string or by fetch. So the criterion is the behaviour, the mechanism stays in `Decisions:`, and the implementer honours it by writing the code that way — `pull` step 7 makes that binding, and the reviewer checks it by reading. Where a ruling has a consequence a user *can* observe, write that consequence and let the ruling stay a ruling.
+   - ✗ "Each card shows the walking time and '+X min', and the middle one is selected by default." → ✓ criterion "selecting a card shows that card's route" · rulings "cards show time and +X min · the middle card is the default"
+   - ✗ "a full request has a p95 under 2 s" (nobody measured it) → ✓ `[measure]` "p95 of a full request over the sample trips, on the local stack"
 
-   **Who can see it is the first question. The second is what a red test would mean.** A ticket's acceptance list is mostly design detail — nine columns in this order, twenty rows a page, the filter above the table, the link pinned to the right edge, the date without seconds. A user can see every one of them, so the first question waves them all through, each becomes an `[auto]` line, and each becomes an assertion that can only ever go red when someone deliberately adds a column or moves a label. Measured on one real ticket: of thirteen criteria that became tests, nine were exactly that, and the fix was to delete them. The cost is a pinned ruling's cost in both directions — a suite carrying tests no user can be harmed by, and a design that cannot be changed without arguing with a red test.
+   Push back **once** on a vague input, offering a sharpened version to confirm. A criterion that still can't be made checkable is the escalation trigger in step 1 — roast it out. Only what survives the roast unanswered lands in `Blockers:`, naming who or what can answer it. Never invent a criterion the user didn't confirm, and never drop a line: what leaves `Acceptance:` lands in `Decisions:`.
 
-   So a criterion earns a test only where **red means a user is worse off**: a wrong value, a lost record, a dead link, an unhandled error, data in the wrong order where the order is the product. A line that describes the *arrangement* of what gets built — order, position, count, wording, styling — is a build instruction, not a behaviour: write it in `Decisions:` (or as a `Units:` line), where it binds the implementer exactly as firmly and the reviewer checks it by reading. It is not dropped and not weakened; it just never becomes an assertion. Same for anything that can only be false until the diff lands — a migration that ran, a fixture that matches another fixture — where the diff is the proof and a permanent test is a tautology.
+   **Then give every `Acceptance:` line a proof method — there are exactly three, and "none" is not one of them.**
 
-   **And when a criterion is already proven, say so instead of ordering a test.** A repo several features in has a suite that already enforces a great deal repo-wide — escaping, tokens, locale, a schema guard. A criterion those already cover is not a gap: write it with the existing test named (`already enforced by FrontendTokensTest repo-wide; must stay green`), and the implementer writes nothing new for it. This is the cheapest line in a contract and it is almost never written, because looking costs a minute and nobody is asked to look. Ask.
-
-   **The same goes for a sibling, and here the decision comes first.** When a feature needs logic a sibling already carries — a reload on a client switch, a failed-load handler, a save step — rule in `Decisions:` where that logic lives. The default is one function or service both screens call, even when the screens themselves stay separate components: lifting the logic is not a shared base component, and a sibling that keeps its own copy pays for it twice, once in code and once in a spec copied with the names swapped. Then the criterion cites the existing proof and asks for one wiring test, plus a test for whatever this screen does differently. Never write "same guarantees as X, re-asserted on this screen": that line orders the copy. Two limits keep the lift small. Re-point only the sibling this feature would have copied from; other screens carrying the same copy are a suggestion in the report, not this feature's scope. And when the lift leaves the existing proof in that sibling's spec, cite it where it is — the tests move to the shared code's own spec only when a later change touches them anyway. Measured on four list screens: each carried its own copy of the client-switch reload and its own 160–330-line spec for it, two of them identical but for 12 lines.
-
-   **Then give every criterion a proof method — there are exactly two, and "none" is not one of them.**
-
-   - **`[auto]`** — a test, a gate, or a measurement the agent can run proves it. The default, and the right answer far more often than it first looks.
+   - **`[auto]`** — a test the agent writes and the gates run proves it. The default for a criterion.
+   - **`[measure]`** — a command the agent runs reports it; the number is the evidence.
    - **`[human]`** — **ristretto has no way to reach the thing this criterion is about.** Every `[human]` criterion is its own open box, `- [ ] [human]`, with a `how:` line under it.
 
    **`[human]` is a statement about reach, never about subject matter.** "It involves a database", "it involves a screen", "it involves an external service" — those are subjects, and the subject decides nothing. The only question is whether a path exists from this repo to that thing. A migration the project's own dev stack applies — docker-compose, a `migrate` script, a test harness that migrates on boot — is reachable: the agent runs it, and the criterion is `[auto]`. The same migration against a hosted console with no credentials anywhere in the environment is not reachable, and that is a real `[human]`. Two features touching the same schema in two repos get different answers, and that is correct.
@@ -155,7 +155,8 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
    ## Contract
    - Acceptance:
-     - [auto] <criterion a test, gate, or measurement proves>
+     - [auto] <one behaviour, one sentence — a test proves it>
+     - [measure] <what is run, over what — the number it reports>
      - [ ] [human] <criterion whose subject this repo gives the agent no path to>
        how: <what was out of reach · what a person has to do>
    - Provides: <public surface this feature exposes, at type level —

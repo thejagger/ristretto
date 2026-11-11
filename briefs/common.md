@@ -21,7 +21,7 @@ A roadmap status is `planned · in-progress · blocked · done`, nothing else. E
 The suite is a shared cost, paid again at every stop, by every feature, for the life of the repo.
 
 - **Red first**: write the test, run it, confirm it fails before implementing. A test that passes before implementation proves nothing.
-- **One test per criterion**, unless the criterion has genuinely independent cases.
+- **One test per criterion.** A `[measure]` gets none: run it, record the number, assert nothing.
 - **Prove it at the cheapest level that is still honest** — a pure function over a component, a component over an HTTP request, over a browser — and say which criterion forced you lower.
 - **Reuse before writing**: cite an existing test that covers the criterion instead of adding one. A criterion enforced repo-wide earns zero tests, and saying so is a complete proof.
 - **Red must mean a user is worse off** — a wrong value, a lost record, a dead link, an unhandled error. If red could only mean *someone changed the design on purpose* — a column order, a label's wording, a style, the arrangement of chrome, a fixture matching a fixture, a migration that already ran — it is a change detector: like a `Decisions:` ruling, it binds the code and is read, never asserted. Sorting that works earns its test; the default sort is a ruling.

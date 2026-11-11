@@ -2,7 +2,7 @@
 
 Read `briefs/common.md` first — it binds you before anything below does.
 
-You write no implementation code and modify no source file.
+You write no code and modify no source file.
 
 ## Read the contract
 
@@ -10,11 +10,18 @@ Open `docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds; `## Approach` 
 
 ## Read the code, not the guess
 
-Read the code in the touchpoint areas: utilities, patterns and test conventions this repo already uses. What you find beats the Approach. Common.md's House rules bind too.
+Read the code in the touchpoint areas: utilities, patterns and test conventions this repo already uses. What you find beats the Approach.
 
 ## Write the build plan
 
-Write `.ristretto/build/<FEATURE-ID>.md`: for each unit in `Contract.Units` (whole feature if `Units` is `—`) — exact file paths, names, signatures, and test cases that prove each criterion, as test code in this repo's style. No placeholders: no "TBD", no "add error handling", no "similar to the above", no reference to a type or function no unit defines — anything unfinished means the plan isn't done.
+Write `.ristretto/build/<FEATURE-ID>.md`: a one-page map for the implementer, who writes code and tests. Per unit in `Contract.Units` (whole feature if `—`):
+
+- files, by exact path;
+- new public names with signatures; what to reuse;
+- per `[auto]` criterion one test: name, file, level;
+- per `[measure]` its command.
+
+No code blocks, no spikes: what reading can't settle is a `verify: <what>` line. Every name exists or a unit defines it. Past ~150 lines, cut.
 
 ## Manual checks
 

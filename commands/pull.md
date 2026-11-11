@@ -121,9 +121,9 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
 
 1. Correct `Provides:` in the plan to what was built — the next planner reads it as fact.
 2. Write the close input to `.ristretto/close-<FEATURE-ID>.json`:
-   - `evidence` — one line for each criterion, `<n>: <how it was proven>` (red→green test names, command output), `<n>: pending human` where a manual check waits; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
+   - `evidence` — one line for each criterion, `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
-   - `findings` — what review left open
+   - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
 3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> < .ristretto/close-<FEATURE-ID>.json` (add `--repo <dir>` only at a folder of repos), then delete that file. It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan.
 4. Commit, per `${CLAUDE_PLUGIN_ROOT}/briefs/common.md`'s Commits: code, plan and roadmap row in one `feat(<FEATURE-ID>): …`. `nocommit` → skip and say it is left uncommitted.
