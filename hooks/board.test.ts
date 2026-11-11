@@ -268,6 +268,18 @@ describe('the rendering rules', () => {
 })
 
 describe('the at-work record', () => {
+  test('a pull the brewer sends arrives as a Skill call: the record still says pull, unattended', async ($, on) => {
+    const w = world()
+    const clock = await start($, on, w)
+    await $.tool.call({ tool: 'Skill', skill: 'ristretto:pull', args: 'p1 unattended' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: '> PLANNER for ristretto feature **p1**', description: 'plan', subagent_type: 'general-purpose' } as any).catch(() => {})
+    await clock.settle()
+    const rec = JSON.parse(w.files['.ristretto/at-work.json'])
+    expect(rec.id).toBe('p1')
+    expect(rec.command).toBe('pull')
+    expect(rec.unattended).toBe(true)
+  })
+
   test('a pull here writes it once per shown change; the heartbeat after a minute redraws nothing', async ($, on) => {
     const w = world()
     const clock = await start($, on, w)

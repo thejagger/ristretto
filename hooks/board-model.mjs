@@ -126,6 +126,12 @@ export function reportText(ran) {
   return '';
 }
 
+// Which build command a slash command or a Skill call names: 'pull', 'shot', 'brew', or null.
+export function commandOf(name) {
+  const hit = /^ristretto:(pull|shot|brew)$/.exec(name || '');
+  return hit ? hit[1] : null;
+}
+
 const PHASE_OF = { planner: 'planning', implementer: 'coding', fixer: 'fixing', reviewer: 'review', closer: 'closing' };
 
 function idle(command, now) {

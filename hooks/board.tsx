@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, BoardAtWork, BoardFile, BoardLive, BoardPage, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
-import { EMPTY_BOARD, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText } from './board-model.mjs'
+import { EMPTY_BOARD, commandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText } from './board-model.mjs'
 import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
 import { BASES, ago, baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
@@ -613,8 +613,20 @@ export const register: Register = on => {
       await openPane($)
       return { text: 'Roadmap opened in the side pane — /ristretto:status <filter> prints it as text.' }
     }
-    const hit = /^ristretto:(pull|shot|brew)$/.exec(e.command)
-    if (hit) await observe($, { kind: 'command', command: hit[1] as 'pull' | 'shot' | 'brew', args: e.args })
+    const cmd = commandOf(e.command) as 'pull' | 'shot' | 'brew' | null
+    if (cmd) await observe($, { kind: 'command', command: cmd, args: e.args })
+    return next(e)
+  })
+
+  // A pull the brewer sends is run by the model through the Skill tool, never typed: the same
+  // observation, or the run has no command and is never unattended.
+  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+    try {
+      const cmd = commandOf(String((e as any).skill ?? '')) as 'pull' | 'shot' | 'brew' | null
+      if (cmd) await observe($, { kind: 'command', command: cmd, args: String((e as any).args ?? '') })
+    } catch {
+      // The board never stands between the model and a skill.
+    }
     return next(e)
   })
 
