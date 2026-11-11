@@ -170,11 +170,14 @@ flight for five hours, and was then moved to 30 %. A range ("1-3 versions, unles
 while every real case returned one. The ruling-versus-criterion rule was already in prep, as
 about 1,400 words of prose, and every plan still carried arrangement and copy as criteria.
 
-**The rules:** a plan line is a criterion, a ruling or a measure. A criterion is one sentence and
-one behaviour, at most five per feature, any number names its source, and it must fail on the
-empty answer. A `[measure]` is run and recorded, asserts nothing and never blocks; a measure that
-comes back empty or the same for every case is the first finding. The build plan is one page -
-paths, signatures, test names - with no code and nothing built or run.
+**The wording, not rules:** the first version answered each incident with a rule - one sentence,
+at most five, a number names its source, fail on the empty answer, no spikes, a 150-line cap.
+The same day they were replaced by one paragraph that says what an acceptance line is and what it
+costs: it is what the user gets, said so that it could turn out false; every line becomes tests
+that run for the life of the repo; how it is built is a decision; what only a real run can tell
+is measured and reported, never promised in advance. A `[measure]` is run and recorded, asserts
+nothing and never blocks; one that comes back empty or the same for every case is the first
+finding. The build plan is a one-page map - paths, signatures, test names - with no code.
 
 **Where they live now:** `commands/prep.md` step 2, `briefs/planner.md`, `briefs/common.md`
 (Tests), `briefs/implementer.md`, `commands/pull.md` step 11. No format change: `[auto]` and

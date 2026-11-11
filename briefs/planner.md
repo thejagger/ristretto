@@ -21,7 +21,7 @@ Write `.ristretto/build/<FEATURE-ID>.md`: a one-page map for the implementer, wh
 - per `[auto]` criterion one test: name, file, level;
 - per `[measure]` its command.
 
-No code blocks, no spikes: what reading can't settle is a `verify: <what>` line. Every name exists or a unit defines it. Past ~150 lines, cut.
+No code blocks: what reading can't settle is a `verify: <what>` line. Every name exists or a unit defines it.
 
 ## Manual checks
 

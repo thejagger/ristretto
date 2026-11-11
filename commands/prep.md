@@ -108,24 +108,9 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
    This is where a `planned` feature that later blocks comes from, every time: a flight adds a dimension, and the next feature's contract simply never mentions it. Asking the question costs a line; not asking it costs a whole brew.
 
-2. **Sort every line of the input into one of three places.** A ticket's acceptance list is mostly design detail, and every line left in `Acceptance:` becomes tests. So before writing a criterion, decide what the line is:
+2. **Acceptance is what the user gets, said so that it could turn out false.** Every line here becomes tests that run at every stop for the life of the repo, so write only what you would want a build stopped for. How it is built or arranged is a decision: it goes in `Decisions:`, binds the build and is read by the review, and no test pins it. What only a real run can tell you — a score, a latency, a result over real data — is measured and reported, marked `[measure]`, never promised in advance.
 
-   - **Criterion** → `Acceptance:`. One thing the feature does that can come out wrong for a user: a wrong value, a lost record, a dead link, an unhandled error, data in the wrong order where the order is the product. It becomes a test.
-   - **Ruling** → `Decisions:`. How it is built or arranged: order, position, count, wording, a default, styling, the mechanism, and anything the feature *never* does. It binds the implementer exactly as firmly, and the review checks it by reading. It never becomes a test, so it can be changed later without arguing with a red one.
-   - **Measure** → `Acceptance:`, marked `[measure]`. A number only a real run can give: a quality score, a share, a latency, a result over sample cases. `pull` runs it and writes the number into Evidence. It asserts nothing, so it never fails a build and never blocks one.
-
-   **A criterion has this shape; a line that doesn't fit is a ruling, a measure, or two criteria:**
-
-   - **One sentence, one behaviour.** A second sentence or an "and" is a second criterion or a ruling.
-   - **At most five per feature.** A sixth means rulings are hiding in the list, or the feature is two.
-   - **A number names where it came from**: `(spec §7)`, `(<who>, <date>)`, `(measured <date>)`. A number nobody gave and nothing measured is a guess: write the line as a `[measure]` without it. The limit is set once a person has seen the real number, and only then is it a criterion.
-   - **It fails on the empty answer.** If the feature could return nothing, a single item, or its fallback every time and the line still held, sharpen it until it would not: "returns 1–3 routes" holds when every request gets one.
-   - **Already proven is cited, not ordered again**: `already enforced by <test>; must stay green`. Logic a sibling already carries: rule in `Decisions:` where the shared code lives, and the criterion cites the existing proof plus one wiring test. Re-point only the sibling this feature would have copied from; others carrying the same copy are a suggestion in the report.
-
-   - ✗ "Each card shows the walking time and '+X min', and the middle one is selected by default." → ✓ criterion "selecting a card shows that card's route" · rulings "cards show time and +X min · the middle card is the default"
-   - ✗ "a full request has a p95 under 2 s" (nobody measured it) → ✓ `[measure]` "p95 of a full request over the sample trips, on the local stack"
-
-   Push back **once** on a vague input, offering a sharpened version to confirm. A criterion that still can't be made checkable is the escalation trigger in step 1 — roast it out. Only what survives the roast unanswered lands in `Blockers:`, naming who or what can answer it. Never invent a criterion the user didn't confirm, and never drop a line: what leaves `Acceptance:` lands in `Decisions:`.
+   Push back **once** on a vague input, offering a sharpened version to confirm. A criterion that still can't be made checkable is the escalation trigger in step 1 — roast it out. Only what survives the roast unanswered lands in `Blockers:`, naming who or what can answer it. Never invent a criterion the user didn't confirm.
 
    **Then give every `Acceptance:` line a proof method — there are exactly three, and "none" is not one of them.**
 
@@ -155,7 +140,7 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
    ## Contract
    - Acceptance:
-     - [auto] <one behaviour, one sentence — a test proves it>
+     - [auto] <what the user gets — a test proves it>
      - [measure] <what is run, over what — the number it reports>
      - [ ] [human] <criterion whose subject this repo gives the agent no path to>
        how: <what was out of reach · what a person has to do>
