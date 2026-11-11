@@ -77,7 +77,7 @@ function workRow({ repo, state, rec }, repos, opts) {
     effort: rec.effort,
     startedAt: rec.startedAt,
     state,
-    label: rec.unattended ? `session “${name}: brew” · unattended` : '',
+    label: rec.unattended ? `session “${name}: ${rec.id}” · unattended` : '',
     waited: sib ? `waited on ${sib}, done` : null,
     open: open(rec.id, repo.folder),
   };

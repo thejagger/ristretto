@@ -230,11 +230,12 @@ assert.ok(/commands\/pull\.md/.test(shot) && /skip the planner/.test(shot), 'sho
 assert.ok(!/Add a `planned` row|in prep's format/.test(shot), 'shot no longer writes plans — prep always runs first');
 assert.ok(/prep/.test(shot), 'shot must say prep runs first');
 
-// 17. brew is the brewer: a goal, not a loop. It keeps the overview and feeds pulls to one session
-//     per repo; it never builds, never arms a gate, never dispatches a role.
+// 17. brew is the brewer: a goal, not a loop. It keeps the overview and gives every open feature
+//     its own session, so a builder knows one feature (one per repo filled its context with every
+//     feature it had built, 2026-11-11); it never builds, never arms a gate, never dispatches a role.
 const brew = read('commands/brew.md');
 assert.ok(brew.split(/\r?\n/).length <= 45, `brew.md is ${brew.split(/\r?\n/).length} lines — the brewer is a goal of at most 45`);
-for (const s of ['/ristretto:pull', 'unattended', 'one session', 'feature/brew-', 'never builds', 'decided:']) {
+for (const s of ['/ristretto:pull', 'unattended', 'one session for every open feature', 'feature/brew-', 'never builds', 'decided:']) {
   assert.ok(brew.includes(s), `brew.md must carry "${s}"`);
 }
 for (const gone of ['PLANNER for', 'arm orchestrator', 'reviewer.md', 'implementer.md']) {

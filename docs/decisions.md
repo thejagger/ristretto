@@ -183,5 +183,12 @@ finding. The build plan is a one-page map - paths, signatures, test names - with
 (Tests), `briefs/implementer.md`, `commands/pull.md` step 11. No format change: `[auto]` and
 `[human]` plans stay valid, and no script reads `[measure]`.
 
+**The builder that knew every feature.** The same brew fed every pull of a repo to one
+long-lived session, which built each feature in its own context; after a handful of features it sat at
+47 % of its window, carrying every earlier feature's code and review into the next. brew now
+starts one session per open feature in the turn it is started - a woken brewer cannot start one -
+and sends each its pull when its turn comes. Not yet run: whether the app starts that many
+sessions in one turn shows on the first brew.
+
 **Not replayed before landing.** The first prep and the first pull under these rules are the
 test: count criteria per feature, build-plan size, and planner minutes against the numbers above.

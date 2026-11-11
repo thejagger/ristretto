@@ -259,7 +259,7 @@ describe('the rendering rules', () => {
     const t = await texts(ui)
     expect(t).toContain('at work · 1')
     expect(t).toContain('p1')
-    expect(t).toContain('session “repo: brew” · unattended')
+    expect(t).toContain('session “repo: p1” · unattended')
     const src = await svgs(ui)
     expect(src.some((s: string) => /steps\(10\) infinite/.test(s))).toBe(true)
     expect(src.some((s: string) => /height="21"/.test(s) && /animation-delay/.test(s))).toBe(true)
@@ -372,7 +372,7 @@ describe('a folder of repos', () => {
     const ui = await mount($)
     const t = await texts(ui)
     for (const s of ['needs you · 1', 'api', 'api-special-case-rules', 'done on the brew branches · 1', 'backoffice-feedback', 'api-order-title',
-      'at work · 1', 'web-order-title', 'code', 'session “web: brew” · unattended', 'waited on api/api-order-title, done',
+      'at work · 1', 'web-order-title', 'code', 'session “web: web-order-title” · unattended', 'waited on api/api-order-title, done',
       'can start now', 'web-orders-customer-filter', 'api half done', 'next · 1', 'web-flat-rate-orders', 'waits for web-order-title',
       'feature/brew-2026-10-28', 'feature/brew-2026-10-29', 'brewing', 'platform', 'nothing open', 'odd', 'base unknown']) {
       expect(t).toContain(s)
