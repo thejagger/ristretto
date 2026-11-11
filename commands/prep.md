@@ -110,8 +110,6 @@ Keep it light: only add `Depends:` where a real prerequisite exists. Most featur
 
 2. **Acceptance is what the user gets, said so that it could turn out false.** Every line here becomes tests that run at every stop for the life of the repo, so write only what you would want a build stopped for. How it is built or arranged is a decision: it goes in `Decisions:`, binds the build and is read by the review, and no test pins it. What only a real run can tell you — a score, a latency, a result over real data — is measured and reported, marked `[measure]`, never promised in advance.
 
-   What the suite already proves is cited, not ordered again: `already enforced by <test>; must stay green`. Logic a sibling already carries: rule in `Decisions:` where the shared code lives, and the criterion cites the existing proof plus one wiring test. Re-point only the sibling this feature would have copied from; others carrying the same copy are a suggestion in the report.
-
    Push back **once** on a vague input, offering a sharpened version to confirm. A criterion that still can't be made checkable is the escalation trigger in step 1 — roast it out. Only what survives the roast unanswered lands in `Blockers:`, naming who or what can answer it. Never invent a criterion the user didn't confirm.
 
    **Then give every `Acceptance:` line a proof method — there are exactly three, and "none" is not one of them.**
