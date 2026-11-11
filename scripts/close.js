@@ -3,7 +3,8 @@
 // roadmap row, the build plan's removal. The model writes what goes in (the proof of each
 // criterion, a corrected Provides:) and makes the one commit; this only places it.
 //
-//   node close.js <ID> [--repo <dir>] < input.json
+//   node close.js <ID> [--repo <dir>] --input <file>     (or the input on stdin)
+//   the input file is transient: it is removed once its content is placed
 //   input: {"evidence": [..], "decisions": [{"question", "ruling"}], "findings": [..], "escalated": null | "<trigger>"}
 'use strict';
 const fs = require('fs');
@@ -85,16 +86,31 @@ function fail(code, message) {
   process.exit(code);
 }
 
+const USAGE = 'usage: close.js <ID> [--repo <dir>] --input <file>   (or the input on stdin)';
+
+// The input from --input <file>, else stdin. A file needs no shell redirect, which PowerShell
+// lacks; and a read that failed is told apart from JSON that did not parse.
+function readInput(file) {
+  let text;
+  try { text = fs.readFileSync(file === null ? 0 : file, 'utf8'); } catch (e) {
+    fail(2, file === null ? `cannot read the input on stdin (${e.message}) - pass --input <file>` : `cannot read the input ${file} (${e.message})`);
+  }
+  try { return JSON.parse(text.replace(/^﻿/, '')); } catch (e) {
+    fail(2, `input is not valid JSON (${e.message}) - it is {evidence, decisions, findings, escalated}`);
+  }
+}
+
 function main(argv) {
   const [id, ...rest] = argv;
-  if (!id || id.startsWith('-')) fail(2, 'usage: close.js <ID> [--repo <dir>] < input.json');
+  if (!id || id.startsWith('-')) fail(2, USAGE);
   let repo = null;
+  let file = null;
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === '--repo') repo = path.normalize(rest[++i] || '.').replace(/[\\/]+$/, '') || '.';
+    else if (rest[i] === '--input') file = rest[++i] || fail(2, USAGE);
     else fail(2, `unknown argument ${rest[i]}`);
   }
-  let input;
-  try { input = JSON.parse(fs.readFileSync(0, 'utf8')); } catch { fail(2, 'input must be JSON: {evidence, decisions, findings, escalated}'); }
+  const input = readInput(file);
   if (!input || !Array.isArray(input.evidence)) fail(2, 'input needs an "evidence" list');
   const root = process.cwd();
   let found = findPlans(root).filter((f) => f.id === id);
@@ -106,6 +122,7 @@ function main(argv) {
   fs.writeFileSync(plan, closePlan(fs.readFileSync(plan, 'utf8'), input));
   fs.writeFileSync(roadmap, closeRoadmap(fs.readFileSync(roadmap, 'utf8'), id, { escalated: input.escalated || null }));
   fs.rmSync(path.join(root, where, '.ristretto', 'build', `${id}.md`), { force: true });
+  if (file !== null) fs.rmSync(file, { force: true });
   process.stdout.write(`${JSON.stringify({ plan, roadmap })}\n`);
 }
 

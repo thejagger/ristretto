@@ -139,6 +139,35 @@ test('cliBadInputRefuses', () => {
   assert.strictEqual(fs.readFileSync(path.join(root, 'docs', 'ristretto', 'plans', 'x.md'), 'utf8'), plan, 'nothing written');
 });
 
+// A pull on Windows fed the input through `cmd /c ... < file` at every close: PowerShell has no
+// `<`, and a failed stdin read said only "input must be JSON".
+test('cliReadsInputFile', () => {
+  const root = tmp();
+  repo(root, ['x']);
+  fs.mkdirSync(path.join(root, '.ristretto'), { recursive: true });
+  const file = path.join(root, '.ristretto', 'close-x.json');
+  fs.writeFileSync(file, String.fromCharCode(0xfeff) + JSON.stringify(input())); // a BOM, as Windows PowerShell writes one
+  const r = cli(root, ['x', '--input', '.ristretto/close-x.json']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(fs.readFileSync(path.join(root, 'docs', 'ristretto', 'roadmap.md'), 'utf8').includes('| easy | done |'));
+  assert.ok(!fs.existsSync(file), 'the input file is transient: gone once it is placed');
+});
+
+test('cliBadInputSaysWhy', () => {
+  const root = tmp();
+  repo(root, ['x']);
+  const bad = cli(root, ['x'], '{"evidence": [');
+  assert.strictEqual(bad.status, 2);
+  assert.ok(bad.stderr.includes('not valid JSON'), bad.stderr);
+  fs.writeFileSync(path.join(root, 'bad.json'), 'not json');
+  const kept = cli(root, ['x', '--input', 'bad.json']);
+  assert.strictEqual(kept.status, 2);
+  assert.ok(fs.existsSync(path.join(root, 'bad.json')), 'a refused input file stays');
+  const missing = cli(root, ['x', '--input', 'nope.json']);
+  assert.strictEqual(missing.status, 2);
+  assert.ok(missing.stderr.includes('cannot read') && missing.stderr.includes('nope.json'), missing.stderr);
+});
+
 (async () => {
   const bp = await import(pathToFileURL(path.join(__dirname, '..', 'hooks', 'board-plan.mjs')).href);
   test('boardReadsCodeReviewLine', () => {

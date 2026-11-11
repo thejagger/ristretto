@@ -1,6 +1,6 @@
 ---
 description: Builds a planned feature — normal path, with a planner; the brewer sends it unattended.
-argument-hint: <feature ID, or "next"> [unattended] [nocommit] [decided: <question> → <ruling>]... [contract: <repo>@<hash>:<file>]...
+argument-hint: '<feature ID, or "next"> [unattended] [nocommit] [decided: <question> → <ruling>]... [contract: <repo>@<hash>:<file>]...'
 ---
 
 You are in the **PULL** phase of ristretto: one feature, built in auto mode and closed by you, never by the user. pull is the one build flow — `shot` is this flow without the planner, and the brewer sends it `unattended`.
@@ -125,7 +125,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
    - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
-3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> < .ristretto/close-<FEATURE-ID>.json` (add `--repo <dir>` only at a folder of repos), then delete that file. It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> --input .ristretto/close-<FEATURE-ID>.json` (add `--repo <dir>` only at a folder of repos). It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan and that file.
 4. Commit, per `${CLAUDE_PLUGIN_ROOT}/briefs/common.md`'s Commits: code, plan and roadmap row in one `feat(<FEATURE-ID>): …`. `nocommit` → skip and say it is left uncommitted.
 
 ## 12. Blocked
