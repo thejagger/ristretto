@@ -192,3 +192,15 @@ sessions in one turn shows on the first brew.
 
 **Not replayed before landing.** The first prep and the first pull under these rules are the
 test: count criteria per feature, build-plan size, and planner minutes against the numbers above.
+
+**The orchestrator's goal, restored.** The goal the brewer was written from (2026-10-23) said: solve
+questions and blockages, if something is blocked unblock it, and afterwards write down which
+decisions you made and what the problem was. Three parts of it had never reached `commands/brew.md`:
+a pull that came back blocked on a question went straight to the user (the 10 % line above), the
+brewer was told to read roadmaps and plans and nothing else, and its report listed decisions but
+not problems. brew now says a block is the brewer's to solve first - fix the thing or rule on the
+question, an acceptance line that reality contradicts included, and send the same pull again -
+that it may learn its folder and look at what a pull left, at the price of its own context, and
+that the report names each problem and how it was solved. pull honours it: a `decided:` line on a
+criterion replaces that criterion for the planner, the build and Evidence, and the close records
+it as `taken:`. Said as purpose and cost, no cases. Not yet run in a real brew.

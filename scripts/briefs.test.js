@@ -294,6 +294,9 @@ assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads th
   assert.ok(/finishing options[^\n]*then the last line/.test(pull), 'unattended prints the finishing options, then the last line');
   assert.ok(/contract: <repo>@<hash>:<file>/.test(brew), 'the brewer sends the snapshot in pull\'s own argument form');
   assert.ok(/dirty[^\n]*person/i.test(brew), 'a dead session\'s dirty tree is named for a person, not re-pulled into a stop');
+  // A blocked pull is the brewer's to solve before the user's: a criterion that real data contradicted held a flight for five hours (2026-11-11).
+  assert.ok(/blocked[^\n]*rule on the question[^\n]*same pull again/i.test(brew) && /`decided:` line replaces it/.test(pull) && /problems you met/.test(brew),
+    'the brewer solves a block first, its ruling replaces a criterion in the pull, and the report names the problems');
 }
 
 // 23. README's Depends: sentence: only `done` satisfies, open boxes and all.

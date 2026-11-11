@@ -38,12 +38,12 @@ Read `docs/ristretto/roadmap.md`; take it at its word.
 
 - **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). A feature is built in its repo, never from the parent folder, where no gate fires: in the desktop app start a session in that repo with this same command; elsewhere tell the user to open it there. Stop here.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
-- **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause — proceed.
+- **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause or ruled on it — proceed.
 - **`next`** → the top `planned` row whose `Depends:` are all `done`. A `<folder>/<id>` dependency is looked up in `../<folder>/docs/ristretto/roadmap.md`; a missing folder or row is not done. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
 
 ## 2. Read the plan
 
-`docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds: criteria, `Provides:`/`Consumes:`, decisions. `## Approach` is guidance and may be stale. Its `Tier` is in the roadmap row.
+`docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds: criteria, `Provides:`/`Consumes:`, decisions — except a criterion the brewer ruled on: its `decided:` line replaces it, for the plan, the build and Evidence. `## Approach` is guidance and may be stale. Its `Tier` is in the roadmap row.
 
 ## 3. Pre-flight
 
@@ -77,7 +77,7 @@ Skipped for shot and for an unattended `easy` row. Dispatch a **planner** subage
 
 > PLANNER for ristretto feature **<FEATURE-ID>**.
 > Plan: `docs/ristretto/plans/<FEATURE-ID>.md`
-> Decided (binding): <the brewer's `decided:` lines, or none>
+> Decided (binding): <the brewer's `decided:` lines, or none> — a ruling on a criterion replaces it
 > Contracts: <each `contract: <repo>@<hash>:<file>` — read with `git -C <repo> show <hash>:<file>`, or none>
 > Read `${CLAUDE_PLUGIN_ROOT}/briefs/planner.md` and follow it.
 
@@ -112,7 +112,7 @@ Fixes go to a **fixer** subagent:
 
 > IMPLEMENTER for ristretto feature **<FEATURE-ID>** — fixer.
 > Findings: <the chosen ones, verbatim>
-> Decided (binding): <the brewer's `decided:` lines, or none>
+> Decided (binding): <the brewer's `decided:` lines, or none> — a ruling on a criterion replaces it
 > Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it.
 
 Then step 9's `verify` again. No second review: each fix's red-then-green test is its proof. Every finding not fixed goes verbatim to the close's findings, a skipped one with the user's reason.
@@ -121,7 +121,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
 
 1. Correct `Provides:` in the plan to what was built — the next planner reads it as fact.
 2. Write the close input to `.ristretto/close-<FEATURE-ID>.json`:
-   - `evidence` — one line for each criterion, `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
+   - `evidence` — one line for each criterion (a ruled one as ruled), `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
    - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
