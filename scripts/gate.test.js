@@ -1655,4 +1655,22 @@ r = gate(dir, 'state');
 assert.ok(/tree: 1 changed path\(s\)/.test(r.stdout) && !/left alone/.test(r.stdout),
   'armed with no snapshot, an untracked file must stay dirty — got: ' + r.stdout);
 
+// 150. A failure on a tree this run has not changed is not blamed on "this change". Docker going
+//      down under a clean, armed tree read as "14 NEW test failures - these were not failing
+//      before this change", pointing at code nobody had touched. With a change in the tree the
+//      old wording stands.
+dir = gitTmpRepo(JSON.stringify({ gates: { test: 'node reporter.js "a::1" "a::1"', testReport: '.ristretto/report.xml' } }));
+fs.writeFileSync(path.join(dir, 'reporter.js'), REPORTER_SRC);
+spawnSync('git', ['add', '-A'], { cwd: dir, encoding: 'utf8' });
+spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'reporter'], { cwd: dir, encoding: 'utf8' });
+arm(dir);
+r = gate(dir, 'full');
+assert.strictEqual(r.status, 2, 'a failure on an unchanged tree still blocks');
+assert.ok(/working tree holds no change/.test(r.stderr) && !/before this change/.test(r.stderr),
+  'a failure on an unchanged tree must point outside the code, not at "this change" - got: ' + r.stderr);
+fs.writeFileSync(path.join(dir, 'src.txt'), 'v2');
+r = gate(dir, 'full');
+assert.ok(/NEW test failure/.test(r.stderr) && /before this change/.test(r.stderr),
+  'with a change in the tree the failure is attributed to it - got: ' + r.stderr);
+
 console.log('gate.test.js: all checks passed');

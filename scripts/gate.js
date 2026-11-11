@@ -927,7 +927,10 @@ function attribute(gate) {
   }
   const baseline = loadBaseline(baselinePath) || new Set();
   const { newFailures, tolerated, next } = ratchet({ baseline, executed, failing });
-  return { verdict: newFailures.length ? 'block' : 'pass', newFailures, tolerated, next };
+  // A failure in a tree this run has not changed cannot be the change's doing.
+  const changed = newFailures.length ? runPaths() : null;
+  const untouched = changed !== null && changed.length === 0;
+  return { verdict: newFailures.length ? 'block' : 'pass', newFailures, tolerated, next, untouched };
 }
 
 // Only the NEW failures are named. Naming all of them is the same as naming none — the whole
@@ -935,7 +938,9 @@ function attribute(gate) {
 function attributionLines(a) {
   const lines = [];
   if (a.newFailures.length) {
-    lines.push(`ristretto: ${a.newFailures.length} NEW test failure(s) — these were not failing before this change:`);
+    lines.push(a.untouched
+      ? `ristretto: ${a.newFailures.length} test failure(s), and the working tree holds no change — nothing uncommitted can have broken them. Before touching code, check what the suite needs from outside the repo (a database, a container, a network service), then the last commit, then a flaky test:`
+      : `ristretto: ${a.newFailures.length} NEW test failure(s) — these were not failing before this change:`);
     for (const id of a.newFailures.slice(0, 25)) lines.push(`  ${id}`);
     if (a.newFailures.length > 25) lines.push(`  (+${a.newFailures.length - 25} more)`);
   }
