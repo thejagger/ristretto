@@ -159,6 +159,15 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(m.fold(live, { kind: 'marker', state: 'none' }, 1).phase, 'starting', 'not armed yet: an absent marker is not an end');
     assert.strictEqual(m.fold(live, { kind: 'main-turn-end' }, 2), null);
 
+    // A pull a builder subagent runs: the brewer's own turn ending is not that run's end; its
+    // marker going away is.
+    live = m.fold(null, { kind: 'command', command: 'pull', args: 'f-4 unattended', agent: true }, 0);
+    assert.strictEqual(m.fold(live, { kind: 'main-turn-end' }, 1), live, 'a builder\'s pull outlives the brewer\'s turn, armed or not');
+    const built = m.fold(m.fold(live, { kind: 'marker', state: 'mine' }, 2), { kind: 'brief', role: 'planner', id: 'f-4' }, 3);
+    assert.deepStrictEqual([built.phase, built.unattended, built.agent], ['planning', true, true]);
+    assert.strictEqual(m.fold(built, { kind: 'main-turn-end' }, 4), built);
+    assert.strictEqual(m.fold(built, { kind: 'marker', state: 'none' }, 5), null, 'the builder disarmed: the run ended');
+
     // brew with background subagents: no reports reach the hook, briefs alone advance it.
     live = run([
       [{ kind: 'command', command: 'brew', args: '' }, 0],

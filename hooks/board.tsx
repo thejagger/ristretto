@@ -619,11 +619,12 @@ export const register: Register = on => {
   })
 
   // A pull the brewer sends is run by the model through the Skill tool, never typed: the same
-  // observation, or the run has no command and is never unattended.
+  // observation, or the run has no command and is never unattended. From a builder subagent the
+  // call carries its agentId.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     try {
       const cmd = commandOf(String((e as any).skill ?? '')) as 'pull' | 'shot' | 'brew' | null
-      if (cmd) await observe($, { kind: 'command', command: cmd, args: String((e as any).args ?? '') })
+      if (cmd) await observe($, { kind: 'command', command: cmd, args: String((e as any).args ?? ''), agent: (e as any).agentId !== undefined })
     } catch {
       // The board never stands between the model and a skill.
     }

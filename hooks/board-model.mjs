@@ -145,7 +145,8 @@ export function fold(live, obs, now) {
     case 'command': {
       const arg = (obs.args || '').trim().split(/\s+/)[0] || '';
       const id = obs.command === 'brew' || arg === '' || arg === 'next' ? null : arg;
-      return { ...idle(obs.command, now), id, phase: 'starting', unattended: /\bunattended\b/.test(obs.args || '') };
+      // `agent`: a builder subagent runs it, so the main agent's turns are not this run's.
+      return { ...idle(obs.command, now), id, phase: 'starting', unattended: /\bunattended\b/.test(obs.args || ''), agent: !!obs.agent };
     }
     case 'brief': {
       const base = live || idle(null, now);
@@ -183,6 +184,7 @@ export function fold(live, obs, now) {
       return { ...live, armed: true, ...(coding ? { phase: 'coding', since: now } : {}) };
     }
     case 'main-turn-end':
+      if (live && live.agent) return live;
       if (!live || !live.armed) return null;
       return obs.interrupted ? { ...live, phase: 'interrupted', since: now, gate: null } : live;
     default:

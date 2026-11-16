@@ -40,6 +40,8 @@ export type BoardLive = {
   gate: { since: number; red: boolean } | null
   armed: boolean
   unattended?: boolean
+  // A builder subagent runs it: the main agent's turns are not its own.
+  agent?: boolean
 }
 export type BoardPage = { kind: 'feature'; id: string; folder?: string | null } | { kind: 'history' } | { kind: 'queue' }
 export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean; conflict: { what: string; source: string; by: string } | null }

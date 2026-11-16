@@ -109,7 +109,7 @@ const { pathToFileURL } = require('url');
     assert.strictEqual(tl.atWork.length, 1);
     const w = tl.atWork[0];
     assert.deepStrictEqual([w.tag, w.id, w.title, w.step, w.state], ['web', 'web-order-title', 'Bestelltitel', 'code', 'running']);
-    assert.strictEqual(w.label, 'session “web: web-order-title” · unattended');
+    assert.strictEqual(w.label, 'unattended', 'a builder is no session to open: the row names repo and feature');
     assert.strictEqual(w.waited, 'waited on api/api-order-title, done');
     assert.strictEqual(w.startedAt, 10);
     assert.ok(!tl.startNow.rows.some((r) => r.id === 'web-order-title'), 'the feature at work is not also free');

@@ -64,7 +64,6 @@ function workRow({ repo, state, rec }, repos, opts) {
   const resolve = statusIn(repos, repo.folder, opts.siblings);
   const sib = (plan?.depends ?? []).find((id) => siblingOf(id) && resolve(id) === 'done');
   const lastDone = [...(rec.effort ?? [])].reverse().find((p) => p.state === 'done');
-  const name = repo.folder ?? repo.board.name;
   return {
     key: `work-${repo.folder ?? ''}-${rec.id}`,
     tag: repo.folder,
@@ -77,7 +76,7 @@ function workRow({ repo, state, rec }, repos, opts) {
     effort: rec.effort,
     startedAt: rec.startedAt,
     state,
-    label: rec.unattended ? `session “${name}: ${rec.id}” · unattended` : '',
+    label: rec.unattended ? 'unattended' : '',
     waited: sib ? `waited on ${sib}, done` : null,
     open: open(rec.id, repo.folder),
   };
