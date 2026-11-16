@@ -217,4 +217,12 @@ hooks watch only the folder, so a builder's stops there are not gated at all; it
 in its repo, and `verify` and `prove` with no `.ristretto.json` now fail instead of passing, so
 running them from the wrong folder cannot read as green. Run for real: one subagent ran
 `/ristretto:pull` end to end in a scratch repo (planner, `/code-review high`, fixer, close, commit),
-with the hooks silent because the session's folder was elsewhere, as at a folder of repos.
+with the hooks silent because the session's folder was elsewhere, as at a folder of repos. Then
+one headless `/ristretto:brew` of two dependent features in that repo: the brewer put it on
+`feature/brew-<date>`, started a builder in the background, ended its turn, was woken by the
+builder's line, started the second with two `decided:` rulings, and reported; both built,
+committed, green. The builders armed with `arm builder`, and their planner and review subagents
+were gated. Not shown by it: no brewer turn ended while a builder was armed (each ended in the ten
+seconds before its builder armed), so the Stop exemption is proven by `gate.test.js` alone; nor was
+a folder of repos brewed. Not run: the desktop app's board, which at a folder of repos shows no
+feature at work now that no session at work writes its repo's record.
