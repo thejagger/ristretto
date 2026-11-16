@@ -49,7 +49,7 @@ function arm(dir) {
 let dir = tmpRepo();
 assert.strictEqual(gate(dir, 'quick').status, 0, 'quick without config must exit 0');
 assert.strictEqual(gate(dir, 'full').status, 0, 'full without config must exit 0');
-assert.strictEqual(gate(dir, 'verify').status, 0, 'verify without config must exit 0');
+assert.strictEqual(gate(dir, 'prove').status, 3, 'prove without config proves nothing (see 161)');
 
 // 2. Config but no marker → full gate stays disarmed.
 dir = tmpRepo(JSON.stringify({ gates: { lint: FAIL } }));
@@ -1382,11 +1382,12 @@ assert.strictEqual(r.status, 3, 'a prove that cannot get the lock must exit 3, n
 assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'gate-green')), 'an unlocked prove must write no fingerprint');
 assert.ok(!fs.existsSync(path.join(dir, '.ristretto', 'gate-retries')), 'an unlocked prove must never touch the retry budget');
 
-// 137. `prove` in a repo with no ristretto config has nothing to prove — say so and exit 0, same
-//      as every other command that finds ristretto not set up here.
+// 137. `prove` with no ristretto config proved nothing: under a pull the config always exists, so
+//      a missing one means the wrong folder (the parent of a folder of repos), and 0 would read as
+//      green. Unverified, like a stall (see 161).
 dir = tmpRepo();
 r = gate(dir, 'prove');
-assert.strictEqual(r.status, 0, 'prove with no config must exit 0 — nothing is set up to prove');
+assert.strictEqual(r.status, 3, 'prove with no config is unverified, never green');
 
 // --- Fix round 1: findings from review of the runGates extraction. ---
 
@@ -1672,5 +1673,46 @@ fs.writeFileSync(path.join(dir, 'src.txt'), 'v2');
 r = gate(dir, 'full');
 assert.ok(/NEW test failure/.test(r.stderr) && /before this change/.test(r.stderr),
   'with a change in the tree the failure is attributed to it - got: ' + r.stderr);
+
+// --- A builder subagent's pull. The brewer starts a builder as a subagent, so the two share one
+// session id: without `arm builder` the brewer's own turn-ends would be gated against the tree the
+// builder is mid-edit on. Only the builder's stops and hand-backs (SubagentStop) gate then.
+
+// 157. `arm builder`: the main agent's Stop is not gated, a subagent's stop still is.
+dir = tmpRepo(JSON.stringify({ gates: { lint: FAIL } }));
+r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-brew' }, 'builder');
+assert.strictEqual(r.status, 0, 'arm builder arms: ' + r.stderr);
+assert.strictEqual(fs.readFileSync(path.join(dir, '.ristretto', 'pulling'), 'utf8'), 'sess-brew', 'the marker still holds the session id alone');
+r = gate(dir, 'full', JSON.stringify({ session_id: 'sess-brew' }));
+assert.strictEqual(r.status, 0, 'the brewer\'s own Stop is not gated while a builder subagent pulls - got: ' + r.stderr);
+r = gate(dir, 'full', JSON.stringify({ session_id: 'sess-brew' }), {}, 'subagent');
+assert.strictEqual(r.status, 2, 'the builder\'s own stop and hand-back are gated');
+
+// 158. A plain `arm` (a pull that is a session's main agent) takes the exemption back.
+r = gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-brew' });
+assert.strictEqual(r.status, 0);
+r = gate(dir, 'full', JSON.stringify({ session_id: 'sess-brew' }));
+assert.strictEqual(r.status, 2, 'after a plain arm the main agent\'s Stop is gated again');
+
+// 159. `state` names a builder's run, and `disarm` ends it.
+gate(dir, 'arm', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-brew' }, 'builder');
+r = gate(dir, 'state', '{}', { CLAUDE_CODE_SESSION_ID: 'sess-brew' });
+assert.ok(/pulling: armed by this session, a builder subagent/.test(r.stdout), 'state names the builder - got: ' + r.stdout);
+assert.ok(!/unrecognised/.test(r.stdout), 'the builder file is gate.js\'s own - got: ' + r.stdout);
+gate(dir, 'disarm');
+assert.deepStrictEqual(fs.readdirSync(path.join(dir, '.ristretto')).filter((f) => f === 'pulling' || f === 'builder'), [], 'disarm clears both');
+
+// 160. Any other argument is still refused.
+r = gate(tmpRepo(JSON.stringify({ gates: { lint: PASS } })), 'arm', '{}', {}, 'brewer');
+assert.strictEqual(r.status, 2, 'only builder is a known argument');
+
+// 161. Run from a folder that is not the repo (the parent of a folder of repos), verify and prove
+//      find no .ristretto.json. That proves nothing, and must not read as green.
+dir = tmpRepo();
+r = gate(dir, 'verify');
+assert.strictEqual(r.status, 1, 'verify without a config is not green');
+assert.ok(/no \.ristretto\.json/.test(r.stderr) && r.stderr.includes(dir), 'and it names the folder it looked in - got: ' + r.stderr);
+r = gate(dir, 'prove');
+assert.strictEqual(r.status, 3, 'prove without a config is unverified');
 
 console.log('gate.test.js: all checks passed');

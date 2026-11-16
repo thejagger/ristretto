@@ -10,6 +10,9 @@
 //                    Uses gates.testChanged (scoped to the touched files) when configured — the
 //                    loop stays fast; the full suite is proven once at the end via `verify`.
 //   full subagent    SubagentStop hook. Same.
+//                    A run armed with `arm builder` is a subagent's that the brewer started: it
+//                    shares the brewer's session, so Stop (the brewer's own turn) is not gated and
+//                    SubagentStop is.
 //   verify           Not a hook — run directly (`node gate.js verify`). Runs lint + typecheck +
 //                    the FULL test gate, ignoring the marker and the cache. One-line summary.
 //                    Exits 0 green, 1 red. brew's pre-flight and its end-of-run proof.
@@ -244,6 +247,9 @@ const baselinePath = path.join(projectDir, '.ristretto', 'baseline.json');
 // Written by brews before 0.23, which armed an orchestrator exemption. Nothing reads it now;
 // disarm still clears a leftover, and the pre-flight knows its name.
 const legacyOrchestratingPath = path.join(projectDir, '.ristretto', 'orchestrating');
+// Written by `arm builder`: this run is a subagent the brewer started, so it shares the brewer's
+// session id. The main agent of that session is the brewer, and its Stop is not this run's.
+const builderPath = path.join(projectDir, '.ristretto', 'builder');
 // The full-suite verdict the board reads; it outlives the run, so disarm leaves it.
 const suitePath = path.join(projectDir, '.ristretto', 'suite.json');
 // Untracked files already there when the run armed, path → content hash. They are the user's —
@@ -260,6 +266,13 @@ const HOUSE_RULE_FILES = new Set(['claude.md', 'agents.md']);
 // `state` answers questions about a repo that may not be set up yet — that is a legitimate
 // answer, not a reason to say nothing. `arm`/`disarm` are commands, not hooks, and need only
 // `.ristretto/` to exist — a first `arm` in a repo that has not run `prep` yet must still work.
+// verify and prove are a build's proof, run by an agent from where it stands. Without a config they
+// were run from the wrong folder (the parent of a folder of repos) or in an unset repo: nothing ran,
+// and an exit 0 would read as green.
+if (!fs.existsSync(configPath) && (MODE === 'verify' || MODE === 'prove')) {
+  console.error(`ristretto: no .ristretto.json in ${projectDir} - nothing was verified. Run it from the feature's repo.`);
+  process.exit(MODE === 'verify' ? 1 : 3);
+}
 if (!fs.existsSync(configPath) && MODE !== 'state' && MODE !== 'arm' && MODE !== 'disarm') process.exit(0);
 
 let hook = {};
@@ -1329,7 +1342,7 @@ async function main() {
       const age = idle === null ? 'unknown' : formatAge(idle);
       // "armed by unclaimed" reads as a typo, not a state — an unclaimed marker gets its own
       // clause instead of being forced through the "armed by <owner>" template.
-      const status = who === 'unclaimed' ? 'armed, unclaimed' : `armed by ${who}`;
+      const status = (who === 'unclaimed' ? 'armed, unclaimed' : `armed by ${who}`) + (fs.existsSync(builderPath) ? ', a builder subagent' : '');
       console.log(`${label}: ${status}, last activity ${age}`);
     }
 
@@ -1368,7 +1381,7 @@ async function main() {
     // file stays known automatically instead of silently drifting from this list. `build` has
     // no constant naming it (no single file owns that directory), so it stays a literal.
     const known = new Set([
-      markerPath, legacyOrchestratingPath, retriesPath, greenPath, stalledPath,
+      markerPath, legacyOrchestratingPath, builderPath, retriesPath, greenPath, stalledPath,
       legacyToolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
     ].map((p) => path.basename(p)));
     known.add('build');
@@ -1387,8 +1400,8 @@ async function main() {
   // after a `brew` left `orchestrating` behind — and while that file exists, Stop does not gate
   // at all, with no error and no symptom.
   if (MODE === 'arm') {
-    if (ARG) {
-      console.error(`ristretto: unknown argument '${ARG}' - arm takes none (the brewer never arms; there is no orchestrator mode)`);
+    if (ARG && ARG !== 'builder') {
+      console.error(`ristretto: unknown argument '${ARG}' - arm takes none, or 'builder' for a subagent the brewer started (the brewer never arms)`);
       process.exit(2);
     }
     const me = mySession();
@@ -1414,6 +1427,9 @@ async function main() {
         fs.writeFileSync(untrackedPath, JSON.stringify(snapshot));
       }
       fs.writeFileSync(markerPath, me);
+      // A plain arm is a session's main agent pulling: whatever an earlier builder left goes.
+      if (ARG === 'builder') fs.writeFileSync(builderPath, me);
+      else { try { fs.unlinkSync(builderPath); } catch { /* none */ } }
     } catch (e) {
       console.error(`ristretto: could not arm — cannot write ${e.path || markerPath}: ${e.message}`);
       process.exit(1);
@@ -1424,7 +1440,7 @@ async function main() {
   if (MODE === 'disarm') {
     // Everything a run creates, in one place. `build/` is deliberately absent: a plan that was
     // paid for and never implemented outlives the run, and its closer deletes it.
-    for (const p of [markerPath, legacyOrchestratingPath, retriesPath, stalledPath, untrackedPath]) {
+    for (const p of [markerPath, legacyOrchestratingPath, builderPath, retriesPath, stalledPath, untrackedPath]) {
       try { fs.unlinkSync(p); } catch { /* never existed */ }
     }
     process.exit(0);
@@ -1498,6 +1514,12 @@ async function main() {
       console.error('  If that run is over, `gate.js disarm` clears it.');
       process.exit(0);
     }
+
+    // A builder subagent owns this run under the brewer's session id. Stop is the brewer's own
+    // turn ending, and gating it would measure a tree the builder is mid-edit on; the builder's
+    // stops and hand-backs come as SubagentStop and are gated as always. Nothing is refreshed:
+    // the brewer's turns are not the run's activity.
+    if (!IS_SUBAGENT && fs.existsSync(builderPath)) process.exit(0);
 
     // This run counts as activity. Without it, "old" would mean total age and a batch that runs
     // longer than the window would disarm its own gates halfway through.
