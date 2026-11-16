@@ -93,7 +93,8 @@ export function blockerOf(plan) {
   return parsePlan(plan).blockers[0] ?? null;
 }
 
-const BRIEF = /^\s*(?:>\s*)?(PLANNER|IMPLEMENTER|REVIEWER|CLOSER) for ristretto feature \*\*([^*]+)\*\*([^\n]*)/;
+// On any line: a builder may say where its repo is before the brief's own first line.
+const BRIEF = /^[ \t]*(?:>[ \t]*)?(PLANNER|IMPLEMENTER|REVIEWER|CLOSER) for ristretto feature \*\*([^*]+)\*\*([^\n]*)/m;
 
 export function parseBrief(prompt) {
   const hit = BRIEF.exec(prompt || '');

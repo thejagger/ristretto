@@ -97,6 +97,8 @@ const shown = (v) => JSON.stringify(v);
     // The prompt the model sends has no leading "> ".
     assert.deepStrictEqual(m.parseBrief('REVIEWER for ristretto feature **pw-galerie**.\nDiff: x'), { role: 'reviewer', id: 'pw-galerie' });
     assert.strictEqual(m.parseBrief('Explore the repo for ristretto usages'), null);
+    // A builder at a folder of repos tells its planner where the repo is, sometimes first.
+    assert.deepStrictEqual(m.parseBrief('Work in the repo at C:\\x\\calc.\n\nPLANNER for ristretto feature **CALC-2**.\nPlan: p'), { role: 'planner', id: 'CALC-2' });
 
     // briefs/reviewer.md went in 0.23 (review is /code-review); runs recorded before still read.
     assert.strictEqual(m.parseReport('reviewer', 'review: blocking (2)'), 'blocking');
