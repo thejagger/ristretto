@@ -3,7 +3,7 @@ description: Builds a planned feature — normal path, with a planner; the brewe
 argument-hint: '<feature ID, or "next"> [unattended] [nocommit] [decided: <question> → <ruling>]... [contract: <repo>@<hash>:<file>]...'
 ---
 
-You are in the **PULL** phase of ristretto: one feature, built in auto mode and closed by you, never by the user. pull is the one build flow — `shot` is this flow without the planner, and the brewer sends it `unattended`.
+You are in the **PULL** phase of ristretto: one feature, built in auto mode and closed by you, never by the user.
 
 Target: $ARGUMENTS
 - a feature ID, or `next` = the top eligible `planned` row
@@ -36,7 +36,7 @@ Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate
 
 Read `docs/ristretto/roadmap.md`; take it at its word.
 
-- **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). A feature is built in its repo, never from the parent folder, where no gate fires: in the desktop app start a session in that repo with this same command; elsewhere tell the user to open it there. Stop here.
+- **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). Found in one → that repo is where you build: run every command there (`cd <repo> && …`: a subagent's shell forgets a `cd`) and give every subagent you start its path. Hooks watch only the session's folder, so no stop is gated here: step 9's `verify` is the proof.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
 - **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause or ruled on it — proceed.
 - **`next`** → the top `planned` row whose `Depends:` are all `done`. A `<folder>/<id>` dependency is looked up in `../<folder>/docs/ristretto/roadmap.md`; a missing folder or row is not done. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
@@ -63,7 +63,7 @@ Read `.ristretto.json` — create it, or add whatever key the pre-flight names m
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" arm
 ```
 
-Exit 1 only if it cannot write its marker — stop and report.
+The brewer's builder subagent runs `gate.js arm builder` instead: it shares the brewer's session, whose own turn-ends must not be gated against its half-built tree. Exit 1 only if it cannot write its marker — stop and report.
 
 ## 6. Branch, and parked work
 
@@ -103,7 +103,7 @@ Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the g
 
 Skip only when the diff is trivial: under ~15 changed lines and no new logic. When in doubt, review.
 
-Run `/code-review <level> <absolute path of this repo>`. The level is `medium` when the feature was built on the easy path (shot, or an unattended `easy` row that did not escalate), `high` otherwise; attended, the user may name another. Always pass the path: without it the review reads the session's folder, which at a folder of repos is the wrong one.
+Run `/code-review <level> <absolute path of this repo>`. The level is `medium` when the feature was built on the easy path (shot, or an unattended `easy` row that did not escalate), `high` otherwise; attended, the user may name another. Always pass the path: the session's folder may not be this repo.
 
 - **Attended:** show the findings, numbered. The user picks what to fix and may give a reason for what they skip.
 - **Unattended:** fix only the findings labelled confirmed correctness bugs. If the review gives no labels, fix those it presents as correctness bugs with a concrete failing input.
@@ -125,7 +125,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
    - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
-3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> --input .ristretto/close-<FEATURE-ID>.json` (add `--repo <dir>` only at a folder of repos). It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan and that file.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" <FEATURE-ID> --input .ristretto/close-<FEATURE-ID>.json`. It writes Evidence, taken decisions, open findings and the roadmap row, and removes the build plan and that file.
 4. Commit, per `${CLAUDE_PLUGIN_ROOT}/briefs/common.md`'s Commits: code, plan and roadmap row in one `feat(<FEATURE-ID>): …`. `nocommit` → skip and say it is left uncommitted.
 
 ## 12. Blocked

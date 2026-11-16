@@ -204,3 +204,17 @@ that it may learn its folder and look at what a pull left, at the price of its o
 that the report names each problem and how it was solved. pull honours it: a `decided:` line on a
 criterion replaces that criterion for the planner, the build and Evidence, and the close records
 it as `taken:`. Said as purpose and cost, no cases. Not yet run in a real brew.
+
+**Builders are subagents, not sessions (2026-11-16).** The first brew under the session model
+opened seven sessions up front, and they sat idle, waiting for their pull; the owner talks only to
+the main chat and found them unmanageable. They existed only because a woken session cannot start
+another one. Now the brewer starts a fresh builder subagent when a feature's turn comes, and the
+builder's return, the pull's one line, wakes it; a builder still knows one feature. The cost: a
+builder shares the brewer's session id, so `pull` arms it with `gate.js arm builder`, under which
+Stop (the brewer's own turn) is not gated and SubagentStop and the hand-back are; a plain `arm`
+takes that back, so a pull that is a session's main agent gates as before. At a folder of repos the
+hooks watch only the folder, so a builder's stops there are not gated at all; it runs every command
+in its repo, and `verify` and `prove` with no `.ristretto.json` now fail instead of passing, so
+running them from the wrong folder cannot read as green. Run for real: one subagent ran
+`/ristretto:pull` end to end in a scratch repo (planner, `/code-review high`, fixer, close, commit),
+with the hooks silent because the session's folder was elsewhere, as at a folder of repos.
