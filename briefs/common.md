@@ -12,9 +12,9 @@ A roadmap status is `planned · in-progress · blocked · done`, nothing else. E
 
 ## Manual checks — the reach test
 
-- **The reach test**: a manual check exists only where this repo gives you no path to a criterion's subject — not merely because the subject is a database, a screen, or an external service. Look for a path first: a compose file, a seed script, a driver already in the dev dependencies.
+- **The reach test**: a manual check exists only where neither this repo nor the setup (`.ristretto/setup.md`) gives you a path to a criterion's subject — not merely because the subject is a database, a screen, or an external service. Look for a path first: a compose file, a seed script, a driver already in the dev dependencies, a tool the setup names. A setup tool that runs in the background is yours while you build: what you saw with it is the proof, `<n>: seen in <tool> — <what>`. One that needs the owner's session keeps the box; its `how:` names that tool and the steps.
 - **Never a check about production** — not yours, not the user's, not on the list.
-- **Never tick a box yourself** — that's the user's signature the step really happened.
+- **A box is ticked by whoever did the check** — ristretto, with what it saw beside it, where the setup gave it the path; otherwise only the owner's own word in chat. Never on anyone else's say-so, never without having looked.
 
 ## Tests
 

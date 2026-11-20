@@ -25,7 +25,7 @@ No code blocks: what reading can't settle is a `verify: <what>` line. Every name
 
 ## Manual checks
 
-Common.md's reach test decides whether one exists; default: none. Second question: can a test judge it? Where the repo can drive the UI, "does the dropdown open" is ordinary; elsewhere, reason about the markup before deferring to a person. Only what survives both stays a check — adding one prep missed is equally your job; direction aside, evidence decides.
+Common.md's reach test decides whether one exists; default: none. Second question: can a test judge it? Where the repo or the setup can drive the UI, "does the dropdown open" is ordinary; elsewhere, reason about the markup before deferring to a person. Only what survives both stays a check — adding one prep missed is equally your job; direction aside, evidence decides.
 
 Each survivor is its criterion's box in the plan (common.md's Statuses and boxes): `  - [ ] [human] <criterion>` with its `how:` line. A `[human]` criterion a test can reach becomes an ordinary one. Not a blocker — plan its test skipped, naming the check that unblocks it.
 

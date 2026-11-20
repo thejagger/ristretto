@@ -38,7 +38,7 @@ const FINGERPRINTS = [
   'a user is worse off',     // what red has to mean before a test is written
   'label or key',            // find the value by meaning, never by position
   'Test code where it lives', // shared code is proven once, where it lives
-  'tick a box',              // manual checks
+  'ticked by whoever did the check', // who ticks a manual check
   'about production',        // never a check about production
   'weaken, skip, or delete', // gates are infrastructure
   'gate.js" prove',          // the implementer's final proof — note the quote: the real call is
@@ -105,7 +105,7 @@ for (const c of COMMANDS) {
 
 // 7. common.md carries what more than one role needs, and stays a reference not an essay.
 const common = read('briefs/common.md');
-for (const fp of ['tick a box', 'about production', 'cheapest level', 'per criterion',
+for (const fp of ['ticked by whoever did the check', 'about production', 'cheapest level', 'per criterion',
                   'weaken, skip, or delete', 'a user is worse off', 'change detector',
                   'never by position']) {
   assert.ok(common.includes(fp), `common.md must carry "${fp}"`);
@@ -119,7 +119,14 @@ for (const fp of ['tick a box', 'about production', 'cheapest level', 'per crite
 // (2026-10-23): every role reads and writes the plan's two kinds of box — +81, written short.
 // 750 with the git rules moved in from the deleted closer brief (2026-11-09): the feature commit
 // is made by whoever closes, and pull, shot and the fixer all may — so every role reads them.
-assert.ok(words(common) < 750, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
+assert.ok(words(common) < 835, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+
+// 7b. The setup widens the reach test (2026-11-20): a tool the setup names is a path, and what
+//     ristretto saw with it is the proof.
+assert.ok(common.includes('.ristretto/setup.md') && common.includes('seen in <tool>'), 'common.md counts the setup in the reach test');
+assert.ok(!read('briefs/planner.md').includes('Where the repo can drive the UI'), 'the planner counts the setup too');
+assert.ok(read('commands/pull.md').includes('seen in <tool>'), 'pull records a look as evidence');
 
 // 8. The implementer brief is short, reads common.md, and ends with prove.
 const impl = read('briefs/implementer.md');
@@ -137,8 +144,9 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 //    script and stops on a binding one in conflict — 28 words, so the target moved by 28.
 //    1429 with the 0.22 statuses and boxes (2026-10-23): +81 in common.md, so the target moved by 81.
 //    1483 with the git rules moved into common.md (2026-11-09): +54, the closer's own rules.
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1483,
-  'an implementer dispatch must cost well under 1901 words — 1483 is the target, not the baseline');
+//    2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1568,
+  'an implementer dispatch must cost well under 1901 words — 1568 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
@@ -152,7 +160,8 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1483,
 // And with the 0.22 statuses and boxes (2026-10-23): +81 in common.md for every role, nothing else.
 // The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
 // Totals moved by the +54 of git rules common.md took over from the closer.
-const CAPS = { 'briefs/planner.md': [450, 1128] };
+// 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
+const CAPS = { 'briefs/planner.md': [450, 1213] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
