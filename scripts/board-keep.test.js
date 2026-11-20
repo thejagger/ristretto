@@ -45,7 +45,7 @@ const { pathToFileURL } = require('url');
   const tsx = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'board.tsx'), 'utf8');
   const built = (tsx.match(/<Button\b/g) || []).length;
   const kept = (tsx.match(/onPress => <Button\b/g) || []).length;
-  assert.ok(built > 0 && built === kept, `every <Button> is built inside keep() (${kept}/${built})`);
+  assert.ok(built === kept, `every <Button> is built inside keep() (${kept}/${built})`);
 
   console.log('board-keep.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

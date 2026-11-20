@@ -65,6 +65,15 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(prep.found, ['a fact']);
   assert.strictEqual(view({ mode: 'prep', prep: { startedAt: 7, id: null } }).feature, null);
 
+  // A record an older build wrote names the build step `code`: the card reads it as build.
+  const old = view({ mode: 'brew', story: story({ work: [{ ...work('o'), effort: [{ name: 'plan', state: 'done' }, { name: 'code', state: 'current', progress: 0.5 }, { name: 'review', state: 'todo' }, { name: 'close', state: 'todo' }] }] }) });
+  assert.deepStrictEqual([old.cards[0].word, old.cards[0].step, old.cards[0].effort[1].name], ['BUILD', 'build', 'build']);
+
+  // A run that went quiet is the owner's to look at: rest lists it with what is blocked.
+  const quiet = view({ mode: 'rest', story: story({ work: [{ ...work('q', 'stopped'), step: 'stopped after plan' }] }) });
+  assert.deepStrictEqual(quiet.blocked.map((b) => [b.id, b.reason]), [['q', 'stopped after plan']]);
+  assert.strictEqual(quiet.head.big, 'YOUR TURN');
+
   // Rest: whose turn it is.
   const rest = view({ mode: 'rest', story: story({ checks: [{ tag: null, id: 'a', text: 't', how: '' }], done: rows(2, 'd') }) });
   assert.deepStrictEqual([rest.head.big, rest.head.tone], ['YOUR TURN', 'you']);

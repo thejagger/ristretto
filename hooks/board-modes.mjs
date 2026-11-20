@@ -15,8 +15,11 @@ export function modeOf({ live, story, prep }) {
   return 'rest';
 }
 
+// A record an older build wrote names the build step `code`.
+const named = (effort) => (effort ?? []).map((p) => (p.name === 'code' ? { ...p, name: 'build' } : p));
+
 function cardOf(w) {
-  const effort = w.effort ?? [];
+  const effort = named(w.effort);
   const cur = currentOf(effort);
   const at = cur ? effort.indexOf(cur) + 1 : effort.filter((p) => p.state === 'done').length;
   const stopped = w.state === 'stopped';
@@ -92,7 +95,10 @@ function prepView({ prep, pins, title }) {
 }
 
 function restView({ story }) {
-  const { done, free, held, blocked, checks, taken } = story;
+  const { done, free, held, checks, taken } = story;
+  // A run that went quiet waits on the owner as a block does.
+  const quiet = story.work.filter((w) => w.state === 'stopped').map((w) => ({ key: w.key, tag: w.tag, id: w.id, reason: w.step }));
+  const blocked = [...story.blocked, ...quiet];
   const yours = checks.length + blocked.length;
   const n = done.length + free.length + held.length + blocked.length;
   return {

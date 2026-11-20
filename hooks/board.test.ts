@@ -12,6 +12,10 @@ const VIEW = { columns: 52, rows: 80, isFullscreen: true } as any
 const ROOT = '/repo'
 const NOW = Date.UTC(2026, 9, 14, 12, 0)
 const THEME_KEYS = new Set(['text', 'subtle', 'inactive', 'claude', 'error', 'success', 'warning', 'permission'])
+// v1: the step colours, both themes, and prep's brass, may colour text too.
+const DARK_STEPS = { plan: '#A3A29C', build: '#E0896A', prove: '#3FB574', review: '#A58BE8', close: '#8FA1B6' }
+const LIGHT_STEPS = { plan: '#6B6A66', build: '#B4532F', prove: '#1F7A4D', review: '#6B4FC0', close: '#55677C' }
+const INKS = new Set([...THEME_KEYS, ...Object.values(DARK_STEPS), ...Object.values(LIGHT_STEPS), '#E8B64A'])
 const REFS = 'for-each-ref --format=%(refname) refs/heads/main refs/remotes/origin/main refs/heads/master refs/remotes/origin/master refs/heads/development refs/remotes/origin/development refs/heads/develop refs/remotes/origin/develop'
 
 const table = (rows: string[]) => ['# Ristretto Roadmap', '<!-- ristretto-format: 0.23 -->', '', '| Flight | Feature | Title | Tier | Status |', '|---|---|---|---|---|', ...rows, ''].join('\n')
@@ -178,7 +182,7 @@ async function press(ui: any, key: string) {
 async function holdsTheLook(ui: any, where: string) {
   for (const t of await ui.findAll({ type: 'Text' })) {
     const c = t.props.color
-    if (c !== undefined && !THEME_KEYS.has(c)) throw new Error(`${where}: text colour ${c} is not a theme key (${t.text})`)
+    if (c !== undefined && !INKS.has(c)) throw new Error(`${where}: text colour ${c} is not a theme key (${t.text})`)
   }
   for (const src of await svgs(ui)) if (src.length > 131072) throw new Error(`${where}: an SVG of ${src.length} chars`)
 }
@@ -188,50 +192,111 @@ const pull = async ($: any, clock: any, id: string) => {
   await clock.settle()
 }
 
-describe('one repo on a brew branch', () => {
-  test('the branch story: needs you, done on this branch, can start now, next, the foot, the version', async ($, on) => {
-    await start($, on)
-    const ui = await mount($)
-    const t = await texts(ui)
-    for (const w of ['repo', 'v0.23.0', 'needs you · 3', 'blk', 'waits on Anatol', '1 check open', '2 findings · 2 checks open',
-      'done on this branch · 1', 'd-here', 'can start now · 2', 'p1', 'next', 'p2', 'next · 1', 'pw', 'waits for blk', 'brew/x', 'suite green']) {
-      expect(t).toContain(w)
-    }
-    // Merged long ago, not this branch's: no row. Nothing of the old cards is left.
-    expect(t).not.toContain('d-old')
-    for (const gone of ['Brewing', 'Branch', 'Domain facts', 'Up next', 'History', 'ahead']) expect(t).not.toContain(gone)
-    await holdsTheLook(ui, 'branch view')
-  })
-
-  test('rows open their page, ← Board goes back; no Button in the pane', async ($, on) => {
-    await start($, on)
-    const ui = await mount($)
+describe('one repo: the four views (v1)', () => {
+  const turnEnd = (answer: string) => ({ answer, durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  const displayOnly = async (ui: any, where: string) => {
     expect((await ui.findAll({ type: 'Button' })).length).toBe(0)
-    await press(ui, 'pr-need--review-here')
-    let t = await texts(ui)
-    expect(t).toContain('Needs a look')
-    expect(t).toContain('Board')
-    await press(ui, 'pr-back')
-    expect(await texts(ui)).toContain('can start now')
-  })
+    expect((await ui.findAll({ type: 'Client' })).length).toBe(0)
+    for (const s of await ui.findAll({ type: 'Svg' })) if (!String(s.props.alt ?? '').trim()) throw new Error(`${where}: an Svg with no alt`)
+    await holdsTheLook(ui, where)
+  }
+  const attended = async ($: any, clock: any, id: string) => {
+    await $.command.run({ command: 'ristretto:pull', args: id } as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: `> IMPLEMENTER for ristretto feature **${id}**`, description: 'build', subagent_type: 'general-purpose' } as any).catch(() => {})
+    await clock.settle()
+  }
 
-  test('the terminal draws the timeline in glyphs, press areas blank', async ($, on) => {
+  test('rest: whose turn it is: what to test, what is blocked, what comes next', async ($, on) => {
     await start($, on)
-    const ui = await mount($, 'terminal')
+    const ui = await mount($)
     const t = await texts(ui)
-    expect(t).toContain('brew/x')
-    expect(t).toMatch(/[✓◐○✕]/)
-    expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
-    for (const a of await ui.findAll({ type: 'Client' })) expect(a.props.props.blank).toBe(true)
+    for (const w of ['TO TEST · 3', 'human-here', 'review-here', 'BLOCKED · 1', 'blk', 'waits on Anatol', 'NEXT', 'p1', 'Planned 1', 'p2', 'v0.23.0']) expect(t).toContain(w)
+    // Merged long ago, not this branch's: nowhere.
+    expect(t).not.toContain('d-old')
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('YOUR TURN')
+    await displayOnly(ui, 'rest')
   })
 
-  test('on the base branch only what is open: no done rows', async ($, on) => {
+  test('rest with nothing waiting says READY', async ($, on) => {
     const w = world()
-    w.git['rev-parse --abbrev-ref HEAD'] = { exitCode: 0, stdout: 'main\n' }
+    w.files['docs/ristretto/roadmap.md'] = table(['| a | d-here | Done here | normal | done |', '| b | p1 | Planned 1 | normal | planned |'])
     await start($, on, w)
-    const t = await texts(await mount($))
-    expect(t).toContain('can start now')
-    expect(t).not.toContain('done on')
+    const ui = await mount($)
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('READY')
+    expect(await texts(ui)).not.toContain('TO TEST')
+  })
+
+  test('brew: two done, the card at work, what comes next, on the rail', async ($, on) => {
+    const clock = await start($, on)
+    await pull($, clock, 'p1')
+    const ui = await mount($)
+    const t = await texts(ui)
+    for (const w of ['Needs a person', 'Needs a look', 'Planned 1', 'Planned 2', 'Waits on blk']) expect(t).toContain(w)
+    expect(t).not.toContain('Done here')
+    const all = await ui.findAll({ type: 'Svg' })
+    expect(all.filter((s: any) => s.props.width === 16).length).toBe(5)
+    expect(all.some((s: any) => /^PLAN, step 1 \/ 5$/.test(s.props.alt))).toBe(true)
+    expect(all[0].props.alt).toContain('brew')
+    await displayOnly(ui, 'brew')
+  })
+
+  test('pull: the step as a word, the five steps in their colours, what to test after', async ($, on) => {
+    const w = world()
+    w.files['docs/ristretto/plans/p1.md'] = '- Acceptance:\n  - [ ] [human] look at it\n    how: open the pane\n'
+    const clock = await start($, on, w)
+    await attended($, clock, 'p1')
+    const ui = await mount($)
+    const t = await texts(ui)
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('BUILD')
+    for (const [name, hex] of Object.entries(DARK_STEPS)) {
+      const el = (await ui.findAll({ type: 'Text' })).find((x: any) => x.text === name.toUpperCase())
+      expect(el?.props.color).toBe(hex)
+    }
+    expect(t).toContain('FOR YOU, AFTER')
+    expect(t).toContain('look at it')
+    expect(t).toContain('Planned 1')
+    await displayOnly(ui, 'pull')
+  })
+
+  test('pull on a light theme: the step names in the light inks', async ($, on) => {
+    const clock = await start($, on, world(), 'light')
+    await attended($, clock, 'p1')
+    const ui = await mount($)
+    const el = (await ui.findAll({ type: 'Text' })).find((x: any) => x.text === 'REVIEW')
+    expect(el?.props.color).toBe('#6B4FC0')
+  })
+
+  test('prep: what is decided, what is open, what was found', async ($, on) => {
+    await start($, on)
+    await $.command.run({ command: 'ristretto:prep', args: 'p1' } as any).catch(() => {})
+    await $.turn.complete(turnEnd('decided: Modes → Prep, pull, brew.\nopen: Init — its own mode?\nfound: A pane is cells.') as any).catch(() => {})
+    const ui = await mount($)
+    const t = await texts(ui)
+    for (const w of ['DECIDED', 'Modes', 'Prep, pull, brew.', 'OPEN', 'its own mode?', 'FOUND', 'A pane is cells.', 'Planned 1']) expect(t).toContain(w)
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('POINTS SETTLED')
+    await displayOnly(ui, 'prep')
+  })
+
+  test('no roadmap: one line and no image', async ($, on) => {
+    const w = world()
+    delete w.files['docs/ristretto/roadmap.md']
+    await start($, on, w)
+    const ui = await mount($)
+    expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
+    expect(await texts(ui)).toContain('/ristretto:prep')
+  })
+
+  test('the terminal: text only, the mode and the step', async ($, on) => {
+    const clock = await start($, on)
+    let ui = await mount($, 'terminal')
+    expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
+    expect(await texts(ui)).toContain('REST YOUR TURN')
+    await ui.unmount()
+    await attended($, clock, 'p1')
+    ui = await mount($, 'terminal')
+    const t = await texts(ui)
+    expect(t).toContain('PULL BUILD')
+    expect(t).toContain('● build')
   })
 
   test('brew detection by the orchestrating marker is gone', async ($, on) => {
@@ -254,15 +319,11 @@ describe('the rendering rules', () => {
     expect(await svgs(ui)).toEqual(s0)
   })
 
-  test('a pull at work here: the SVG clock, the effort bar phase-locked, unattended', async ($, on) => {
+  test('a pull at work here: the SVG clock, the meter phase-locked', async ($, on) => {
     const clock = await start($, on)
     await pull($, clock, 'p1')
     const ui = await mount($)
-    const t = await texts(ui)
-    expect(t).toContain('at work · 1')
-    expect(t).toContain('p1')
-    expect(t).toContain('unattended')
-    expect(t).not.toContain('session “')
+    expect(await texts(ui)).toContain('p1')
     const src = await svgs(ui)
     expect(src.some((s: string) => /steps\(10\) infinite/.test(s))).toBe(true)
     expect(src.some((s: string) => /height="21"/.test(s) && /animation-delay/.test(s))).toBe(true)
@@ -369,54 +430,40 @@ describe('a record a dead session left', () => {
 })
 
 describe('a folder of repos', () => {
-  test('every repo on one board: needs you tagged, the web session at work, the foot per repo', async ($, on) => {
+  test('every repo on one board: the web session at work, tagged; what api did on its branch', async ($, on) => {
     const w = folder()
     await start($, on, w)
     const ui = await mount($)
     const t = await texts(ui)
-    for (const s of ['needs you · 1', 'api', 'api-special-case-rules', 'done on the brew branches · 1', 'backoffice-feedback', 'api-order-title',
-      'at work · 1', 'web-order-title', 'code', 'unattended', 'waited on api/api-order-title, done',
-      'can start now', 'web-orders-customer-filter', 'api half done', 'next · 1', 'web-flat-rate-orders', 'waits for web-order-title',
-      'feature/brew-2026-10-28', 'feature/brew-2026-10-29', 'brewing', 'platform', 'nothing open', 'odd', 'base unknown']) {
-      expect(t).toContain(s)
-    }
+    for (const s of ['api · api-order-title', 'Bestelltitel neben der Nummer', 'web · web-order-title', 'Bestelltitel im Office']) expect(t).toContain(s)
     expect(t).not.toContain('feature/parent')
     expect(t).not.toContain('notes')
+    // A record an older build wrote says `code`: the card says BUILD.
+    expect((await ui.findAll({ type: 'Svg' })).some((s: any) => /^BUILD, step 2 \/ 4$/.test(s.props.alt))).toBe(true)
     await holdsTheLook(ui, 'folder')
   })
 
-  test('a session that went quiet: stopped after its phase, the age an SVG clock that counts on', async ($, on) => {
+  test('a session that went quiet: stopped after its phase, the owner\'s to look at', async ($, on) => {
     const w = folder()
     const rec = JSON.parse(w.files['web/.ristretto/at-work.json'])
     w.files['web/.ristretto/at-work.json'] = JSON.stringify({ ...rec, beat: NOW - 20 * 60000 })
     await start($, on, w)
     const ui = await mount($)
-    const t = await texts(ui)
-    expect(t).toContain('stopped after plan')
-    expect(t).toContain('ago')
-    expect((await svgs(ui)).some((s: string) => /steps\(10\) infinite/.test(s))).toBe(true)
+    expect(await texts(ui)).toContain('stopped after plan')
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('YOUR TURN')
   })
 
-  test('the same id in two repos: two tagged rows, each opening its own plan', async ($, on) => {
-    await start($, on, folder())
-    const ui = await mount($)
-    const t = await texts(ui)
-    expect(t.split('\n').filter(l => l === 'dup').length).toBe(2)
-    await press(ui, 'pr-free-web-dup')
-    expect(await texts(ui)).toContain('The same id in web')
-  })
-
-  test('after the merge: every repo on main, no done rows, nothing brewing', async ($, on) => {
+  test('after the merge: every repo on main, nothing done here, nothing brewing', async ($, on) => {
     const w = folder()
     for (const f of ['api', 'web']) w.git[`${f}|rev-parse --abbrev-ref HEAD`] = { exitCode: 0, stdout: 'main\n' }
     delete w.files['web/.ristretto/at-work.json']
     delete w.files['web/.ristretto/pulling']
     await start($, on, w)
-    const t = await texts(await mount($))
-    expect(t).not.toContain('done on')
-    expect(t).toContain('api, platform, web on their base branch')
-    expect(t).toContain('nothing brewing')
-    expect(t).toContain('web-order-title')
+    const ui = await mount($)
+    const t = await texts(ui)
+    expect(t).not.toContain('api-order-title')
+    expect(t).toContain('api-special-case-rules')
+    expect((await ui.findAll({ type: 'Svg' }))[0].props.alt).toContain('rest')
   })
 
   test('the band names the brewing feature with its repo', async ($, on) => {

@@ -191,6 +191,12 @@ function message(repos) {
   return null;
 }
 
+// The one line the pane shows when there is no board to draw, or null.
+export function messageOf(repos) {
+  const m = message(repos);
+  return m ? m.text : null;
+}
+
 export function timelineOf(repos, opts = {}) {
   const msg = message(repos);
   if (msg) return msg;
