@@ -235,12 +235,6 @@ export function waitsOn(reason) {
   return m ? `waits on ${m[1]}` : plain(reason || '');
 }
 
-// A feature that stopped on a fact in conflict names it as `domain/<file>.md: …` — first in the
-// reason (`blocked: domain/…`, common.md) or after the ID (`blocked — <ID> — domain/…`).
-export function factOf(reason) {
-  return (/(?:^|[\s—–-])domain\/([^:\s]+\.md):/i.exec(reason || '') || [])[1] ?? null;
-}
-
 // One glyph and one tone per status. Tones are Claude theme keys, so the pane follows the
 // person's light/dark theme on every surface; single-width glyphs, because emoji draw unevenly.
 const LOOK = {
@@ -283,7 +277,6 @@ export function featurePage(row, ctx) {
   const look = LOOK[row.status];
   const plan = ctx.plans[row.id];
   const run = ctx.runOf.get(row.id);
-  const fact = row.status === 'blocked' ? factOf(row.reason) : null;
   return {
     kind: 'feature',
     id: row.id,
@@ -293,7 +286,7 @@ export function featurePage(row, ctx) {
     tone: look.tone,
     back: BACK,
     goal: plan?.goal ?? null,
-    waitingOn: fact ? `domain/${fact}` : (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
+    waitingOn: (/^\s*waiting on\s+(.+?)\s*[:—–]/i.exec(row.reason || '') || [])[1] ?? null,
     split: run ? splitOf(run) : null,
     files: filesOf(row, ctx),
     details: detailsOf(row, plan, ctx),
@@ -310,26 +303,6 @@ function filesOf(row, ctx) {
   const clicked = ctx.folders[row.id] ?? {};
   const all = list.length <= OPEN_UP_TO;
   return { n: list.length, add: tree.add, del: tree.del, rows: rowsOf(tree, (p) => clicked[p] ?? all) };
-}
-
-// The facts as information: per file, those in conflict first, then the binding ones, then
-// context. Nothing here is confirmed, removed or committed — that happens in the chat.
-export function domainPage(domain) {
-  const rank = (f) => (f.conflict ? 0 : f.state === 'confirmed' ? 1 : 2);
-  const files = [...new Set(domain.tree.map((f) => f.file))].sort();
-  return {
-    kind: 'domain',
-    back: BACK,
-    n: domain.tree.length,
-    binding: domain.tree.filter((f) => f.state === 'confirmed').length,
-    conflicts: domain.tree.filter((f) => f.conflict).length,
-    groups: files.map((file) => ({
-      file,
-      name: file.replace(/\.md$/, ''),
-      rows: domain.tree.map((f, i) => ({ f, i })).filter(({ f }) => f.file === file)
-        .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map(({ f }) => f),
-    })),
-  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -357,10 +330,7 @@ export function waitsOf(row, ctx) {
   return { detail: `${words.join(' · ')} open`, glyph: person ? 'person' : 'findings', tone: person ? 'permission' : 'warning' };
 }
 
-export const blockedWords = (row) => {
-  const fact = factOf(row.reason);
-  return fact ? `waits on domain/${fact}` : waitsOn(row.reason);
-};
+export const blockedWords = (row) => waitsOn(row.reason);
 
 // The feature brew takes first: the topmost planned row that waits on nothing, in roadmap order.
 function nextPick(rows, ctx, running) {
@@ -410,8 +380,7 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
   }
 
   // What needs a person but does not hold this branch: blocked rows without code here, done rows
-  // with open boxes or findings built elsewhere (or every one, with no scope). Domain facts are
-  // background — a conflict among them is information on the facts row, never a person's turn.
+  // with open boxes or findings built elsewhere (or every one, with no scope).
   const needsYou = [];
   for (const r of rows) {
     if (onBranch(r.id) || r.id === running) continue;
@@ -636,7 +605,7 @@ function branchCard(state, branch, compact) {
 }
 
 // The pane as a view (spec section 0): cards in the order of the state. Idle: Branch, Needs you,
-// Up next, Done, Domain facts. Running: Brewing, Branch (holders only), Needs you, Done (one line).
+// Up next, Done. Running: Brewing, Branch (holders only), Needs you, Done (one line).
 // A page replaces the cards; every feature done and nothing for a person is the cup.
 export function view(board, live, elsewhere = false, opts = {}) {
   if (board.error === 'no-roadmap' || board.error === 'no-table') return { kind: 'message', text: PREP };
@@ -644,15 +613,12 @@ export function view(board, live, elsewhere = false, opts = {}) {
 
   const rows = board.rows;
   const state = stateOf(board, live, elsewhere, opts);
-  const domain = opts.domain ?? { tree: [] };
   const page = opts.page?.kind;
-  if (page === 'domain') return { kind: 'page', page: domainPage(domain) };
   if (page === 'history') return { kind: 'page', page: historyPage(state) };
   if (page === 'queue') return { kind: 'page', page: queuePage(board, state) };
   if (page === 'feature' && rows.some((r) => r.id === opts.page.id)) {
     return { kind: 'page', page: featurePage(rows.find((r) => r.id === opts.page.id), state.ctx) };
   }
-  const conflicted = domain.tree.filter((f) => f.conflict);
   // A red suite on this code holds the branch even when every row is done: never under the cup.
   if (rows.length > 0 && rows.every((r) => r.status === 'done') && !state.busy && state.holders.length === 0) return { kind: 'cup', total: rows.length };
 
@@ -678,9 +644,6 @@ export function view(board, live, elsewhere = false, opts = {}) {
   if (needs) cards.push(needs);
   if (state.upNext.eligible + state.upNext.waiting > 0) cards.push({ kind: 'next', ...state.upNext });
   if (state.done.total > 0) cards.push(doneCard(false));
-  if (domain.tree.length) {
-    cards.push({ kind: 'facts', n: domain.tree.length, binding: domain.tree.filter((f) => f.state === 'confirmed').length, conflicts: conflicted.length });
-  }
   return { kind: 'board', state: 'idle', notices, cards };
 }
 

@@ -431,44 +431,13 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(startActions(opened('k', true)), [], 'no action on a page');
   }
 
-  // 8. Who a blocked row waits on, and the domain facts row and page.
+  // 8. Who a blocked row waits on.
   {
     assert.strictEqual(m.waitsOn('waiting on Jakob: confirm the pass mark (proposal: 0 missed)'), 'waits on Jakob');
     assert.strictEqual(m.waitsOn('waiting on Anatol — Nodes write API'), 'waits on Anatol');
     assert.strictEqual(m.waitsOn('no API docs yet'), 'no API docs yet');
   }
 
-  // 8b. Facts are background information — a conflict included; none of them needs a person.
-  {
-    const fact = (title, state, conflict = null, file = 'adsb-lol.md') => ({ file, title, text: `${title} text`, source: 's', state, by: '', conflict });
-    const tree = [
-      fact('API terms', 'unconfirmed'),
-      fact('Licence', 'confirmed'),
-      fact('Rate limits', 'unconfirmed', { what: '429 now carries X-RateLimit-Limit', source: 'live', by: 'review spotter-data, 2026-11-02' }),
-      fact('trueNorth is magnetic on Android', 'unconfirmed', null, 'sensors.md'),
-    ];
-    const board = { ...m.EMPTY_BOARD, name: 'plane-spotter', rows: [{ flight: '', id: 'a', title: 'A', tier: 'normal', plan: '', commit: '', touched: [], status: 'planned', reason: '' }], format: { project: '0.20', plugin: '0.20' } };
-    const v = m.view(board, null, false, { domain: { tree } });
-    assert.deepStrictEqual(v.cards.find((c) => c.kind === 'facts'), { kind: 'facts', n: 4, binding: 1, conflicts: 1 }, 'the facts as one line');
-    assert.strictEqual(v.cards.find((c) => c.kind === 'needs'), undefined, 'facts need nobody, a conflict included');
-    assert.strictEqual(m.view(board, null, false, { domain: { tree: [] } }).cards.find((c) => c.kind === 'facts'), undefined, 'no facts: no line');
-
-    const pg = m.view(board, null, false, { domain: { tree }, page: { kind: 'domain' } }).page;
-    assert.deepStrictEqual([pg.kind, pg.back, pg.n, pg.binding, pg.conflicts], ['domain', 'Board', 4, 1, 1]);
-    assert.deepStrictEqual(pg.groups.map((g) => [g.name, g.rows.map((f) => f.title)]), [
-      ['adsb-lol', ['Rate limits', 'Licence', 'API terms']],
-      ['sensors', ['trueNorth is magnetic on Android']],
-    ], 'per file: conflicts first, then binding, then context');
-    assert.ok(!('pending' in pg) && !('locked' in pg) && !('confirmed' in pg), 'nothing to confirm, commit or lock');
-
-    // A row blocked on a fact before facts went to the background still names the fact file.
-    const blocked = { ...board, rows: [{ ...board.rows[0], status: 'blocked', reason: 'blocked: domain/adsb-lol.md: Rate limits is in conflict' }] };
-    const row = m.view(blocked, null, false, { domain: { tree } }).cards.find((c) => c.kind === 'needs').rows[0];
-    assert.strictEqual(row.detail, 'waits on domain/adsb-lol.md');
-    const bp = m.view(blocked, null, false, { domain: { tree }, page: { kind: 'feature', id: 'a' } }).page;
-    assert.strictEqual(bp.waitingOn, 'domain/adsb-lol.md');
-    assert.strictEqual(m.factOf('waiting on Anatol: the V1.2 doc'), null);
-  }
 
   // The Files card: the commit's files, and nothing before there is a commit (noCommitNoFiles).
   {
@@ -505,10 +474,9 @@ const shown = (v) => JSON.stringify(v);
     ].join('\n');
     const rows = m.parseRoadmap(text).rows;
     assert.deepStrictEqual(rows.map((r) => r.reason), ['domain/adsb-lol.md: Rate limits is in conflict', 'SPOT-3 — domain/sensors.md: trueNorth is in conflict', 'waiting on Jakob: the pass mark'], 'a leading ":" is dropped like a dash');
-    assert.deepStrictEqual(rows.map((r) => m.factOf(r.reason)), ['adsb-lol.md', 'sensors.md', null]);
     const v = m.view({ ...m.EMPTY_BOARD, name: 'x', rows, format: { project: '0.20', plugin: '0.20' } }, null, false, {});
     const shownRows = v.cards.find((c) => c.kind === 'needs').rows;
-    assert.deepStrictEqual(shownRows.map((r) => r.detail), ['waits on domain/adsb-lol.md', 'waits on domain/sensors.md', 'waits on Jakob']);
+    assert.strictEqual(shownRows[2].detail, 'waits on Jakob');
   }
 
   // A check re-run adds to the build's numbers instead of replacing them.
@@ -561,10 +529,6 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/\$\.clock\.now\(\)/.test(drawing.replace(/const go = [\s\S]*?\}\)\(\)\n/, '').replace(/run: \(\) => void \(async \(\) => \{[\s\S]*?\}\)\(\),/g, '')), 'no $.clock.now() while drawing; handlers stamp drawnAt');
     assert.strictEqual((tsx.match(/\$\.clock\.every\(/g) || []).length, 1, 'one timer: the 5 s poll');
     assert.ok(!/advanceClock|key: 'tick'/.test(tsx), 'no clock tick');
-    // The marks live in board-svg.mjs now: facts have their own, never the person's.
-    const svgSrc = fs.readFileSync(path.join(ROOT, 'hooks', 'board-svg.mjs'), 'utf8');
-    assert.ok(/\bfacts: \(\) => BOOK\(/.test(svgSrc) && /'fact-conflict': \(\) => `\$\{BOOK\(/.test(svgSrc), 'facts have their own icon');
-    assert.ok(!/'person'[^\n]*Domain facts|Domain facts[^\n]*'person'/.test(tsx), 'the person icon is not the facts icon');
     assert.ok(/card\('needs'/.test(tsx), 'the Needs you card is drawn');
     assert.ok(/'show', '--numstat', '--format=', /.test(tsx), 'the Files card reads the commit with numstat');
     assert.ok(/featureLogArgs\(id\)/.test(tsx) && /sumFiles\(/.test(tsx), 'the Files card finds a feature\'s commits by its ID');
@@ -580,14 +544,10 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(!/<Button[^>]*\b(plain|dimColor)=\{/.test(tsx), 'a Button takes plain/dimColor only as a bare flag, never as an expression');
   }
 
-  // Final review I2, reworded: every feature done → the cup; facts never hold it back.
+  // Final review I2, reworded: every feature done → the cup.
   {
     const done = { name: 't', format: { project: null, plugin: '' }, error: null, rows: [{ flight: '', id: 'z', title: 'z', tier: 'normal', plan: '', commit: '', status: 'done', reason: '' }] };
     assert.strictEqual(m.view(done, null, false, {}).kind, 'cup');
-    const calm = { file: 'mail.md', title: 'A', text: 'a', source: '', state: 'unconfirmed', by: '', conflict: null };
-    assert.strictEqual(m.view(done, null, false, { domain: { tree: [calm] } }).kind, 'cup', 'context facts do not hold the cup back');
-    const v = m.view(done, null, false, { domain: { tree: [{ ...calm, conflict: { what: 'w', source: 's', by: 'b' } }] } });
-    assert.strictEqual(v.kind, 'cup', 'nor does a fact in conflict');
   }
 
   // The band above the prompt: only the main thing — what runs and its step, who is needed.
@@ -612,22 +572,15 @@ const shown = (v) => JSON.stringify(v);
     assert.ok(/\$\.ui\.close\(\{ id: PANE \}\)/.test(tsx) && /on\('ui\.close'/.test(tsx), 'open/close follows the pane, closed by the band or by its own x');
   }
 
-  // The chat side of facts: who may note a conflict, and that nobody is asked unprompted.
+  // One commit per feature, found by its ID; the plan never moves and nothing re-runs a check.
   {
     const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
     const prep = read('commands/prep.md');
-    assert.ok(/research\.js" conflict/.test(read('briefs/common.md')), 'builders and reviewers note conflicts through the script');
-    assert.ok(/research\.js" conflict/.test(read('briefs/researcher.md')), 'so does research');
-    assert.ok(/A fact never stops work/.test(read('briefs/common.md')) && !/is in conflict`/.test(read('briefs/common.md')), 'no build blocks on a fact');
-    assert.ok(/## Facts — `prep facts`, only when the user asks/.test(prep) && /\*\*confirm\*\*/.test(prep), 'prep facts is the opt-in way in, confirm included');
-    assert.ok(!/Should they bind the build/.test(prep) && !/stays context: domain/.test(prep), 'prep never asks whether a fact binds');
-    assert.ok(!/domain facts in conflict/.test(read('commands/status.md')), 'status has no facts to-do line');
-    // One commit per feature, found by its ID; the plan never moves and nothing re-runs a check.
     // 0.23: the closer brief is close.js plus common.md's Commits; the rules stay.
     assert.ok(/code, plan and roadmap row/.test(read('briefs/common.md')), 'one commit holds code, plan and roadmap row');
     assert.ok(/cells\[status\] = 'done'/.test(read('scripts/close.js')) && !/archiv/i.test(read('scripts/close.js')), 'close.js only sets the status (and the tier on an escalation)');
     assert.ok(!/re-run/.test(read('scripts/close.js')), 'the user\'s word ticks a box; nothing re-runs a check');
-    assert.ok(/no plan link, date, file list or hash/.test(prep), 'the roadmap holds order and status only');
+    assert.ok(/holds order and status, nothing else/.test(prep), 'the roadmap holds order and status only');
   }
 
   // 20. v3: one state decides what holds the branch, what needs you, what is next, what is done.
@@ -651,7 +604,7 @@ const shown = (v) => JSON.stringify(v);
     };
     const branch = { name: 'brew/x', base: 'main', ids: ['human-here', 'review-here', 'd-here', 'blk-nope'], lastBrew: '' };
     const runs = [{ id: 'd-here', startedAt: 0, endedAt: 9000, ms: 9000, phases: { plan: 1000, code: 8000, review: 0, close: 0 } }];
-    const opts = { branch, suite: { state: 'green', text: 'suite green', failing: '' }, runs, plans, checks, domain: { tree: [] }, drawnAt: 10000 };
+    const opts = { branch, suite: { state: 'green', text: 'suite green', failing: '' }, runs, plans, checks, drawnAt: 10000 };
     let s = m.stateOf(board, null, false, opts);
     const by = (list, id) => list.find((r) => r.id === id);
 
@@ -714,10 +667,6 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(s.done.recent, true);
     assert.deepStrictEqual(s.done.here.map((r) => r.id), ['d-here', 'd-old'], 'newest first: measured, then later rows');
 
-    // A fact in conflict is background, never a person's turn.
-    s = m.stateOf(board, null, false, { ...opts, domain: { tree: [{ file: 'web-auth.md', title: 'Sessions', state: 'confirmed', conflict: { what: 'x' } }] } });
-    assert.ok(!s.needsYou.some((r) => r.glyph === 'fact-conflict'));
-
     // No buttons anywhere: the person acts in the chat.
     assert.ok(!/"action"/.test(JSON.stringify(m.stateOf(board, null, false, opts))));
   }
@@ -726,7 +675,7 @@ const shown = (v) => JSON.stringify(v);
   {
     const R = (id, status) => ({ flight: '', id, title: `${id} title`, tier: 'normal', plan: `plans/${id}.md`, commit: '', status, reason: '' });
     const board = { name: 'r', format: { project: null, plugin: '' }, error: null, rows: [R('a', 'done'), R('b', 'done')] };
-    const at = (opts) => m.stateOf(board, null, false, { suite: { state: 'green', text: '', failing: '' }, domain: { tree: [] }, ...opts });
+    const at = (opts) => m.stateOf(board, null, false, { suite: { state: 'green', text: '', failing: '' }, ...opts });
 
     // doneWithOpenCheckNeedsYou
     let s = at({ checks: { a: [{ done: false, text: 'x', how: 'y' }, { done: true, text: 'z', how: '' }] } });

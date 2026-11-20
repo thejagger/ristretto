@@ -44,8 +44,6 @@ export type BoardLive = {
   agent?: boolean
 }
 export type BoardPage = { kind: 'feature'; id: string; folder?: string | null } | { kind: 'history' } | { kind: 'queue' }
-export type BoardFact = { file: string; title: string; text: string; source: string; state: 'confirmed' | 'unconfirmed'; by: string; older?: boolean; conflict: { what: string; source: string; by: string } | null }
-export type BoardDomain = { tree: BoardFact[] }
 export type BoardFile = { path: string; add: number; del: number; bin: boolean }
 // The branch the session is on (board-branch.mjs): `ids` null when nothing can be scoped to it.
 export type BoardBranch = { name: string; base: string | null; ids: string[] | null; lastBrew: string; onDefault?: boolean }

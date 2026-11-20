@@ -749,7 +749,7 @@ const CUP_TEXT = ['   ) )  ( (', '.__________.', '|          |]', '|          |'
 const GLYPH: Record<string, [string, string]> = {
   planned: ['○', 'inactive'], next: ['○', 'text'], queued: ['○', 'inactive'], running: ['●', 'claude'], lane: ['◉', 'claude'],
   blocked: ['✕', 'error'], findings: ['◐', 'warning'], person: ['◐', 'permission'], done: ['✓', 'success'], ready: ['✓', 'success'],
-  'suite-ok': ['✓', 'success'], 'gate-red': ['✕', 'error'], 'suite-red': ['✕', 'error'], facts: ['·', 'inactive'], 'fact-conflict': ['!', 'warning'],
+  'suite-ok': ['✓', 'success'], 'gate-red': ['✕', 'error'], 'suite-red': ['✕', 'error'],
 }
 const TONE: Record<string, any> = { permission: { color: 'permission' }, warning: { color: 'warning' }, error: { color: 'error' }, dim: { dimColor: true }, default: {} }
 const toneOf = (t?: string) => TONE[t ?? 'dim'] ?? TONE.dim

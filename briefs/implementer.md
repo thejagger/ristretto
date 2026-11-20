@@ -4,15 +4,15 @@ Read `briefs/common.md` first — it binds you before anything below does.
 
 ## Find your build plan
 
-Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago: a map of files, signatures and test names. The code and the test bodies are yours; check its `verify:` lines first, and do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md`'s `## Contract` yourself against the current code — real file paths, real names and signatures, the test cases that prove each criterion — and make each surviving manual check (common.md's reach test) its criterion's box, with a `how:` line. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
+Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago: a map of files, signatures and test names. The code and the test bodies are yours; check its `verify:` lines first, and do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md` yourself against the current code — real file paths, real names and signatures, the test cases that prove each criterion — and make each surviving manual check (common.md's reach test) its criterion's box, with a `how:` line. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
 
 ## Tests first, red first
 
-See common.md's Tests section. Two additions. A criterion waiting on a manual check gets its test written skipped, naming the check that unblocks it — it cannot go red honestly without that environment. A `[measure]` gets no test: run its command and report the number.
+See common.md's Tests section. Two additions. A criterion waiting on a manual check gets its test written skipped, naming the check that unblocks it — it cannot go red honestly without that environment. A criterion only a real run can tell gets no test: run its command and report the number.
 
 ## Implement
 
-Common.md's Lean code section binds. Yours alone: no waste in how you work — don't re-read files already in context, don't restate the plan, targeted edits over rewrites. Done when the red tests pass and every criterion in the Contract holds.
+Common.md's Lean code section binds. Yours alone: no waste in how you work — don't re-read files already in context, don't restate the plan, targeted edits over rewrites. Done when the red tests pass and every criterion in the plan holds.
 
 ## Finish with prove
 

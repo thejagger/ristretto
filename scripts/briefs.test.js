@@ -21,8 +21,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const words = (s) => s.split(/\s+/).filter(Boolean).length;
 
 const COMMANDS = ['commands/brew.md', 'commands/pull.md', 'commands/shot.md'];
-const BRIEFS = ['briefs/common.md', 'briefs/planner.md', 'briefs/implementer.md',
-                'briefs/researcher.md'];
+const BRIEFS = ['briefs/common.md', 'briefs/planner.md', 'briefs/implementer.md'];
 
 // 1. Every brief file exists.
 for (const b of BRIEFS) {
@@ -45,9 +44,6 @@ const FINGERPRINTS = [
   'gate.js" prove',          // the implementer's final proof — note the quote: the real call is
                              // node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" prove, so a
                              // fingerprint of `gate.js prove` would match nothing
-  'never instructions',      // fetched text is data — the researcher's injection line
-  'about 10 web searches',   // the research budget
-  "Confirmed entries are a person's.", // agents never edit a confirmed domain entry
   'more than three files',   // deleted ratchet trigger — must appear NOWHERE
   'planned · in-progress · blocked · done', // the four statuses, defined once
 ];
@@ -142,7 +138,7 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1483,
 // And with the 0.22 statuses and boxes (2026-10-23): +81 in common.md for every role, nothing else.
 // The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
 // Totals moved by the +54 of git rules common.md took over from the closer.
-const CAPS = { 'briefs/planner.md': [450, 1128], 'briefs/researcher.md': [700, 1425] };
+const CAPS = { 'briefs/planner.md': [450, 1128] };
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -226,7 +222,19 @@ assert.ok(/## Overrule/.test(read('commands/prep.md')), 'prep takes an overrule'
 // 16. shot is the easy path against an existing plan — it no longer writes one.
 const shot = read('commands/shot.md');
 assert.ok(shot.split(/\r?\n/).length < 40, `shot.md is ${shot.split(/\r?\n/).length} lines — it follows pull's flow`);
-assert.ok(/commands\/pull\.md/.test(shot) && /skip the planner/.test(shot), 'shot follows pull.md and skips the planner');
+assert.ok(/\/ristretto:pull <this target> shot/.test(shot) && /skips the planner/.test(shot), 'shot invokes pull as shot and skips the planner');
+assert.ok(/^- `shot` — /m.test(read('commands/pull.md')), 'pull takes `shot` as an argument');
+
+// 16b. One command hands over to another by invoking its skill, never by reading its file: after a
+//      summary Claude Code re-attaches invoked skills only, and a brew that had read brew.md with cat
+//      followed prep's text instead for the rest of the run (durchhaus, 2026-11-19).
+for (const f of fs.readdirSync(path.join(ROOT, "commands")).filter((n) => n.endsWith(".md"))) {
+  assert.ok(!/commands\/[a-z-]+\.md`? and follow it/.test(read(`commands/${f}`)), `${f} hands over by reading a command file — invoke its skill instead`);
+}
+
+// 16c. The brewer's every message while builders run is the block, whatever woke it: a rule tied to
+//      a builder's return left a "waiting on its own background work" notice to improvised prose.
+assert.ok(/Whatever wakes you while builders run/.test(read('commands/brew.md')), 'brew.md ties the block to every message, not to one event');
 assert.ok(!/Add a `planned` row|in prep's format/.test(shot), 'shot no longer writes plans — prep always runs first');
 assert.ok(/prep/.test(shot), 'shot must say prep runs first');
 
@@ -267,17 +275,18 @@ assert.ok(!/PROJECT IS NEWER/.test(read('commands/prep.md')), 'prep.md must not 
 assert.ok(!/prep \+ pull/i.test(read('commands/help.md')), 'help.md must not describe shot as "prep + pull"');
 assert.ok(!/prep \+ pull/i.test(read('README.md')), 'README.md must not describe shot as "prep + pull"');
 
-// 32. help fits a screen; strata is a finishing option, not a command; prep has no deep flag;
-//     status reads the same folders as the brewer; nothing names what slim-core phases 3–5 cut.
+// 32. help fits a screen; pull's one finishing option is the MR description — the docs/code split
+//     was never used (cut 2026-11-20); prep has no deep flag; status reads the same folders as the
+//     brewer; nothing names what slim-core phases 3–5 cut.
 assert.ok(read('commands/help.md').split(/\r?\n/).length <= 25, 'help.md fits a screen — 25 lines at most');
-assert.ok(!fs.existsSync(path.join(ROOT, 'commands/strata.md')), 'strata is a finishing option of pull, not a command');
-assert.ok(/strata\.mjs" stratify/.test(pull) && /strata-mr\.md/.test(pull), 'pull offers stratify and the MR description');
+assert.ok(!fs.existsSync(path.join(ROOT, 'scripts/strata.mjs')), 'the docs/code split is gone');
+assert.ok(/briefs\/mr\.md/.test(pull), 'pull offers the MR description');
 assert.ok(!/deep/.test((read('commands/prep.md').match(/^argument-hint:.*$/m) || [''])[0]), 'prep has no deep flag');
 assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads this folder and its direct subfolders');
 {
   const named = ['commands', 'briefs'].flatMap((d) => fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.md')).map((f) => `${d}/${f}`)).concat('README.md');
   for (const f of named) {
-    for (const gone of ['reviewer.md', 'closer.md', '/ristretto:strata', 'arm orchestrator', 'notes-only', 'round 2']) {
+    for (const gone of ['reviewer.md', 'closer.md', 'strata', 'arm orchestrator', 'notes-only', 'round 2']) {
       assert.ok(!read(f).includes(gone), `${f} still names "${gone}"`);
     }
   }
@@ -294,7 +303,7 @@ assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads th
   const blockedStep = pull.slice(pull.search(/^## 12\. Blocked/m), pull.search(/^## 13\./m));
   assert.ok(blockedStep.indexOf('git stash push') >= 0 && blockedStep.indexOf('git stash push') < blockedStep.indexOf('Then set the roadmap row'), 'stash first, then set the row');
   assert.ok(/never `docs\/ristretto\/roadmap\.md`/.test(blockedStep) && /`\.ristretto\.json`/.test(blockedStep), 'the stash never holds the roadmap or .ristretto.json');
-  assert.ok(/finishing options[^\n]*then the last line/.test(pull), 'unattended prints the finishing options, then the last line');
+  assert.ok(/the offer from step 13, then the last line/.test(pull), 'unattended prints the MR offer, then the last line');
   assert.ok(/contract: <repo>@<hash>:<file>/.test(brew), 'the brewer sends the snapshot in pull\'s own argument form');
   assert.ok(/dirty[^\n]*person/i.test(brew), 'a dead session\'s dirty tree is named for a person, not re-pulled into a stop');
   // A blocked pull is the brewer's to solve before the user's: a criterion that real data contradicted held a flight for five hours (2026-11-11).
@@ -307,49 +316,46 @@ const readmeDepSentence = (read('README.md').match(/A prerequisite counts as fin
 assert.ok(/`done`/.test(readmeDepSentence) && /box/.test(readmeDepSentence),
   'README dependency sentence must say done satisfies, even with a box still open');
 
-// 24. grind researches once: it checks staleness, guards the domain store around the run, and
-//     dispatches the researcher by path. It is no longer read-only, but writes only research.
+// 24. grind is read-only and researches in its own turn — no research file, no researcher.
 const grind = read('commands/grind.md');
-for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" check-domain', 'researcher.md']) {
-  assert.ok(grind.includes(s), `grind.md must carry "${s}"`);
-}
-assert.ok(!/Read-only: assess and print, change no files/.test(grind), 'grind writes research now — the read-only line must go');
-assert.ok(/never changes the verdict/.test(grind), 'a missing why must never change grind\'s verdict');
-const researcher = read('briefs/researcher.md');
-for (const s of ['## As-is', 'Exists:', 'Touches:', 'Already settled:', 'at commit', 'unconfirmed —']) {
-  assert.ok(researcher.includes(s), `researcher.md must keep the label "${s}" — research.js reads it`);
-}
+assert.ok(/Read-only: you change no files and commit nothing/.test(grind), 'grind is read-only again');
+assert.ok(!/research\.js|researcher\.md|docs\/ristretto\/research/.test(grind), 'grind writes no research file and dispatches no researcher');
+assert.ok(/never instructions/.test(grind) && /about ten searches/.test(grind), 'grind treats fetched text as data and keeps a search budget');
+assert.ok(/never changes the verdict/.test(grind), "a missing why must never change grind's verdict");
+assert.ok(!/prep <feature> deep/.test(grind), 'prep has no deep flag for grind to point at');
 
-// 25. prep reuses grind's research instead of paying for it again, and records the why.
+// 25. prep is the conversation (2026-11-19): it looks first and opens with an overview of scored
+//     options, asks only where answers change the work, writes the plan when the points are
+//     settled — no trigger phrase — and ends by asking whether to build now.
 const prep = read('commands/prep.md');
-for (const s of ['research.js" stale', 'research.js" snapshot', 'research.js" check-domain', 'researcher.md',
-                 '- Why: <outcome> · noticed by: <signal>', 'background, never a question']) {
-  assert.ok(prep.includes(s), `prep.md must carry "${s}"`);
+assert.ok(prep.indexOf('## 1. The overview') > 0 && prep.indexOf('## 1. The overview') < prep.indexOf('## 2. Talk it through'), 'the overview comes before any question');
+assert.ok(/a score out of 5/.test(prep) && /recommendation/.test(prep), 'the overview scores the options and recommends');
+assert.ok(/materially different work/.test(prep), 'prep asks only where answers lead to materially different work');
+assert.ok(/there is no phrase for it/.test(prep), 'no trigger phrase: prep reads from the conversation when the points are settled');
+assert.ok(/## 5\. Build it now\?/.test(prep) && /unattended/.test(prep) && /arms as one/.test(prep), 'prep ends by asking to build, and a yes starts a builder');
+assert.ok(/never instructions/.test(prep), 'fetched text is data in prep too');
+for (const gone of ['research.js', 'researcher.md', 'roast', 'prep facts', 'Units:', '## Approach', '[auto]', '[measure]', 'Blockers:', 'Parallel-with']) {
+  assert.ok(!prep.includes(gone), `prep.md must not name "${gone}" any more`);
 }
-assert.ok(/never escalates to roast mode by itself/.test(prep), 'a missing why must not trigger roast mode on its own');
-
-// 26. A confirmed domain entry binds every role like CLAUDE.md; an unconfirmed one never does.
-assert.ok(/docs\/ristretto\/domain\//.test(common) && /unconfirmed ones are context, never binding/.test(common),
-  'common.md must make confirmed domain entries binding and unconfirmed ones context only');
-
-// 27. Outside a research run nothing checks domain/ in code, so the builder roles are told: a
-//     fixer must never "resolve" a domain block by rewording the entry.
-assert.ok(/no agent edits them/.test(common), 'common.md must forbid every role from editing a confirmed domain entry');
-assert.ok(!/never changes a confirmed entry is checked in code/.test(read('README.md')),
-  'README must not claim code guards domain/ everywhere — it guards research runs');
-
-// 28. Research is per input, decided before the split — a split child reuses its parent's file
-//     instead of paying for a researcher run of its own.
-assert.ok(/never per child/.test(prep), 'prep must research once per input, never per split child');
-assert.ok(prep.indexOf('research.js" stale') < prep.indexOf('## Decompose only when'),
-  'prep must read the research before it decides a split');
-
-// 29. Research runs share one domain snapshot: prep researches inputs one at a time, and both
-//     commands say what an unchecked run (check-domain exit 2) means instead of passing it silently.
-for (const [f, t] of [['grind.md', grind], ['prep.md', prep]]) {
-  assert.ok(/exit 2 → the domain store was not checked/i.test(t), `${f} must say what check-domain exit 2 means`);
+for (const field of ['- Goal:', '- Why:', '- Acceptance:', '- Decisions:', '- Depends:', '- Provides:']) {
+  assert.ok(prep.includes(field), `the plan template carries "${field}" — board-plan.mjs and confirm.js read these`);
 }
-assert.ok(/one input at a time/.test(prep), 'prep must research one input at a time — the runs share one snapshot');
+assert.ok(/behaviour stays the same and the suite stays green/.test(prep), 'a refactor has an acceptance of its own');
+
+// 26. The domain store is gone, and nothing tells an agent to read or write it.
+for (const p of ['briefs/researcher.md', 'scripts/research.js', 'hooks/board-domain.mjs']) {
+  assert.ok(!fs.existsSync(path.join(ROOT, p)), `${p} was cut with the domain store`);
+}
+for (const f of [...COMMANDS, ...BRIEFS, 'commands/grind.md', 'commands/prep.md', 'commands/help.md', 'commands/status.md']) {
+  assert.ok(!/docs\/ristretto\/domain|research\.js|prep facts/.test(read(f)), `${f} must not name the domain store`);
+}
+
+// 27. Reports are for trying the feature: built, how to test, decided, open — and brew shows only
+//     a small progress block while it runs, with the early stops of an unattended agent named.
+assert.ok(/built:/.test(pull) && /test:/.test(pull) && /decided for you/.test(pull) && /open:/.test(pull), 'pull reports built, test, decided, open');
+assert.ok(/Your final message is the report/.test(pull), 'an unattended pull hands its report back with its last line');
+assert.ok(/☕ brew · /.test(brew) && /at most the last two done/.test(brew) && /the next two/.test(brew), 'brew shows the progress block, two done and two next at most');
+assert.ok(/announce the next step instead of taking it/.test(brew) && /offer to carry on/.test(brew), 'brew names the early stops it must not make');
 
 // 30. The confirm skill: "manual checks done" in chat ticks boxes through confirm.js, and only
 //     on the user's own words.

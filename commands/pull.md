@@ -11,16 +11,15 @@ Target: $ARGUMENTS
 - `nocommit` — skip the commit at the end
 - `decided: <question> → <ruling>` lines — the brewer's rulings; they bind the build (passed to the planner and the fixer as `Decided (binding)`) and go to the close with the build's own decisions
 - `contract: <repo>@<hash>:<file>` lines — a producer's contract in another repo, at a committed snapshot; every role reads it with `git -C <repo> show <hash>:<file>`, never from that repo's working tree
-
-If `shot` sent you here: skip the planner (step 7) and review at `medium`. That is the only difference.
+- `shot` — shot sent it: skip the planner (step 7) and review at `medium`. That is the only difference.
 
 > **`unattended` changes only this:**
 > 1. You never ask. Whatever would be a question becomes a one-line report and a stop.
 > 2. Review fixes only confirmed findings (step 10).
 > 3. A named feature with unfinished `Depends:` is built anyway — the brewer chose the order — and the report says so.
 > 4. On an `easy` row, step 7 is skipped as in shot. An `escalate:` then goes on with step 7 instead of stopping.
-> 5. Finishing options (step 13) are listed, not asked.
-> 6. Your last line is exactly one of:
+> 5. The MR description (step 13) is offered, not asked.
+> 6. Your final message is the report from **When done**, then a last line that is exactly one of:
 >    `pulled: <ID> <hash> — <n> check(s) open, <m> decision(s) taken, <k> finding(s) open`
 >    `blocked: <ID> — <who or what>`
 
@@ -38,12 +37,12 @@ Read `docs/ristretto/roadmap.md`; take it at its word.
 
 - **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). Found in one → that repo is where you build: run every command there (`cd <repo> && …`: a subagent's shell forgets a `cd`) and give every subagent you start its path. Hooks watch only the session's folder, so no stop is gated here: step 9's `verify` is the proof.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
-- **`blocked`** → attended: surface the recorded reason, ask whether to proceed. Unattended: the brewer fixed the cause or ruled on it — proceed.
+- **`blocked`** → attended: show the reason, ask whether to proceed. Unattended: proceed — the brewer fixed it or ruled on it.
 - **`next`** → the top `planned` row whose `Depends:` are all `done`. A `<folder>/<id>` dependency is looked up in `../<folder>/docs/ristretto/roadmap.md`; a missing folder or row is not done. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
 
 ## 2. Read the plan
 
-`docs/ristretto/plans/<FEATURE-ID>.md`. `## Contract` binds: criteria, `Provides:`/`Consumes:`, decisions — except a criterion the brewer ruled on: its `decided:` line replaces it, for the plan, the build and Evidence. `## Approach` is guidance and may be stale. Its `Tier` is in the roadmap row.
+`docs/ristretto/plans/<FEATURE-ID>.md`. Its acceptance, decisions and `Provides:` bind — except a criterion the brewer ruled on: its `decided:` line replaces it, for the plan, the build and Evidence. The rest is the build's to decide; an older plan's `## Approach` may be stale. Its `Tier` is in the roadmap row.
 
 ## 3. Pre-flight
 
@@ -51,7 +50,7 @@ Read `docs/ristretto/roadmap.md`; take it at its word.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. One exception: this feature's own build plan, left by an earlier pull that parked it (step 12 — `git stash list` shows `ristretto <FEATURE-ID> blocked`), is not a stop; the planner overwrites it. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard it. `unrecognised:` is informational. `left alone:` names the user's untracked files — never move, ignore, commit, stash or delete them.
+Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. Not a stop: this feature's own build plan from an earlier parked pull (`git stash list` shows `ristretto <FEATURE-ID> blocked`); the planner overwrites it. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard it. `left alone:` names the user's untracked files — never move, commit, stash or delete them.
 
 ## 4. Complete the gates config
 
@@ -63,7 +62,7 @@ Read `.ristretto.json` — create it, or add whatever key the pre-flight names m
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" arm
 ```
 
-The brewer's builder subagent runs `gate.js arm builder` instead: it shares the brewer's session, whose own turn-ends must not be gated against its half-built tree. Exit 1 only if it cannot write its marker — stop and report.
+A builder subagent — one that brew or prep started — runs `gate.js arm builder` instead: it shares its starter's session, whose own turn-ends must not be gated against its half-built tree. Exit 1 only if it cannot write its marker — stop and report.
 
 ## 6. Branch, and parked work
 
@@ -97,7 +96,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself. The b
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" verify
 ```
 
-Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green; you are the implementer here too, and no gate is ever weakened. A gate killed as hung is unverified, not proven broken — find what it waits on.
+Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green; you are the implementer here too, and no gate is ever weakened.
 
 ## 10. Review — one `/code-review`
 
@@ -135,13 +134,9 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
   `git stash push -u -m "ristretto <ID> blocked <YYYY-MM-DD>" -- <every path this feature touched>`
   Only this feature's code and plan: never `docs/ristretto/roadmap.md`, never `.ristretto.json`, never the `left alone:` files from step 3, and never discard anything. Then set the roadmap row's status to `blocked — <reason>`, nothing else, and commit it together with `.ristretto.json` if this pull created it: `docs(<FEATURE-ID>): blocked - <reason>`. Step 14, then the `blocked:` line, naming the stash.
 
-## 13. Finishing options
+## 13. MR description
 
-When the feature is committed, offer what applies — attended: ask; unattended: list:
-
-- leave the branch as it is
-- **split docs from code**, only when the branch carries `docs/ristretto/` changes: `node "${CLAUDE_PLUGIN_ROOT}/scripts/strata.mjs" stratify <base>..HEAD --pr-branch <branch>-mr --subject "docs(ristretto): <summary>"` builds a fresh branch with the code commits replayed and the planning in one commit, and never touches this one. Trust its `verified` field; `false` → say so and stop.
-- **write the MR description**: follow `${CLAUDE_PLUGIN_ROOT}/briefs/strata-mr.md`.
+When the feature is committed, offer to write the MR description — attended: ask; unattended: list it. Yes → follow `${CLAUDE_PLUGIN_ROOT}/briefs/mr.md`.
 
 ## 14. Disarm
 
@@ -153,20 +148,21 @@ Always — after a close, a block, or any stop above.
 
 ## When done
 
-Unattended: the finishing options from step 13 if any apply, then the last line from the box above — nothing else.
-
-Attended: what changed, which criteria hold, the review (fixed, left open), branch and commit (or uncommitted). Then the plan's open checks and the decisions taken — information, in force:
+The report is for trying the feature: short lines, nothing around them.
 
 ```
-🔧 1 check open — docs/ristretto/plans/<FEATURE-ID>.md
-   criterion 2 · Supabase SQL editor (dev) · add profiles.tier
-   say "manual checks done" once it is
-📝 decided while building, in force:
-   which client? → the bare one
-   overrule one in chat: /ristretto:prep overrule <FEATURE-ID> — <what instead>
+✓ <FEATURE-ID> <hash> — <title> · <branch>
+  built:  <two or three lines: what the user can do now>
+  test:   <the exact steps — URL, button, command — and what they should see>
+  decided for you: <question> → <ruling>; …  (overrule: `/ristretto:prep overrule`)
+  open:   <each manual check with its how:, each finding left open, anything unfinished> — or —
 ```
 
-End with a little cup:
+Blocked: `⏸ <FEATURE-ID> — <what it needs, from whom>`, and its stash.
+
+Unattended: the report, the offer from step 13, then the last line from the box above — nothing else.
+
+Attended: the report, then the offer from step 13, then a little cup:
 
 ```
   ( (

@@ -48,8 +48,6 @@ const svg = (w, h, vb, body) =>
 // ---------------------------------------------------------------------------------------------
 // Status marks (assets/Icons), 14×14 by default. Shape and hue always pair.
 
-const BOOK = (c) =>
-  `<path d="M7 3.2C5.6 2.2 3.6 1.9 1.6 2.2v8.6c2-.3 4 0 5.4 1 1.4-1 3.4-1.3 5.4-1V2.2c-2-.3-4 0-5.4 1z" fill="none" stroke="${c}" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 3.2v8.6" stroke="${c}" stroke-width="1.2"/>`;
 const TICK = (c) =>
   `<circle cx="7" cy="7" r="6" fill="${c}"/><path d="M4.3 7.2l1.9 1.9 3.6-3.9" fill="none" stroke="${HUE.white}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
 const CROSS = (c) =>
@@ -75,8 +73,6 @@ const SHAPES = {
   'suite-ok': () => TICK(HUE.success),
   'gate-red': () => CROSS(HUE.error),
   'suite-red': () => CROSS(HUE.error),
-  facts: () => BOOK(HUE.inactive),
-  'fact-conflict': () => `${BOOK(HUE.warning)}<circle cx="11" cy="3" r="2.6" fill="${HUE.warning}"/><rect x="10.45" y="1.4" width="1.1" height="2" rx=".4" fill="${HUE.white}"/><circle cx="11" cy="4.3" r=".55" fill="${HUE.white}"/>`,
   // A review note, not a blocking finding: a quiet grey bullet.
   note: () => `<circle cx="7" cy="7" r="2.4" fill="${HUE.inactive}"/>`,
   // The branch: a git branch in grey, context only.

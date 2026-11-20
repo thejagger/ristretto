@@ -11,7 +11,7 @@ const { pathToFileURL } = require('url');
   const s = await import(pathToFileURL(file).href);
 
   // Marks: every kind draws, 14×14, deterministic, small.
-  for (const k of ['planned', 'next', 'queued', 'running', 'lane', 'merge-queued', 'gate-red', 'person', 'findings', 'blocked', 'done', 'ready', 'facts', 'fact-conflict', 'suite-ok', 'suite-red']) {
+  for (const k of ['planned', 'next', 'queued', 'running', 'lane', 'merge-queued', 'gate-red', 'person', 'findings', 'blocked', 'done', 'ready', 'suite-ok', 'suite-red']) {
     const a = s.mark(k);
     assert.strictEqual(a, s.mark(k), k);
     assert.deepStrictEqual(s.dims(a), { width: 14, height: 14 }, k);

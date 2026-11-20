@@ -25,8 +25,8 @@ export function featureLogArgs(id) {
   return ['log', '--numstat', '--format=', '-E', `--grep=${TYPE}\\(${literal}\\):`];
 }
 
-// The feature a subject names, by the same rule. ristretto's own scope (strata's and lanes'
-// commits) is never a feature, and an ID only in the shape plans use for IDs can reach a path.
+// The feature a subject names, by the same rule. ristretto's own scope (its migrate and
+// planning commits) is never a feature, and an ID only in the shape plans use for IDs can reach a path.
 const SUBJECT = new RegExp(`${TYPE}\\(([^)]+)\\):`);
 export function featureIdOf(subject) {
   const m = SUBJECT.exec(String(subject));
