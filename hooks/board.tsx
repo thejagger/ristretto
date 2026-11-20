@@ -608,8 +608,10 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
       return (await drawBand($, e)) ?? next(e)
-    } catch {
-      return next(e)
+    } catch (err) {
+      // A chip that throws says why in one line, rather than vanishing with no word.
+      const { Text } = $.ui.resolve(e) as any
+      return <Text color="error" wrap="truncate-end">{`ristretto chip: ${String((err as any)?.message ?? err).slice(0, 200)}`}</Text>
     }
   })
 

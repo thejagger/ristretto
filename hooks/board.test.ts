@@ -507,6 +507,17 @@ describe('the band (v1): the chip above the prompt', () => {
     expect(w.closes).toBe(1)
   })
 
+  test('a brew just started, before any builder: the chip says BREW, the pane draws', async ($, on) => {
+    const clock = await start($, on)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await clock.settle()
+    const all = await (await band($)).findAll({ type: 'Svg' })
+    expect(all.length).toBe(1)
+    expect(all[0].props.alt).toContain('BREW')
+    const pane = await mount($)
+    expect((await pane.findAll({ type: 'Svg' }))[0].props.alt).toContain('brew')
+  })
+
   test('at rest: whose turn it is', async ($, on) => {
     await start($, on)
     const all = await (await band($)).findAll({ type: 'Svg' })
