@@ -31,7 +31,7 @@ const ROADMAP = table([
   '| b | pw | Waits on blk | normal | planned |',
 ]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number; closes?: number; agents?: { id: string; status: string; parentId?: string }[] }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number; closes?: number; agents?: { id: string; status: string; parentId?: string }[]; root?: string }
 
 // git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
 function gitFor(prefix: string, head: string, log: string) {
@@ -112,7 +112,7 @@ function install(on: any, w: World, theme = 'dark') {
   // The engine hands paths over resolved: `C:\repo\docs\…` on Windows.
   const rel = (p: string) => String(p).replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').replace(`${ROOT}/`, '')
   const isDir = (p: string) => Object.keys(w.files).some(f => f.startsWith(`${rel(p)}/`))
-  on('session.root', () => ({ value: ROOT }) as any)
+  on('session.root', () => ({ value: w.root ?? ROOT }) as any)
   on('session.id', () => ({ value: w.session }) as any)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as any)
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd ?? ROOT }) as any)
@@ -517,6 +517,33 @@ describe('the band (v1): the chip above the prompt', () => {
     expect(all[0].props.alt).toContain('BREW')
     const pane = await mount($)
     expect((await pane.findAll({ type: 'Svg' }))[0].props.alt).toContain('brew')
+  })
+
+  // Seen live twice (ecolaw, 2026-11-20): a fresh desktop session drew no chip and wrote no
+  // record, while a reload of the module mid-session drew both. The board must not hang on its
+  // session.start alone, nor on the folder it saw first.
+  test('with no session.start heard, the first draw starts the board', async ($, on) => {
+    const w = world()
+    on('ui.render', { component: 'AbovePrompt' } as any, ($: any, e: any) => ($.ui.resolve(e) as any).Text({ children: 'engine' }))
+    const clock = mock.clock(on, { now: NOW })
+    install(on, w)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await clock.settle()
+    const all = await (await band($)).findAll({ type: 'Svg' })
+    expect(all.length).toBe(1)
+    expect(all[0].props.alt).toContain('BREW')
+  })
+
+  test('a session that started elsewhere finds its repo once its folder is the repo', async ($, on) => {
+    const w = world()
+    w.root = 'C:/elsewhere'
+    on('ui.render', { component: 'AbovePrompt' } as any, ($: any, e: any) => ($.ui.resolve(e) as any).Text({ children: 'engine' }))
+    const clock = await start($, on, w)
+    expect((await (await band($)).findAll({ type: 'Svg' })).length).toBe(0)
+    w.root = undefined
+    await clock.advance(5000)
+    await clock.settle()
+    expect((await (await band($)).findAll({ type: 'Svg' }))[0].props.alt).toContain('YOUR TURN')
   })
 
   test('at rest: whose turn it is', async ($, on) => {

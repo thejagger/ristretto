@@ -516,6 +516,10 @@ async function settleBuilder($: EngineInterface) {
 // here refreshes its heartbeat at most once a minute: a file write, never an atom.
 async function poll($: EngineInterface) {
   try {
+    if ((await $.session.root()) !== bootRoot) {
+      await loadRoots($)
+      await refreshRepos($, true)
+    }
     await observeMarker($)
     await refreshRepos($)
     const now = await $.clock.now()
@@ -566,38 +570,56 @@ async function timelineOpts($: EngineInterface, nowMs: number) {
   }
 }
 
+// The repos this session shows, found from its folder; found again when the folder it reports
+// changes (a desktop session can report another folder before its own).
+let bootRoot: string | null = null
+async function loadRoots($: EngineInterface) {
+  bootRoot = await $.session.root()
+  cache.clear()
+  roots = await findRoots($)
+  // Run records live in the engine's store, per repo, so the history outlives the session.
+  storeKey = ownRoot ? `runs:${ownRoot}` : ''
+  const kept = storeKey ? await $.store.get(storeKey) : null
+  await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
+}
+
+// Started by session.start, or by the first hook that runs without it: seen live, a fresh
+// desktop session drew nothing and wrote nothing until a reload ran session.start again.
+let booted: Promise<void> | null = null
+const ready = ($: EngineInterface) => (booted ??= boot($).catch(() => {}))
+
+async function boot($: EngineInterface) {
+  for (const timer of timers) timer.cancel()
+  // The one timer: a poll that writes only what changed. No clock tick: running times count up
+  // inside their SVG.
+  timers = [$.clock.every(5000, () => void poll($))]
+  sessionId = await $.session.id()
+  lastRec = null
+  builder = null
+  await loadRoots($)
+  try {
+    pluginFormat = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
+  } catch {
+    // Without the plugin's format the format notice is skipped; the board itself still draws.
+  }
+  try {
+    version = String(JSON.parse(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`))).version ?? '')
+  } catch {
+    version = ''
+  }
+  await readTheme($)
+  await refreshRepos($, true)
+  // Before the poll, which would write a kept run as a fresh record.
+  await settleBuilder($)
+  await poll($)
+  await stamp($)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const begun = await next(e)
-    for (const timer of timers) timer.cancel()
-    // The one timer: a poll that writes only what changed. No clock tick: running times count up
-    // inside their SVG.
-    timers = [$.clock.every(5000, () => void poll($))]
-    sessionId = await $.session.id()
-    cache.clear()
-    lastRec = null
-    builder = null
-    roots = await findRoots($)
-    // Run records live in the engine's store, per repo, so the history outlives the session.
-    storeKey = ownRoot ? `runs:${ownRoot}` : ''
-    const kept = storeKey ? await $.store.get(storeKey) : null
-    await update($, runs, () => (Array.isArray(kept) ? (kept as BoardRecord[]) : []))
-    try {
-      pluginFormat = formatOf(await $.fs.read(`${$.plugin.root}/scripts/migrate.js`))
-    } catch {
-      // Without the plugin's format the format notice is skipped; the board itself still draws.
-    }
-    try {
-      version = String(JSON.parse(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`))).version ?? '')
-    } catch {
-      version = ''
-    }
-    await readTheme($)
-    await refreshRepos($, true)
-    // Before the poll, which would write a kept run as a fresh record.
-    await settleBuilder($)
-    await poll($)
-    await stamp($)
+    booted = boot($).catch(() => {})
+    await booted
     return begun
   })
 
@@ -616,6 +638,7 @@ export const register: Register = on => {
 
   // A click on the chip (board-press.tsx) opens the pane, or closes it when it is open.
   on('ui.message', async ($, e, next) => {
+    await ready($)
     if ((e.data as any)?.press !== 'toggle') return next(e)
     try {
       if (await read($, paneOpen)) await closePane($)
@@ -635,6 +658,7 @@ export const register: Register = on => {
 
   // The band above the prompt: the chip; a click on it opens or closes the pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await ready($)
     try {
       return (await drawBand($, e)) ?? next(e)
     } catch (err) {
@@ -646,6 +670,7 @@ export const register: Register = on => {
 
 
   on('command.run', async ($, e, next) => {
+    await ready($)
     // A bare /ristretto:status opens the board where it docks beside the transcript, at once
     // and with no model turn; a filter, or a layout that would put it inline, gets the text
     // roadmap from commands/status.md as before.
@@ -679,6 +704,7 @@ export const register: Register = on => {
   // observation, or the run has no command and is never unattended. From a builder subagent the
   // call carries its agentId.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+    await ready($)
     try {
       const skill = String((e as any).skill ?? '')
       const cmd = commandOf(skill) as 'pull' | 'shot' | 'brew' | null
@@ -695,6 +721,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    await ready($)
     // prep's last step starts a builder for the feature it planned: prep is over then, and its
     // pins must not come back when that build ends.
     try {
@@ -728,6 +755,7 @@ export const register: Register = on => {
 
   // Who works on a feature and on which model: the spawn says, once the subagent started.
   on('agent.spawn', async ($, e, next) => {
+    await ready($)
     const res = await next(e)
     try {
       const brief = parseBrief(String((e as any).prompt ?? ''))
@@ -747,6 +775,7 @@ export const register: Register = on => {
 
   // v1's steps: `gate.js verify` proves the build, `close.js` closes the feature.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    await ready($)
     try {
       const signal = signalOf({ tool: 'Bash', command: String((e as any).command ?? '') })
       if (signal) await observe($, signal)
@@ -757,12 +786,14 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
+    await ready($)
     const ran = await next(e)
     if (isRoadmap(e.file_path)) await refreshRepos($, true)
     return ran
   })
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    await ready($)
     const ran = await next(e)
     if (isRoadmap(e.file_path)) await refreshRepos($, true)
     return ran
@@ -781,6 +812,7 @@ export const register: Register = on => {
   })
 
   on('classic.Stop', async ($, e, next) => {
+    await ready($)
     await observe($, { kind: 'gate-start' })
     const t0 = await $.clock.now()
     const result = await next(e)
@@ -791,6 +823,7 @@ export const register: Register = on => {
   })
 
   on('classic.SubagentStop', async ($, e, next) => {
+    await ready($)
     await observe($, { kind: 'gate-start' })
     const t0 = await $.clock.now()
     const result = await next(e)
@@ -801,6 +834,7 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    await ready($)
     // The answer is whole before the turn's end runs on: pin from it first.
     if (e.agentId === undefined) {
       try {
@@ -827,6 +861,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    await ready($)
     // A render that throws leaves the pane blank with no word why: say it instead.
     try {
       return await drawPane($, e)
