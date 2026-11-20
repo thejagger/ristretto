@@ -1346,6 +1346,12 @@ async function main() {
       newer: `newer (${fmt.found}, this plugin writes ${FORMAT})`,
       unstamped: 'unstamped',
     }[fmt.state]);
+    // The setup file binds a builder too, and a builder never sees session start either.
+    const setupText = require('./setup.js').readSetup(projectDir);
+    if (setupText) {
+      console.log('setup: .ristretto/setup.md binds this build:');
+      for (const l of setupText.split('\n')) console.log(`  ${l}`);
+    }
     for (const [label, p] of [['pulling', markerPath]]) {
       const who = ownerLabel(p);
       if (who === null) { console.log(`${label}: not armed`); continue; }
@@ -1396,6 +1402,7 @@ async function main() {
       legacyToolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
     ].map((p) => path.basename(p)));
     known.add('build');
+    known.add('setup.md'); // written by /ristretto:init, read above
     for (const rel of allReportPaths()) known.add(path.basename(rel));
     let entries = [];
     try { entries = fs.readdirSync(path.join(projectDir, '.ristretto')); } catch { /* not armed yet */ }

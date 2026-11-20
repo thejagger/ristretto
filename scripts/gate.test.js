@@ -1731,4 +1731,20 @@ assert.strictEqual(r.status, 3, 'prove without a config is unverified');
   assert.strictEqual(r.stdout.split(/\r?\n/)[0], 'format: current');
 }
 
+// 163. stateShowsSetup / stateWithoutSetupUnchanged: a builder's pull gets the setup through state.
+{
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-setup-'));
+  r = gate(d, 'state');
+  assert.ok(!/^setup:/m.test(r.stdout), 'no setup file, no setup line — got: ' + r.stdout);
+  fs.mkdirSync(path.join(d, '.ristretto'), { recursive: true });
+  fs.writeFileSync(path.join(d, '.ristretto', 'setup.md'), '## Git\npush\n');
+  r = gate(d, 'state');
+  const lines = r.stdout.split(/\r?\n/);
+  assert.strictEqual(lines[1], 'setup: .ristretto/setup.md binds this build:', 'setup comes right after format — got: ' + r.stdout);
+  assert.strictEqual(lines[2], '  ## Git');
+  assert.strictEqual(lines[3], '  push');
+  assert.ok(!/unrecognised:.*setup\.md/.test(r.stdout), 'setup.md is a known file');
+  fs.rmSync(d, { recursive: true, force: true });
+}
+
 console.log('gate.test.js: all checks passed');

@@ -65,6 +65,34 @@ test('missingModuleStillExitsZero', () => {
   const r = spawnSync(process.execPath, [lone], { cwd: d, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: d } });
   assert.strictEqual(r.status, 0, r.stderr); assert.strictEqual(r.stdout, '');
 });
+// <parent>/<name>/.ristretto/setup.md holding `text`.
+function setup(parent, name, text) {
+  fs.mkdirSync(path.join(parent, name, '.ristretto'), { recursive: true });
+  fs.writeFileSync(path.join(parent, name, '.ristretto', 'setup.md'), text);
+}
+test('noSetupNoOutput', () => { const d = tmp(); repo(d, '.', FORMAT); const r = run(d); assert.strictEqual(r.status, 0); assert.strictEqual(r.stdout, ''); });
+test('setupHere', () => {
+  const d = tmp(); repo(d, '.', FORMAT); setup(d, '.', '# s\n## Git\npush\n');
+  const ctx = JSON.parse(run(d).stdout).hookSpecificOutput.additionalContext;
+  assert.ok(ctx.includes('ristretto setup: this folder — binds every role in it:'), ctx);
+  assert.ok(ctx.includes('## Git\npush'), ctx);
+});
+test('setupPerSubfolder', () => {
+  const d = tmp(); repo(d, 'a', '0.22'); setup(d, 'a', 'A-ONLY'); setup(d, 'b', 'B-ONLY');
+  const n = s.notes(d);
+  assert.strictEqual(n.length, 3, JSON.stringify(n));
+  assert.ok(n[0].startsWith('ristretto format notice: a — behind'));
+  assert.strictEqual(n[1], 'ristretto setup: a — binds every role in it:\nA-ONLY');
+  assert.strictEqual(n[2], 'ristretto setup: b — binds every role in it:\nB-ONLY');
+});
+test('setupIsCapped', () => {
+  const d = tmp(); setup(d, '.', 'x'.repeat(10000));
+  const [block] = s.notes(d); const body = block.split('\n').slice(1);
+  assert.strictEqual(body[0].length, 4000);
+  assert.strictEqual(body[1], '… cut at 4000 characters — read .ristretto/setup.md');
+});
+test('emptySetupIsSilent', () => { const d = tmp(); setup(d, '.', '  \n\n '); assert.strictEqual(run(d).stdout, ''); });
+
 test('hooksJsonRunsIt', () => {
   const h = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'hooks', 'hooks.json'), 'utf8')).hooks.SessionStart;
   assert.ok(h && h[0].hooks[0].command.includes('scripts/session-start.js'));
