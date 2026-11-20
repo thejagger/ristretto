@@ -36,6 +36,7 @@ function norm(phases) {
     const w = Number(p.weight);
     const pr = Number(p.progress);
     return {
+      name: p.name,
       state: p.state === 'done' || p.state === 'current' ? p.state : 'todo',
       w: Number.isFinite(w) && w > 0 ? w : 1,
       pr: Number.isFinite(pr) ? clamp01(pr) : 0,
@@ -66,9 +67,14 @@ function segments(ph, x0, x1, gap) {
   });
 }
 
-function render(g, phases, red, id) {
+// `colors` (v1): an ink and a pale per step name; each phase's pixels take its step's ink, the live
+// one its pale sparks too. Without it, the green / clay / grey of before, byte for byte.
+function render(g, phases, red, id, colors) {
   const ph = norm(phases);
-  const live = red ? ERR : CLAY;
+  const ink = (i, fallback) => (colors && colors[ph[i]?.name]?.ink) || fallback;
+  const ci = ph.findIndex((p) => p.state === 'current');
+  const live = red ? ERR : ink(ci, CLAY);
+  const pale = (colors && colors[ph[ci]?.name]?.pale) || PALE;
   const T = red ? 3 : 1.8;          // twinkle loop; a red gate slows down
   const TH = red ? 3 : 2.4;         // halo breath
   const seg = segments(ph, g.x0, g.x1, g.gap);
@@ -107,7 +113,7 @@ function render(g, phases, red, id) {
       if (st === 'done') {
         if (h1 > g.lit + (0.98 - g.lit) * rg) return;     // density ramps toward the thumb
         const v = 0.55 * rg + 0.45 * h2;                   // and so does brightness
-        put(lit, 'D' + (v < 0.3 ? 0 : v < 0.5 ? 1 : v < 0.7 ? 2 : 3), x, y);
+        put(lit, 'D' + (colors ? i + '_' : '') + (v < 0.3 ? 0 : v < 0.5 ? 1 : v < 0.7 ? 2 : 3), x, y);
       } else if (st === 'current' && mid < tx) {
         if (h1 > g.lit + (0.98 - g.lit) * rg) return;
         const dist = tx - mid;
@@ -120,7 +126,7 @@ function render(g, phases, red, id) {
         }
       } else if (st === 'current') {
         if (h1 < g.sparse + 0.08) put(faint, 'R', x, y);              // the rest of the live phase
-      } else if (h1 < g.sparse) put(faint, h2 < 0.6 ? 'Z0' : 'Z1', x, y);
+      } else if (h1 < g.sparse) put(faint, (h2 < 0.6 ? 'Z0' : 'Z1') + (colors ? i : ''), x, y);
     });
   }
 
@@ -128,10 +134,19 @@ function render(g, phases, red, id) {
   const R = faint.get('R'), Z0 = faint.get('Z0'), Z1 = faint.get('Z1');
   if (Z0) dim += `<path stroke="${IDLE}" opacity=".3" d="${Z0}"/>`;
   if (Z1) dim += `<path stroke="${IDLE}" opacity=".5" d="${Z1}"/>`;
+  if (colors) ph.forEach((_, i) => {
+    const a = faint.get('Z0' + i), b = faint.get('Z1' + i);
+    if (a) dim += `<path stroke="${ink(i, IDLE)}" opacity=".3" d="${a}"/>`;
+    if (b) dim += `<path stroke="${ink(i, IDLE)}" opacity=".5" d="${b}"/>`;
+  });
   if (R) dim += `<path stroke="${live}" opacity=".3" d="${R}"/>`;
 
   let glow = '';
   DONE_OPACITY.forEach((op, l) => {
+    if (colors) {
+      ph.forEach((_, i) => { const d = lit.get('D' + i + '_' + l); if (d) glow += `<path stroke="${ink(i, OK)}" opacity="${op}" d="${d}"/>`; });
+      return;
+    }
     const d = lit.get('D' + l);
     if (d) glow += `<path stroke="${OK}" opacity="${op}" d="${d}"/>`;
   });
@@ -140,7 +155,7 @@ function render(g, phases, red, id) {
     for (let w = 0; w < 6; w++) { const d = lit.get('C' + l + w); if (d) inner += `<path class="t d${w}" d="${d}"/>`; }
     if (inner) glow += `<g stroke="${live}" opacity="${op}">${inner}</g>`;
   });
-  [['P', red ? WHITE : PALE, red ? ' opacity=".6"' : ''], ['W', WHITE, '']].forEach(([p, col, extra]) => {
+  [['P', red ? WHITE : pale, red ? ' opacity=".6"' : ''], ['W', WHITE, '']].forEach(([p, col, extra]) => {
     let inner = '';
     for (let w = 0; w < 6; w++) { const d = lit.get(p + w); if (d) inner += `<path class="s d${w}" d="${d}"/>`; }
     if (inner) glow += `<g stroke="${col}"${extra}>${inner}</g>`;
@@ -149,7 +164,7 @@ function render(g, phases, red, id) {
   let bg = '';
   seg.forEach(([s, e], i) => {
     const st = ph[i].state;
-    const [fill, op] = st === 'done' ? [OK, '.2'] : st === 'current' ? [live, '.12'] : [IDLE, '.16'];
+    const [fill, op] = st === 'done' ? [ink(i, OK), '.2'] : st === 'current' ? [live, '.12'] : colors ? [ink(i, IDLE), '.1'] : [IDLE, '.16'];
     bg += `<rect x="${s}" y="${g.ty}" width="${e - s}" height="${g.th}" fill="${fill}" fill-opacity="${op}"/>`;
     if (st === 'current' && tx > s) {
       bg += `<rect x="${s}" y="${g.ty}" width="${num(Math.min(tx, e) - s)}" height="${g.th}" fill="${live}" fill-opacity=".14"/>`;
@@ -165,13 +180,13 @@ function render(g, phases, red, id) {
     `@keyframes ${id}b{0%,100%{opacity:.4}50%{opacity:.85}}` + REDUCED;
 
   const gradient = at.live
-    ? `<radialGradient id="${id}h"><stop offset="0" stop-color="${red ? WHITE : PALE}" stop-opacity=".85"/>` +
+    ? `<radialGradient id="${id}h"><stop offset="0" stop-color="${red ? WHITE : pale}" stop-opacity=".85"/>` +
       `<stop offset=".4" stop-color="${live}" stop-opacity=".35"/><stop offset="1" stop-color="${live}" stop-opacity="0"/></radialGradient>`
     : '';
   const halo = at.live
     ? `<ellipse class="h" cx="${num(tx)}" cy="${num(cy)}" rx="${g.hrx}" ry="${g.hry}" fill="url(#${id}h)"/>`
     : '';
-  const ring = at.live ? live : ph.some((p) => p.state === 'done') ? OK : IDLE;
+  const ring = at.live ? live : ph.some((p) => p.state === 'done') ? ink(at.k, OK) : IDLE;
   const thumb = `<rect x="${num(tx - g.tw / 2)}" y="${g.tY}" width="${g.tw}" height="${g.tH}" rx="${g.tw / 2}" ` +
     `fill="${WHITE}" stroke="${ring}" stroke-width="${g.tsw}"/>`;
 
@@ -185,12 +200,12 @@ function render(g, phases, red, id) {
     `${thumb}</svg>`;
 }
 
-function tracker({ width, phases, red } = {}) {
+function tracker({ width, phases, red, colors } = {}) {
   const W = Math.max(60, Math.round(Number(width) || 420));
   return render({
     W, H: 21, x0: 2, x1: W - 2, ty: 3, th: 15, ps: 3, rows: [5, 9, 13], gap: 2, edge: 1, cap: 1.25, lit: 0.58, sparse: 0.22,
     tw: 7, tY: 1.5, tH: 18, tsw: 1.25, hrx: 26, hry: 10.5, blur: 1.3, nearW: 6, nearP: 18,
-  }, phases, !!red, 'e');
+  }, phases, !!red, 'e', colors);
 }
 
 function band({ phases, red } = {}) {
@@ -279,12 +294,12 @@ const DEMO = [
 
 // The band's bar, and a lane row's: a bold 12px track (band() drew an 8px one, too thin beside
 // text) holding three rows of fine 2px pixels, so each phase still shows a field of them.
-function chip({ phases, red, width = 60 } = {}) {
+function chip({ phases, red, width = 60, colors } = {}) {
   const W = Math.max(40, Math.round(Number(width) || 60));
   return render({
     W, H: 14, x0: 2, x1: W - 2, ty: 1, th: 12, ps: 2, rows: [3, 6, 9], gap: 2, edge: 1, cap: 1, lit: 0.7, sparse: 0.26,
     tw: 3, tY: 0.5, tH: 13, tsw: 0.75, hrx: 7, hry: 6, blur: 0.8, nearW: 3, nearP: 8,
-  }, phases, !!red, 'g');
+  }, phases, !!red, 'g', colors);
 }
 
 export { tracker, band, chip, terminal, terminalSegments, trackerWidth, DEMO };
