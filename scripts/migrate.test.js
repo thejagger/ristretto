@@ -376,4 +376,26 @@ for (const name of ['vs', 'api', 'multi']) {
   assert.strictEqual(run(dir, 'check').code, 3);
 }
 
+// formatState: the one answer check, the session-start hook and gate.js state all share.
+{
+  const stamped = (v, eol = '\n') => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-'));
+    fs.mkdirSync(path.join(d, 'docs', 'ristretto'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'docs', 'ristretto', 'roadmap.md'),
+      ['# Ristretto Roadmap', v === null ? '' : `<!-- ristretto-format: ${v} -->`, ''].join(eol));
+    return d;
+  };
+  assert.deepStrictEqual(m.formatState(fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-'))), { state: 'none', found: null });
+  assert.deepStrictEqual(m.formatState(stamped(m.FORMAT)), { state: 'current', found: m.FORMAT });
+  assert.deepStrictEqual(m.formatState(stamped('0.22')), { state: 'behind', found: '0.22' });
+  assert.deepStrictEqual(m.formatState(stamped('9.9')), { state: 'newer', found: '9.9' });
+  assert.deepStrictEqual(m.formatState(stamped(null)), { state: 'unstamped', found: null });
+  // crlfStamp
+  assert.deepStrictEqual(m.formatState(stamped('0.22', '\r\n')), { state: 'behind', found: '0.22' });
+  // a roadmap that is a directory is not a roadmap
+  const odd = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-'));
+  fs.mkdirSync(path.join(odd, 'docs', 'ristretto', 'roadmap.md'), { recursive: true });
+  assert.deepStrictEqual(m.formatState(odd), { state: 'none', found: null });
+}
+
 console.log('migrate: all checks passed');

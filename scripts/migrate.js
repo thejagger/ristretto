@@ -347,6 +347,19 @@ function apply(dir, roadmapText) {
   }
 }
 
+const roadmapPath = (dir) => path.join(dir, 'docs', 'ristretto', 'roadmap.md');
+
+// Where the project's roadmap stands against this plugin's FORMAT. Never throws: a roadmap that
+// cannot be read is no roadmap.
+function formatState(dir) {
+  let text;
+  try { text = fs.readFileSync(roadmapPath(dir), 'utf8'); } catch { return { state: 'none', found: null }; }
+  const stamp = STAMP_RE.exec(text);
+  if (!stamp) return { state: 'unstamped', found: null };
+  const cmp = compare(stamp[1], FORMAT);
+  return { state: cmp > 0 ? 'newer' : cmp === 0 ? 'current' : 'behind', found: stamp[1] };
+}
+
 function main() {
   const mode = process.argv[2] || 'check';
   if (mode !== 'check' && mode !== 'apply') {
@@ -354,33 +367,30 @@ function main() {
     process.exit(2);
   }
   const dir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  let text = null;
-  try { text = fs.readFileSync(path.join(dir, 'docs', 'ristretto', 'roadmap.md'), 'utf8'); } catch { /* no roadmap yet */ }
-  if (text === null) {
+  const { state, found } = formatState(dir);
+  if (state === 'none') {
     console.log(`format: ${FORMAT} (no roadmap yet — nothing to migrate)`);
     process.exit(0);
   }
-  const found = STAMP_RE.exec(text);
-  if (!found) {
+  if (state === 'unstamped') {
     console.error('ristretto: the roadmap carries no format stamp, so it predates 0.13 and its shape cannot be told. '
       + `Bring it to the ${FORMAT} layout by hand, then add <!-- ristretto-format: ${FORMAT} --> under its title.`);
     process.exit(2);
   }
-  const cmp = compare(found[1], FORMAT);
-  if (cmp > 0) {
-    console.error(`ristretto: this project is on format ${found[1]}, newer than this plugin's ${FORMAT}. Update the plugin; do not migrate.`);
+  if (state === 'newer') {
+    console.error(`ristretto: this project is on format ${found}, newer than this plugin's ${FORMAT}. Update the plugin; do not migrate.`);
     process.exit(3);
   }
-  if (cmp === 0) {
+  if (state === 'current') {
     console.log(`format: ${FORMAT} (current)`);
     process.exit(0);
   }
   if (mode === 'check') {
-    console.log(`format: ${found[1]} → ${FORMAT}: run node scripts/migrate.js apply`);
+    console.log(`format: ${found} → ${FORMAT}: run node scripts/migrate.js apply`);
     process.exit(1);
   }
-  apply(dir, text);
+  apply(dir, fs.readFileSync(roadmapPath(dir), 'utf8'));
 }
 
-module.exports = { FORMAT, readTable, migrateRoadmap, parseChecks, migratePlan };
+module.exports = { FORMAT, formatState, readTable, migrateRoadmap, parseChecks, migratePlan };
 if (require.main === module) main();
