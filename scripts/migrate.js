@@ -3,7 +3,8 @@
 //
 // The commands read and write docs/ristretto/. When that layout changes shape, a project prepped
 // under an older plugin is misread quietly, so the roadmap carries a stamp of the format it was
-// written for and every command checks it before touching anything. "Is this project current"
+// written for. The session-start hook and `gate.js state` read it through formatState; `check`
+// is there for a person or a test. "Is this project current"
 // and "rewrite it to current" are facts and transforms, so they live in code, not in a prompt.
 //
 //   check   exit 0 = current (or no roadmap yet), 1 = migration needed, 2 = can't tell (unstamped

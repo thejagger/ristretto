@@ -86,7 +86,8 @@ for (const c of ['commands/pull.md', 'commands/prep.md', 'commands/status.md', '
     assert.ok(/format notice/.test(read(c)), `${c} acts on the session-start notice`);
     assert.ok(/has not already migrated/.test(read(c)), `${c} acts on a notice once, not again after a migration`);
   }
-  assert.ok(/in the folder it names \(a subfolder as `cd <folder> && …`\)/.test(read('commands/status.md')), 'status migrates in the folder the notice names');
+  const st = read('commands/status.md');
+  assert.ok(st.includes('the next prep/pull/brew there') && !st.includes('cd <folder>'), 'status never migrates a subfolder: it names it and points at the next prep/pull/brew there');
 }
 
 // 5. Every brief is reachable: each one is named by at least one command or by common.md.

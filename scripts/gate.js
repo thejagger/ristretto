@@ -46,7 +46,6 @@ const crypto = require('crypto');
 const { spawn, spawnSync, execSync } = require('child_process');
 const { readReport } = require('./testreport');
 const { ratchet, load: loadBaseline, save: saveBaseline } = require('./baseline');
-const { formatState, FORMAT } = require('./migrate.js');
 
 const MODE = process.argv[2] || 'quick';
 const ARG = process.argv[3] || '';
@@ -1338,6 +1337,7 @@ async function main() {
   if (MODE === 'state') {
     // First line, always: a builder subagent never sees the session-start hook's output, so the
     // project's format reaches it through here.
+    const { formatState, FORMAT } = require('./migrate.js');
     const fmt = formatState(projectDir);
     console.log('format: ' + {
       none: 'no roadmap',

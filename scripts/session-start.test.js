@@ -58,6 +58,13 @@ test('manySubfolders', () => {
   repo(d, 'r7', '0.22'); const t = Date.now();
   assert.strictEqual(s.notes(d).length, 1); assert.ok(Date.now() - t < 1000, 'one file per subfolder, nothing deeper');
 });
+test('missingModuleStillExitsZero', () => {
+  // A half-synced plugin cache: session-start.js with no migrate.js beside it.
+  const d = tmp(); const lone = path.join(d, 'session-start.js');
+  fs.copyFileSync(SCRIPT, lone); repo(d, '.', '0.22');
+  const r = spawnSync(process.execPath, [lone], { cwd: d, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: d } });
+  assert.strictEqual(r.status, 0, r.stderr); assert.strictEqual(r.stdout, '');
+});
 test('hooksJsonRunsIt', () => {
   const h = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'hooks', 'hooks.json'), 'utf8')).hooks.SessionStart;
   assert.ok(h && h[0].hooks[0].command.includes('scripts/session-start.js'));

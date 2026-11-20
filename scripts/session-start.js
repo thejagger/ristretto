@@ -7,11 +7,10 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { FORMAT, formatState } = require('./migrate.js');
 
 const LINE = {
-  behind: (found) => `behind (${found} → ${FORMAT})`,
-  newer: (found) => `newer (${found}, this plugin writes ${FORMAT}): update the plugin`,
+  behind: (found, format) => `behind (${found} → ${format})`,
+  newer: (found, format) => `newer (${found}, this plugin writes ${format}): update the plugin`,
   unstamped: () => 'unstamped',
 };
 
@@ -26,11 +25,13 @@ function repos(dir) {
 }
 
 // Every line the hook has to say about `dir`, in a stable order.
+// The require is here, not at the top, so a missing migrate.js is caught by main's try.
 function notes(dir) {
+  const { FORMAT, formatState } = require('./migrate.js');
   const out = [];
   for (const [where, repoDir] of repos(dir)) {
     const { state, found } = formatState(repoDir);
-    if (LINE[state]) out.push(`ristretto format notice: ${where} — ${LINE[state](found)}`);
+    if (LINE[state]) out.push(`ristretto format notice: ${where} — ${LINE[state](found, FORMAT)}`);
   }
   return out;
 }
