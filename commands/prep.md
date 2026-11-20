@@ -56,6 +56,14 @@ Ask only where different answers lead to materially different work, and always w
 
 You notice from the conversation when the points are settled; there is no phrase for it. Then offer the plan.
 
+The board pins what the chat scrolls away. End a turn in which something moved with one line for each:
+
+- `open: <topic> — <the question>` for a point still to settle,
+- `decided: <topic> → <ruling>` once it is,
+- `found: <one fact>` for something read in the code, a doc or the ticket that a decision rests on.
+
+One short topic per point, the same words every time it comes up. A turn where nothing moved gets no such lines.
+
 ## 3. Split only on a real seam
 
 Default to **one** plan per input: the ID is the git-tracking key, and over-splitting is the failure mode. Split only for independently shippable deliverables, separate definitions of done, or a feature too big for one build (`grind`'s 21). Print the proposed split, one line per feature, and let the user merge or veto it.

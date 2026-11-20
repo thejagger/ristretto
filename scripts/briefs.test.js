@@ -296,6 +296,10 @@ assert.ok(read('commands/help.md').split(/\r?\n/).length <= 25, 'help.md fits a 
 assert.ok(!fs.existsSync(path.join(ROOT, 'scripts/strata.mjs')), 'the docs/code split is gone');
 assert.ok(/briefs\/mr\.md/.test(pull), 'pull offers the MR description');
 assert.ok(!/deep/.test((read('commands/prep.md').match(/^argument-hint:.*$/m) || [''])[0]), 'prep has no deep flag');
+// v1 board (spec 2026-11-20): prep's marker lines are what the pane pins (hooks/board-pins.mjs).
+for (const marker of ['`decided: <topic> → <ruling>`', '`open: <topic> — <the question>`', '`found: <one fact>`']) {
+  assert.ok(read('commands/prep.md').includes(marker), `prep writes the ${marker} line the board pins`);
+}
 assert.ok(/direct subfolders/.test(read('commands/status.md')), 'status reads this folder and its direct subfolders');
 {
   const named = ['commands', 'briefs'].flatMap((d) => fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.md')).map((f) => `${d}/${f}`)).concat('README.md');
