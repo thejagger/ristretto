@@ -5,7 +5,7 @@ import type { Board, BoardAtWork, BoardLive, BoardPins, BoardPrep, BoardRecord, 
 import { EMPTY_BOARD, commandOf, duration, fold, formatOf, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, signalOf } from './board-model.mjs'
 import { EMPTY_PINS, foldPins, pinsOf } from './board-pins.mjs'
 import { BASES, ago, baseArgs, branchOf, defaultBranch, featureIdOf, headArgs, isDocs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
-import { phaseLock } from './board-svg.mjs'
+import { phaseLock, scope } from './board-svg.mjs'
 import { parseChecks, parseDecisions, parsePlan, siblingOf } from './board-plan.mjs'
 import { addGate, addRole, addTokens, closeRole, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
 import { endedOf, judge, needsBeat, recordOf, sameShown } from './board-atwork.mjs'
@@ -510,6 +510,8 @@ let themeKnown = false
 // on its drawings (a command's presentation speaks for the terminal only). A plain variable, so
 // a drawing that learns it writes no state.
 let docks = false
+// The subagent the brewer sent to build, by its agentId: its turn's end is its run's end.
+let builder: string | null = null
 async function readTheme($: any) {
   themeKnown = true
   try {
@@ -657,6 +659,7 @@ export const register: Register = on => {
       else if (cmd && (e as any).agentId === undefined) await endPrep($)
       const signal = signalOf({ tool: 'Skill', skill })
       if (signal) await observe($, signal)
+      if (cmd && (e as any).agentId !== undefined) builder = String((e as any).agentId)
       if (cmd) await observe($, { kind: 'command', command: cmd, args: String((e as any).args ?? ''), agent: (e as any).agentId !== undefined })
     } catch {
       // The board never stands between the model and a skill.
@@ -786,6 +789,11 @@ export const register: Register = on => {
       // At a folder no marker says a builder's run ended: the brewer's turn after its close does.
       const now = await read($, live)
       if (!ownRoot && now?.agent && now.phase === 'closing') await observe($, { kind: 'run-end' })
+    } else if (e.agentId === builder) {
+      // The builder's own end ends its run however it ended: closed, failed, or stopped before
+      // it armed, when no marker goes away to say so.
+      builder = null
+      if ((await read($, live))?.agent) await observe($, { kind: 'run-end' })
     }
     await refreshRepos($)
     return done
@@ -891,7 +899,7 @@ async function drawBand($: any, e: any) {
   if (rich) {
     return (
       <els.Box flexDirection="column" position="relative">
-        <els.Svg alt={alt} height={40} source={phaseLock(chipSvg({ ...c, now: nowMs }), nowMs)} />
+        <els.Svg alt={alt} height={40} source={scope(phaseLock(chipSvg({ ...c, now: nowMs }), nowMs), 'bc')} />
         {press}
       </els.Box>
     )
@@ -911,8 +919,11 @@ function richPane(els: any, view: any, nowMs: number) {
   const gap = (key: string) => <Box key={key} height={1} />
   const label = (key: string, text: string, color = 'inactive') => <Text key={key} size="caption" weight="semibold" color={color}>{text}</Text>
   const head = header({ ...view.head, now: nowMs })
+  // Every image gets its own style names: they all land in one page (see scope).
+  let shown = 0
+  const img = (src: string) => scope(phaseLock(src, nowMs), `p${shown++}`)
   const meterEl = (key: string, phases: any[], red: boolean) => (
-    <Svg key={key} alt={`steps: ${phases.map((p: any) => `${p.name} ${p.state}`).join(', ')}`} height={21} source={phaseLock(meter({ phases, red }), nowMs)} />
+    <Svg key={key} alt={`steps: ${phases.map((p: any) => `${p.name} ${p.state}`).join(', ')}`} height={21} source={img(meter({ phases, red }))} />
   )
   // A timeline row: the rail's box two cells wide and as tall as the words beside it; the rail
   // image hangs in it out of the flow and is cut at the row's end.
@@ -920,10 +931,11 @@ function richPane(els: any, view: any, nowMs: number) {
     <Box key={key} flexDirection="row" alignItems="stretch">
       <Box width={2} flexShrink={0} position="relative" overflow="hidden">
         <Box position="absolute" top={0} left={0}>
-          <Svg alt="timeline" width={16} height={600} source={phaseLock(rail(kind, step), nowMs)} />
+          <Svg alt="timeline" width={16} height={600} source={img(rail(kind, step))} />
         </Box>
       </Box>
-      <Box flexDirection="column" flexGrow={1} paddingLeft={1}>{children}</Box>
+      {/* minWidth 0: a long title is cut at the pane's edge instead of widening the row past it. */}
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingLeft={1}>{children}</Box>
     </Box>
   )
   const point = (key: string, top: string, words: string, topColor = 'inactive') => (
@@ -956,10 +968,10 @@ function richPane(els: any, view: any, nowMs: number) {
     for (const c of view.cards) {
       first = false
       body.push(stop(c.key, 'live', c.step, [
-        <Box key="card" flexDirection="column" borderStyle="round" borderColor={CARD} backgroundColor={CARD} paddingX={1}>
+        <Box key="card" flexDirection="column" minWidth={0} borderStyle="round" borderColor={CARD} backgroundColor={CARD} paddingX={1}>
           <Text mono size="caption" color="inactive">{caption([c.tag, c.id])}</Text>
           <Text weight="semibold" color="text" wrap="truncate-end">{c.title}</Text>
-          <Svg alt={`${c.word}, step ${c.count}`} height={44} source={stepWord({ word: c.word, step: c.step, count: c.count })} />
+          <Svg alt={`${c.word}, step ${c.count}`} height={44} source={img(stepWord({ word: c.word, step: c.step, count: c.count }))} />
           {meterEl('meter', c.effort, c.red)}
           {stepLine('steps', c.effort)}
         </Box>,
@@ -1043,7 +1055,7 @@ function richPane(els: any, view: any, nowMs: number) {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Svg alt={headAlt(view)} height={head.h} source={phaseLock(head.src, nowMs)} />
+      <Svg alt={headAlt(view)} height={head.h} source={img(head.src)} />
       <Box height={1} />
       {body}
       <Box height={1} />

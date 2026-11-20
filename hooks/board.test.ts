@@ -608,6 +608,22 @@ describe('v1: the steps, prep and its pins', () => {
     expect(w.state!.live).toBe(null)
   })
 
+  // Seen live (ecolaw, 2026-11-20): a builder stopped while it planned, before it armed, so no
+  // marker went away; the board kept a RUNNING brew and its heartbeat for good.
+  test('a builder stopped before it armed: its end ends the run, the record says ended', async ($, on) => {
+    const { w } = await start($, on)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Skill', skill: 'ristretto:pull', args: 'p1 unattended', agentId: 'b1' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: '> PLANNER for ristretto feature **p1**', description: 'plan', subagent_type: 'general-purpose', agentId: 'b1', run_in_background: true } as any).catch(() => {})
+    expect(w.state!.live.id).toBe('p1')
+    // A subagent of the builder ending is not the builder ending.
+    await $.turn.complete(turnEnd('', { agentId: 'planner1' }) as any).catch(() => {})
+    expect(w.state!.live.id).toBe('p1')
+    await $.turn.complete(turnEnd('', { agentId: 'b1', reason: 'aborted', isAborted: true }) as any).catch(() => {})
+    expect(w.state!.live).toBe(null)
+    expect(JSON.parse(w.files['.ristretto/at-work.json']).endedAt).not.toBeNull()
+  })
+
   test('on the desktop, which docks panes, prep opens the pane by itself', async ($, on) => {
     const { w } = await start($, on)
     await band($)

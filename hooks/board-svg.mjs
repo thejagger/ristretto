@@ -104,6 +104,21 @@ export function clockWords(ms, format = 'clock') {
 // where the wall clock has it in its loop (a negative animation-delay), so even a redraw does not
 // show. The time is the drawing's stamp, passed in; LEAD_MS covers drawing to showing.
 
+// The desktop draws every image into one page, so their styles meet: the meter's `.t` twinkle
+// dims the strip's `.t` track, a chip's clock wheels turn the header's, one `#v` clips the other
+// clocks. Each image's classes, ids and keyframes take a prefix of its own. Run after phaseLock.
+export function scope(src, p) {
+  const css = (s) => s
+    .replace(/@keyframes ([\w-]+)/g, (_m, k) => `@keyframes ${p}${k}`)
+    .replace(/animation:([\w-]+)/g, (m, k) => (k === 'none' ? m : `animation:${p}${k}`))
+    .replace(/\.([A-Za-z_][\w-]*)/g, (_m, c) => `.${p}${c}`);
+  return src
+    .replace(/<style>([\s\S]*?)<\/style>/g, (_m, s) => `<style>${css(s)}</style>`)
+    .replace(/ class="([^"]*)"/g, (_m, c) => ` class="${c.split(/\s+/).filter(Boolean).map((x) => p + x).join(' ')}"`)
+    .replace(/ id="([^"]*)"/g, (_m, i) => ` id="${p}${i}"`)
+    .replace(/url\(#([^)]*)\)/g, (_m, i) => `url(#${p}${i})`);
+}
+
 const LEAD_MS = 50;
 export function phaseLock(src, nowMs) {
   if (!src.includes('@keyframes') && !/animation:/.test(src)) return src;

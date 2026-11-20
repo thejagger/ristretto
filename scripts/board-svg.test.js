@@ -32,6 +32,21 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(a.replace(/animation-delay:-?[\d.]+s/g, ''), b.replace(/animation-delay:-?[\d.]+s/g, ''));
   assert.strictEqual(s.phaseLock('<svg/>', 5), '<svg/>', 'a still image is left alone');
 
+  // Scope: the desktop puts every image in one page, so one image's `.t` or `#v` restyles
+  // another's. Each image's classes, ids and keyframes take its own prefix.
+  const two = '<svg><style>.t{fill:#fff;fill-opacity:.2}.h{animation:h 2.4s infinite;animation-delay:-1.5s}@keyframes h{0%{opacity:.15}}' +
+    '@media (prefers-color-scheme: dark){.t{fill:#000}}@media (prefers-reduced-motion:reduce){*{animation:none!important}}</style>' +
+    '<defs><clipPath id="v"><rect width="9"/></clipPath></defs><g clip-path="url(#v)" class="t h"><rect class="t"/></g></svg>';
+  const sc = s.scope(two, 'p3');
+  assert.ok(sc.includes('.p3t{fill:#fff;fill-opacity:.2}'), 'a class rule, decimals untouched');
+  assert.ok(sc.includes('.p3h{animation:p3h 2.4s infinite;animation-delay:-1.5s}') && sc.includes('@keyframes p3h{'), 'animations and keyframes');
+  assert.ok(sc.includes('{.p3t{fill:#000}}'), 'inside a media rule');
+  assert.ok(sc.includes('animation:none!important'), 'none stays none');
+  assert.ok(sc.includes('id="p3v"') && sc.includes('url(#p3v)'), 'ids and their uses');
+  assert.ok(sc.includes('class="p3t p3h"') && sc.includes('<rect class="p3t"/>'), 'every class in markup');
+  assert.ok(!/class="t|\.t\{|id="v"/.test(sc), 'nothing left unscoped');
+  assert.strictEqual(s.scope('<svg/>', 'x'), '<svg/>');
+
   // The clock's ink per theme.
   assert.strictEqual(s.INK.light.text, '#1F1E1D');
 
