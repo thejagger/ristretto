@@ -72,9 +72,20 @@ for (const c of COMMANDS) {
   assert.ok(words(read(c)) < 2500, `${c} is ${words(read(c))} words — a command is a flow, not a brief`);
 }
 
-// 4. The build flow runs the format check. shot follows pull's flow and the brewer never builds,
-//    so pull is the one place it lives.
-assert.ok(/migrate\.js" check/.test(read('commands/pull.md')), 'pull.md must run the format check');
+// 4. No command spends a call on the format check: the session-start hook runs it once, and pull
+//    reads it from the state call it already makes — before it reads the roadmap.
+for (const c of ['commands/pull.md', 'commands/prep.md', 'commands/status.md', 'commands/grind.md']) {
+  assert.ok(!/migrate\.js" check/.test(read(c)), `${c} must not run the format check itself`);
+}
+{
+  const p = read('commands/pull.md');
+  assert.ok(p.indexOf('gate.js" state') > 0 && p.indexOf('gate.js" state') < p.search(/^## 1\. /m), 'pull runs state before it reads the roadmap');
+  assert.strictEqual((p.match(/gate\.js" state/g) || []).length, 1, 'pull runs state once');
+  assert.ok(/`format:`/.test(p) && /migrate\.js" apply/.test(p), 'pull migrates on what state says');
+  for (const c of ['commands/prep.md', 'commands/status.md', 'commands/grind.md']) {
+    assert.ok(/format notice/.test(read(c)), `${c} acts on the session-start notice`);
+  }
+}
 
 // 5. Every brief is reachable: each one is named by at least one command or by common.md.
 //    grind and prep dispatch the researcher; they are not in COMMANDS (no word cap, no gate flow).

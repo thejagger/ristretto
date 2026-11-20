@@ -11,7 +11,7 @@ Match the feature's language (German input → German output).
 
 ## 0. Format
 
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check`. Exit 1 → print one line, `⚙ this project was written for an older ristretto format — the next prep/pull/brew will bring it up to date`, and carry on: research does not depend on the roadmap's shape. Exit 3 → `⚙ this install is older than the project's format — update the plugin`, and stop.
+If this session opened with a `ristretto format notice` for this project: `behind` → print one line, `⚙ this project was written for an older ristretto format — the next prep/pull/brew will bring it up to date`, and carry on: research does not depend on the roadmap's shape. `newer` → `⚙ this install is older than the project's format — update the plugin`, and stop. No notice → nothing to do.
 
 ## 1. Research it yourself
 

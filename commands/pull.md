@@ -23,19 +23,22 @@ Target: $ARGUMENTS
 >    `pulled: <ID> <hash> — <n> check(s) open, <m> decision(s) taken, <k> finding(s) open`
 >    `blocked: <ID> — <who or what>`
 
-## 0. Check the format version
+## 0. Find the repo, then its state
+
+- **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). Found in one → that repo is where you build: run every command there (`cd <repo> && …`: a subagent's shell forgets a `cd`) and give every subagent you start its path. Hooks watch only the session's folder, so no stop is gated here: step 9's `verify` is the proof.
+
+Then, in that repo:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
 ```
 
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say so; resolve the target (step 1) off the migrated roadmap, then switch to step 6's branch and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.23` — never on the default branch. If step 1 stops, leave the migration uncommitted and say so. Exit 3 → the project is newer than this plugin: stop, report a stale install. Exit 2 → cannot tell: stop.
+Read-only. Its `format:` line first. `current` or `no roadmap` → continue. `behind` → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply` and say so; resolve the target (step 1) off the migrated roadmap, then switch to step 6's branch and commit what it changed under `docs/ristretto/` there as `docs(ristretto): migrate to format 0.23` — never on the default branch. If step 1 stops, leave the migration uncommitted and say so. `newer` → the project is newer than this plugin: stop, report a stale install. `unstamped` → cannot tell: stop. The rest of the output is step 3's.
 
 ## 1. Resolve the target — trust the roadmap
 
 Read `docs/ristretto/roadmap.md`; take it at its word.
 
-- **Not here, at a folder of repos** → read `docs/ristretto/roadmap.md` in each direct subfolder. Found in two → ask which (unattended: `blocked: <ID> — in two repos`). Found in one → that repo is where you build: run every command there (`cd <repo> && …`: a subagent's shell forgets a `cd`) and give every subagent you start its path. Hooks watch only the session's folder, so no stop is gated here: step 9's `verify` is the proof.
 - **`done`** → stop, tell the user, cite its commit (`git log --oneline -E --grep "^[a-z]+\(<FEATURE-ID>\):"`), and list what its plan still leaves open: `[ ] [human]` boxes and `## Open findings`, then its `taken:` decisions as information. Do not re-implement.
 - **`blocked`** → attended: show the reason, ask whether to proceed. Unattended: proceed — the brewer fixed it or ruled on it.
 - **`next`** → the top `planned` row whose `Depends:` are all `done`. A `<folder>/<id>` dependency is looked up in `../<folder>/docs/ristretto/roadmap.md`; a missing folder or row is not done. None → stop and say what each is waiting on. A named ID with unfinished `Depends:` → attended: warn and ask.
@@ -46,9 +49,7 @@ Read `docs/ristretto/roadmap.md`; take it at its word.
 
 ## 3. Pre-flight
 
-```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" state
-```
+Read the rest of what step 0's `state` printed — it does not run again.
 
 Read-only. Another live session's marker, a dirty tree, or a leftover build plan → show what it printed, stop. Not a stop: this feature's own build plan from an earlier parked pull (`git stash list` shows `ristretto <FEATURE-ID> blocked`); the planner overwrites it. A tree marked PROVEN GREEN is finished work — tell the user to commit it, never discard it. `left alone:` names the user's untracked files — never move, commit, stash or delete them.
 

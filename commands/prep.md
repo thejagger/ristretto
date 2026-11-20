@@ -11,13 +11,9 @@ An input starting `overrule` goes through **Overrule** below.
 
 Each input is a **tracked feature** (an ID like `BREW-224` — keep it exactly, it is how the work is tracked in git), a pasted ticket, an **idea**, or a **refactor**. All take the same path; a ticket that already settles most points just makes it shorter.
 
-## 0. Check the project's format version — before anything else
+## 0. A format notice comes first
 
-```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" check
-```
-
-Exit 0 → continue. Exit 1 → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.23`; then continue. Exit 3 → the project is newer than this plugin: stop and report a stale install. Exit 2 → cannot tell: stop.
+If this session opened with a `ristretto format notice` for this project: `behind` → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.23`; then continue. `newer` → stop and report a stale install. `unstamped` → cannot tell: stop. No notice → nothing to do.
 
 ## Setup
 
