@@ -82,6 +82,45 @@ function workRow({ repo, state, rec }, repos, opts) {
   };
 }
 
+// v1 (spec 2026-11-20): the facts the four views draw from, uncapped, with no pages. A done
+// feature with an open manual check stays done (`checks` counts them) and each open box is listed
+// in `checks`; `boxes` holds every feature's open boxes, by `<folder>/<id>`.
+export function storyOf(repos, opts = {}) {
+  const shown = repos.filter((r) => !r.board.error);
+  const view = shown.some(offBase) ? 'branch' : 'base';
+  const runs = workOf(shown, opts);
+  const work = runs.map((w) => { const { open: _page, ...row } = workRow(w, shown, opts); return row; });
+  const busy = (repo, id) => runs.some((w) => w.repo === repo && w.rec.id === id && w.state === 'running');
+  const done = [], blocked = [], checks = [], taken = [], free = [], held = [], boxes = {};
+  for (const repo of shown) {
+    const ctx = ctxOf(repo, shown, opts);
+    const tag = repo.folder;
+    for (const r of repo.board.rows) {
+      const open = (ctx.checks[r.id] ?? []).filter((c) => !c.done).map((c) => ({ text: plain(c.text), how: plain(c.how ?? '') }));
+      if (open.length) boxes[`${tag ?? ''}/${r.id}`] = open;
+      if (busy(repo, r.id)) continue;
+      const key = `${tag ?? ''}-${r.id}`;
+      if (r.status === 'blocked') {
+        blocked.push({ key: `blk-${key}`, tag, id: r.id, reason: blockedWords(r) });
+      } else if (r.status === 'done') {
+        for (const c of open) checks.push({ tag, id: r.id, ...c });
+        if (view === 'branch' && offBase(repo) && (repo.branch.ids ?? []).includes(r.id)) {
+          const run = ctx.runOf.get(r.id);
+          done.push({ key: `done-${key}`, tag, id: r.id, title: plain(r.title), meta: run ? duration(run.ms) : '', checks: open.length });
+          for (const d of ctx.decisions[r.id] ?? []) if (d.taken) taken.push({ tag, id: r.id, text: plain(d.text) });
+        }
+      } else if (r.status === 'planned') {
+        const plan = ctx.plans[r.id];
+        const on = waitingOn(plan, ctx.resolve);
+        const blocker = plan?.blockers?.[0];
+        if (!on.length && !blocker) free.push({ key: `free-${key}`, tag, id: r.id, title: plain(r.title), detail: r.tier === 'easy' ? 'easy' : '' });
+        else held.push({ key: `held-${key}`, tag, id: r.id, title: plain(r.title), detail: on.length ? `waits for ${on[0].id}${on[0].status === 'missing' ? ' (not found)' : ''}` : `waits on ${plain(blocker)}` });
+      }
+    }
+  }
+  return { view, work, done, blocked, checks, taken, free, held, boxes };
+}
+
 // The sections, before caps.
 function parts(repos, opts) {
   const view = repos.some(offBase) ? 'branch' : 'base';

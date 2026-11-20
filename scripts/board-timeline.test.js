@@ -176,5 +176,31 @@ const { pathToFileURL } = require('url');
     assert.strictEqual(t.pageOf(tl, { kind: 'queue' }, { now: 0 }).kind, 'queue');
   }
 
+  // v1 storyOf: the facts every view draws from.
+  {
+    const checks = { tested: [{ done: false, text: 'open the pane', how: 'during a brew' }, { done: true, text: 'old', how: '' }] };
+    const one = repo(null, [done('tested'), done('plain'), blocked('stuck', 'waiting on Anatol'), planned('p1'), planned('p2', { tier: 'easy' })],
+      { head: 'feature/brew-x', ids: ['tested', 'plain'], checks, runs: [{ id: 'plain', ms: 120000, endedAt: 5, status: 'done', startedAt: 1, command: 'pull', tokens: { in: 0, out: 0, cache: 0 }, gates: { runs: 0, ms: 0, red: 0 } }] });
+    one.board.decisions = { plain: [{ taken: true, text: 'Even rows → time in the strip' }, { taken: false, text: 'still open' }] };
+    const st = t.storyOf([one], { now: 0 });
+    assert.strictEqual(st.view, 'branch');
+    assert.deepStrictEqual(st.done.map((r) => [r.id, r.title, r.checks]), [['tested', 'TESTED', 1], ['plain', 'PLAIN', 0]], 'a done feature with an open check stays done');
+    assert.strictEqual(st.done[1].meta, '2m');
+    assert.deepStrictEqual(st.checks, [{ tag: null, id: 'tested', text: 'open the pane', how: 'during a brew' }]);
+    assert.deepStrictEqual(st.blocked.map((b) => [b.id, b.reason]), [['stuck', 'waiting on Anatol']]);
+    assert.deepStrictEqual(st.taken, [{ tag: null, id: 'plain', text: 'Even rows → time in the strip' }]);
+    assert.deepStrictEqual(st.free.map((r) => [r.id, r.title]), [['p1', 'P1'], ['p2', 'P2']]);
+    assert.strictEqual(st.boxes['/p1'], undefined, 'a plan with no boxes has none');
+    assert.deepStrictEqual(st.boxes['/tested'], [{ text: 'open the pane', how: 'during a brew' }]);
+    assert.ok(!JSON.stringify(st).includes('"open":{'), 'no page to open');
+
+    // sameIdTwoRepos: two tagged rows, never merged.
+    const two = t.storyOf([repo('api', [planned('dup')]), repo('web', [planned('dup')])], { now: 0 });
+    assert.deepStrictEqual(two.free.map((r) => [r.tag, r.id]), [['api', 'dup'], ['web', 'dup']]);
+    // On the base branch nothing is done here, but an open check still waits for the owner.
+    const base = t.storyOf([repo(null, [done('tested')], { head: 'main', checks })], { now: 0 });
+    assert.deepStrictEqual([base.view, base.done.length, base.checks.length], ['base', 0, 1]);
+  }
+
   console.log('board-timeline.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });
