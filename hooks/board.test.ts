@@ -31,7 +31,7 @@ const ROADMAP = table([
   '| b | pw | Waits on blk | normal | planned |',
 ]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number; closes?: number }
 
 // git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
 function gitFor(prefix: string, head: string, log: string) {
@@ -151,6 +151,7 @@ function install(on: any, w: World, theme = 'dark') {
   })
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
   on('ui.open', () => { w.opens = (w.opens ?? 0) + 1; return { value: { isPlaced: true } } as any })
+  on('ui.close', () => { w.closes = (w.closes ?? 0) + 1; return { value: undefined } as any })
   // What the board last wrote to each of its values, as the engine keeps it.
   on('state.set', async ($: any, e: any, next: any) => { if (e.plugin === 'ristretto') w.state = { ...(w.state ?? {}), [e.key]: e.value }; return next(e) })
   mock.store(on, w.store ?? {})
@@ -175,7 +176,7 @@ async function texts(ui: any) {
 async function svgs(ui: any) {
   return (await ui.findAll({ type: 'Svg' })).map((s: any) => String(s.props.source))
 }
-async function press(ui: any, key: string) {
+async function clickOn(ui: any, key: string) {
   await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: key } as any)
   await ui.pointer({ type: 'up', x: 1, y: 0, button: 'left', in: key } as any)
 }
@@ -488,6 +489,18 @@ describe('the band (v1): the chip above the prompt', () => {
     expect(all[0].props.alt).toContain('PLAN')
     expect((await ui.findAll({ type: 'Button' })).length).toBe(0)
     expect(String(all[0].props.source)).toContain('width="100%"')
+  })
+
+  test('a click on the chip opens the pane, and a second one closes it', async ($, on) => {
+    const { w } = await start($, on)
+    const ui = await band($)
+    const press = (await ui.findAll({ type: 'Client' }))[0]
+    expect(String(press?.props.module)).toContain('board-press.tsx')
+    const opens = w.opens ?? 0
+    await clickOn(ui, press.props.key)
+    expect((w.opens ?? 0) - opens).toBe(1)
+    await clickOn(ui, press.props.key)
+    expect(w.closes).toBe(1)
   })
 
   test('at rest: whose turn it is', async ($, on) => {

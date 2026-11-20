@@ -77,6 +77,7 @@ declare module 'claude-code' {
       runs: BoardRecord[]
       roles: Record<string, BoardRole[]>
       started: BoardStarted | null
+      paneOpen: boolean
       prep: BoardPrep | null
       pins: BoardPins
       drawnAt: number

@@ -228,7 +228,10 @@ const ROOT = path.join(__dirname, '..');
     assert.ok(!/formatOf\([^\n]*plugin\.json/.test(tsx), 'board.tsx must not take the format from plugin.json');
     assert.ok(/formatOf\(/.test(tsx) && tsx.includes('scripts/migrate.js'), 'board.tsx reads the format from migrate.js');
     assert.ok(!/\bInput\b/.test(tsx), 'no input fields');
-    assert.ok(!/<Button\b|<Client\b|els\.Button|els\.Client/.test(tsx), 'display only: no Button, no press area');
+    // Display only, but for one press area: the chip above the prompt opens and closes the pane.
+    assert.ok(!/<Button\b|els\.Button/.test(tsx), 'no Button anywhere');
+    assert.strictEqual((tsx.match(/<els\.Client\b/g) || []).length, 1, 'one press area: the chip\'s toggle');
+    assert.ok(!/Client\b/.test(tsx.slice(tsx.indexOf('async function drawPane'), tsx.indexOf('// The band above the prompt: the chip, the view'))), 'the pane itself presses nothing');
     assert.ok(!/\b(commitArgs|addArgs|confirmIn|removeIn|restoreIn)\b/.test(tsx), 'the board confirms, removes and commits nothing');
     const drawing = tsx.slice(tsx.indexOf('// ---- the pane, v1'));
     assert.ok(drawing.length > 100 && !/\$\.clock\.now\(\)/.test(drawing), 'no $.clock.now() while drawing; handlers stamp drawnAt');

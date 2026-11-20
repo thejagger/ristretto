@@ -81,8 +81,17 @@ async function stamp($: EngineInterface) {
 // the call sites, so every read and update names its value there.)
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
+// Whether the pane is open, for the chip's toggle; never drawn, so it redraws nothing.
+const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
+
 async function openPane($: EngineInterface) {
   await $.ui.open({ id: PANE, title: 'ristretto' })
+  await update($, paneOpen, () => true)
+}
+
+async function closePane($: EngineInterface) {
+  await $.ui.close({ id: PANE })
+  await update($, paneOpen, () => false)
 }
 
 async function mtime($: EngineInterface, p: string) {
@@ -572,7 +581,26 @@ export const register: Register = on => {
     }
   })
 
-  // The band above the prompt: the chip, display only.
+  // A click on the chip (board-press.tsx) opens the pane, or closes it when it is open.
+  on('ui.message', async ($, e, next) => {
+    if ((e.data as any)?.press !== 'toggle') return next(e)
+    try {
+      if (await read($, paneOpen)) await closePane($)
+      else await openPane($)
+    } catch {
+      // The next click tries again.
+    }
+    return {}
+  })
+
+  // The pane closed by its own x (or by anyone): the next click on the chip opens it again.
+  on('ui.close', async ($, e, next) => {
+    const closed = await next(e)
+    if ((e as any).id === PANE) await update($, paneOpen, () => false)
+    return closed
+  })
+
+  // The band above the prompt: the chip; a click on it opens or closes the pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
       return (await drawBand($, e)) ?? next(e)
@@ -831,15 +859,30 @@ async function drawBand($: any, e: any) {
   if (!c) return null
   const els = $.ui.resolve(e) as any
   const alt = `ristretto ${c.label}: ${c.word}`
+  // The press area lies over the chip where the surface draws one (the desktop and the terminal;
+  // VS Code resolves a Client but drops it, and mobile takes no presses).
+  const press = (e.surface === 'desktop' || e.surface === 'terminal') && els.Client
+    ? (
+      <els.Box position="absolute" top={0} left={0} width="100%" height="100%">
+        <els.Client key="chip-press" module="./board-press.tsx" width="100%" height="100%" props={{ id: 'toggle', blank: true }} />
+      </els.Box>
+    )
+    : null
   if (els.Svg && e.surface !== 'terminal') {
     return (
-      <els.Box flexDirection="column">
+      <els.Box flexDirection="column" position="relative">
         <els.Svg alt={alt} height={44} source={phaseLock(chipSvg({ ...c, now: nowMs }), nowMs)} />
+        {press}
       </els.Box>
     )
   }
   const color = c.tone === 'you' ? 'permission' : c.step || c.tone === 'brass' ? 'claude' : 'text'
-  return <els.Text color={color} wrap="truncate-end">{`${c.label} · ${c.word}`}</els.Text>
+  return (
+    <els.Box flexDirection="column" position="relative">
+      <els.Text color={color} wrap="truncate-end">{`${c.label} · ${c.word}`}</els.Text>
+      {press}
+    </els.Box>
+  )
 }
 
 function richPane(els: any, view: any, nowMs: number) {
