@@ -99,5 +99,13 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual([br.ids, br.lastBrew], [[], ''], 'ahead with no feature: an empty scope');
 
   assert.ok(!/Date\.now|Math\.random/.test(fs.readFileSync(file, 'utf8')), 'the clock is passed in, never read');
+  // The feature a commit subject names (moved here from board-files.mjs, its only caller left).
+  assert.strictEqual(b.featureIdOf('feat(lnw-export): x'), 'lnw-export');
+  assert.strictEqual(b.featureIdOf('fix(DUAL-123): review fix'), 'DUAL-123');
+  assert.strictEqual(b.featureIdOf('docs(ristretto): y'), null);
+  assert.strictEqual(b.featureIdOf('feat(../x): y'), null);
+  assert.strictEqual(b.featureIdOf('Merge branch main'), null);
+  assert.strictEqual(b.isDocs('docs(lnw-export): manual checks passed'), true);
+  assert.strictEqual(b.isDocs('feat(lnw-export): x'), false);
   console.log('board-branch.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

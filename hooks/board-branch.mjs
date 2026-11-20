@@ -2,7 +2,19 @@
 // full-suite verdict, as git argv to run and parsers of what git printed (spec 4.1–4.5). Pure:
 // no $, no Node, no clock (the time is passed in).
 
-import { featureIdOf, isDocs } from './board-files.mjs';
+// The feature a commit subject names: `<type>(<ID>): …`. ristretto's own scope (its migrate and
+// planning commits) is never a feature, and only an ID in the shape plans use can reach a path.
+const SUBJECT = /^[a-z]+\(([^)]+)\):/;
+export function featureIdOf(subject) {
+  const m = SUBJECT.exec(String(subject));
+  if (!m || m[1] === 'ristretto' || !/^[A-Za-z0-9][\w.-]*$/.test(m[1])) return null;
+  return m[1];
+}
+
+// A docs commit carries no code: a block's roadmap edit, a check re-run, a record correction.
+export function isDocs(subject) {
+  return /^docs\(/.test(String(subject));
+}
 
 export const headArgs = ['rev-parse', '--abbrev-ref', 'HEAD'];
 export const shortHeadArgs = ['rev-parse', '--short', 'HEAD'];

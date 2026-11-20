@@ -1,18 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardAtWork, BoardFile, BoardLive, BoardPage, BoardPins, BoardPrep, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
-import { EMPTY_BOARD, commandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, signalOf } from './board-model.mjs'
+import type { Board, BoardAtWork, BoardLive, BoardPins, BoardPrep, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
+import { EMPTY_BOARD, commandOf, duration, fold, formatOf, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, signalOf } from './board-model.mjs'
 import { EMPTY_PINS, foldPins, pinsOf } from './board-pins.mjs'
-import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
-import { BASES, ago, baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
-import { chip, terminalSegments, tracker } from './board-effort.mjs'
-import { HAIR, HUE, INK, PHASE, back as backArrow, chevron, clockWords, cup, dims, effortLabels, mark, phaseLock, space, splitAlt, splitBar, svgClock, statusGlyph } from './board-svg.mjs'
-import { buttonKeeper } from './board-keep.mjs'
+import { BASES, ago, baseArgs, branchOf, defaultBranch, featureIdOf, headArgs, isDocs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
+import { phaseLock } from './board-svg.mjs'
 import { parseChecks, parseDecisions, parsePlan, siblingOf } from './board-plan.mjs'
-import { addGate, addRole, addTokens, closeRole, count, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
+import { addGate, addRole, addTokens, closeRole, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
 import { endedOf, judge, needsBeat, recordOf, sameShown } from './board-atwork.mjs'
-import { messageOf, pageOf, storyOf, timelineBandOf, timelineOf } from './board-timeline.mjs'
+import { messageOf, storyOf } from './board-timeline.mjs'
 import { chipOf, modeOf, viewOf } from './board-modes.mjs'
 import { BRASS, STEP_INK, chip as chipSvg, header, meter, rail, stepWord } from './board-look.mjs'
 
@@ -44,12 +41,6 @@ const siblings = atom({ plugin: 'ristretto', key: 'siblings' } as const, {} as R
 // This session's own run as it last wrote it: the drawing shows it over its own file.
 const ownRec = atom({ plugin: 'ristretto', key: 'ownRec' } as const, null as BoardAtWork | null)
 const live = atom({ plugin: 'ristretto', key: 'live' } as const, null as BoardLive | null)
-const page = atom({ plugin: 'ristretto', key: 'page' } as const, null as BoardPage | null)
-// Whether the board's pane is open: the band's toggle follows it.
-const paneOpen = atom({ plugin: 'ristretto', key: 'paneOpen' } as const, false)
-// A feature's files (its commits, found by ID) keyed `<folder>\u0000<id>`, and the folders opened by hand.
-const files = atom({ plugin: 'ristretto', key: 'files' } as const, {} as Record<string, BoardFile[]>)
-const folders = atom({ plugin: 'ristretto', key: 'folders' } as const, {} as Record<string, Record<string, boolean>>)
 // The run in progress, counted as it goes (tokens, gate time): the drawing never reads it, so a
 // token count never redraws the pane. `started` is what the drawing needs of it.
 const run = atom({ plugin: 'ristretto', key: 'run' } as const, null as BoardRun | null)
@@ -92,12 +83,6 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 async function openPane($: EngineInterface) {
   await $.ui.open({ id: PANE, title: 'ristretto' })
-  await update($, paneOpen, () => true)
-}
-
-async function closePane($: EngineInterface) {
-  await $.ui.close({ id: PANE })
-  await update($, paneOpen, () => false)
 }
 
 async function mtime($: EngineInterface, p: string) {
@@ -140,28 +125,6 @@ async function readBoardAt($: EngineInterface, root: string, name: string): Prom
     return { name, rows: parsed.rows, format: { project: parsed.format, plugin: pluginFormat }, error: parsed.error, plans, checks, decisions }
   } catch (err) {
     return { ...EMPTY_BOARD, name, error: String(err).slice(0, 80) }
-  }
-}
-
-// What a feature's commits changed, found by its ID in their subjects (`feat(<ID>): …`), re-read
-// whenever its page opens. A row from before that rule may only carry a hash in its Commit cell:
-// that is the roadmap's text, not a trusted argument, so only a hash reaches git, after
-// --end-of-options.
-async function loadFiles($: EngineInterface, folder: string | null, id: string) {
-  try {
-    const at = roots.find(r => r.folder === folder)
-    if (!at) return
-    const commit = cache.get(at.root)?.repo.board.rows.find(r => r.id === id)?.commit ?? ''
-    const byId = await git($, featureLogArgs(id), at.root)
-    let list = byId.exitCode === 0 ? sumFiles(parseNumstat(byId.stdout)) : []
-    if (list.length === 0 && /^[0-9a-f]{4,40}$/i.test(commit)) {
-      const shown = await git($, ['show', '--numstat', '--format=', '--end-of-options', commit], at.root)
-      if (shown.exitCode === 0) list = parseNumstat(shown.stdout)
-    }
-    const key = `${folder ?? ''}\u0000${id}`
-    { const v = { ...(await read($, files)), [key]: list }; if (!same(await read($, files), v)) { await update($, files, () => v); await stamp($) } }
-  } catch {
-    // The card shows the plan's files meanwhile; the next open tries again.
   }
 }
 
@@ -549,9 +512,6 @@ function isRoadmap(path: unknown) {
   return typeof path === 'string' && path.replace(/\\/g, '/').endsWith(ROADMAP)
 }
 
-// What each whole-row press area runs, by its id: the closure of the latest drawing, as the
-// button keeper keeps a Button's handler current.
-const pressRuns = new Map<string, () => void>()
 // The model alias each feature's latest Agent call named, for a spawn that resolves none.
 const aliasOf = new Map<string, string>()
 
@@ -599,16 +559,6 @@ export const register: Register = on => {
     return begun
   })
 
-  // A press area (board-press.tsx) was clicked: a row runs its press.
-  on('ui.message', async ($, e, next) => {
-    const id = (e.data as any)?.press
-    if (typeof id === 'string' && id.startsWith('run:')) {
-      pressRuns.get(id.slice(4))?.()
-      return {}
-    }
-    return next(e)
-  })
-
   on('config.set', { key: 'theme' }, async ($, e, next) => {
     try {
       return await next(e)
@@ -622,31 +572,15 @@ export const register: Register = on => {
     }
   })
 
-  // The band above the prompt: the main thing only, and the board toggle.
+  // The band above the prompt: the chip, display only.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
-      const nowMs = await read($, drawnAt)
-      const b = timelineBandOf(await read($, repos), await timelineOpts($, nowMs))
-      if (!b) return next(e)
-      const els = $.ui.resolve(e) as any
-      let toggle: any = null
-      if (els.Button && e.surface !== 'mobile') {
-        const open = await read($, paneOpen)
-        const label = open ? 'hide board' : 'board'
-        toggle = keeper.keep(`band|${e.surface}|toggle`, label, () => void (open ? closePane($) : openPane($)), (onPress: () => void) => <els.Button key="band-toggle" onPress={onPress}>{label}</els.Button>)
-      }
-      return bandLine(els, b, nowMs, toggle, e.surface, ownRoot !== null)
+      return (await drawBand($, e)) ?? next(e)
     } catch {
       return next(e)
     }
   })
 
-  // The pane closed by its own x (or by anyone): the band offers to open it again.
-  on('ui.close', async ($, e, next) => {
-    const closed = await next(e)
-    if ((e as any).id === PANE) await update($, paneOpen, () => false)
-    return closed
-  })
 
   on('command.run', async ($, e, next) => {
     // A bare /ristretto:status opens the board where it docks beside the transcript, at once
@@ -824,97 +758,6 @@ export const register: Register = on => {
   })
 }
 
-// Every Button is built once and handed back on each draw, so it keeps its press handle across
-// redraws (see board-keep.mjs). Only the band's toggle and the VS Code fallback are Buttons now.
-const keeper = buttonKeeper()
-
-// The cup where a surface draws no SVG: in text, never an emoji (they draw unevenly).
-const CUP_TEXT = ['   ) )  ( (', '.__________.', '|          |]', '|          |', "`----------'"]
-
-// Glyphs where a surface draws no SVG (the terminal): one character per mark, its tone a theme key.
-const GLYPH: Record<string, [string, string]> = {
-  planned: ['○', 'inactive'], next: ['○', 'text'], queued: ['○', 'inactive'], running: ['●', 'claude'], lane: ['◉', 'claude'],
-  blocked: ['✕', 'error'], findings: ['◐', 'warning'], person: ['◐', 'permission'], done: ['✓', 'success'], ready: ['✓', 'success'],
-  'suite-ok': ['✓', 'success'], 'gate-red': ['✕', 'error'], 'suite-red': ['✕', 'error'],
-}
-const TONE: Record<string, any> = { permission: { color: 'permission' }, warning: { color: 'warning' }, error: { color: 'error' }, dim: { dimColor: true }, default: {} }
-const toneOf = (t?: string) => TONE[t ?? 'dim'] ?? TONE.dim
-const STATUS: Record<string, [string, string]> = {
-  planned: ['planned', 'dim'], 'in-progress': ['in progress', 'claude'], blocked: ['blocked', 'error'],
-  done: ['done', 'success'], unknown: ['unknown', 'dim'],
-}
-// The pane's cells to CSS pixels: an estimate on the low side, so a bar drawn this wide never
-// overflows its slot and gets scaled (the pixels would blur).
-const pxFor = (cells: number) => Math.max(120, Math.min(1400, Math.floor(cells * 7.4)))
-
-// The band, one line: the cup, the run's chip while one pull runs, the words in theme keys
-// (each brewing feature with its repo at a folder), who is needed, and the board toggle right.
-// Each part sits in its own box with its own one-line Text; the ID gives way first.
-function bandLine(els: any, b: any, nowMs: number, toggle: any, surface: string, single: boolean) {
-  const { Box, Text, Svg } = els
-  const rich = !!Svg && surface !== 'terminal'
-  const running = !!b.running
-  const part = (key: string, text: string, props: any, shrink: number) => (
-    <Box key={key} flexShrink={shrink} overflow="hidden"><Text {...props} wrap="truncate-end">{text}</Text></Box>
-  )
-  const lead = rich
-    ? <Box key="cup" flexShrink={0}><Svg alt={running ? 'brewing' : 'ristretto'} width={16} height={16} source={cup({ size: 16, live: running })} /></Box>
-    : null
-  let bar: any = null
-  const words: any[] = []
-  let need = 0
-  if (running) {
-    const ps = b.running.parts
-    need = b.running.needYou
-    const one = ps.length === 1 && ps[0].effort ? ps[0] : null
-    if (one) {
-      bar = rich
-        ? <Box key="bar" flexShrink={0}><Svg alt={`${one.id} ${one.step}`} width={96} height={14} source={phaseLock((chip as any)({ phases: one.effort, red: one.red, width: 96 }), nowMs)} /></Box>
-        : (
-          <Box key="bar" flexShrink={0} flexDirection="row">
-            {(terminalSegments as any)({ cells: 12, phases: one.effort, red: one.red, frame: 0 }).map((s: any, i: number) => (
-              <Text key={`seg-${i}`} {...(s.state === 'done' ? { color: 'success' } : s.state === 'current' ? { color: one.red ? 'error' : 'claude' } : { color: 'inactive' })}>{s.text}</Text>
-            ))}
-          </Box>
-        )
-    }
-    ps.forEach((p: any, i: number) => {
-      if (i) words.push(part(`sep-${i}`, ' · ', { dimColor: true }, 0))
-      if (p.tag) words.push(part(`tag-${i}`, `${p.tag} `, { dimColor: true }, 0))
-      words.push(part(`id-${i}`, p.id, { bold: true }, 1))
-      words.push(part(`step-${i}`, ` ${p.step}`, { color: p.red ? 'error' : 'claude' }, 0))
-    })
-  } else if (b.finished) {
-    need = b.finished.needYou
-    const where = single ? 'this branch' : `${b.finished.branches} brew branch${b.finished.branches === 1 ? '' : 'es'}`
-    words.push(part('done', `${b.finished.done} done on ${where}`, { color: 'success' }, 0))
-  } else {
-    need = b.idle.needYou
-    const n = b.idle.next
-    if (n) {
-      words.push(part('nx', 'next ', { color: 'claude' }, 0))
-      if (n.tag) words.push(part('nt', `${n.tag} `, { dimColor: true }, 0))
-      words.push(part('ni', n.id, { bold: true }, 1))
-      words.push(part('nc', ` · ${b.idle.canStart} can start`, { dimColor: true }, 0))
-    } else {
-      words.push(part('none', 'nothing to start', { dimColor: true }, 0))
-    }
-  }
-  return (
-    <Box flexDirection="row" alignItems="center" justifyContent="space-between" gap={1}>
-      <Box flexDirection="row" alignItems="center" gap={1} flexShrink={1} overflow="hidden">
-        {lead}
-        {bar}
-        <Box flexDirection="row" flexShrink={1} overflow="hidden">
-          {words}
-          {need > 0 && part('you', ` · ${need} need you`, { color: 'permission' }, 0)}
-        </Box>
-      </Box>
-      {toggle && <Box flexShrink={0}>{toggle}</Box>}
-    </Box>
-  )
-}
-
 // ---- the pane, v1 (spec 2026-11-20) ------------------------------------------------------------
 // One view per mode, display only: images for the head, the step word, the meter and the rail;
 // the pane's own text for everything a person reads. Nothing presses.
@@ -944,12 +787,32 @@ function titleOf(list: BoardRepo[], id: string | null | undefined) {
 
 const headAlt = (view: any) => `ristretto ${view.mode}: ${caption([`${view.head.big} ${view.head.small}`.trim(), view.head.label])}`
 
+// What the pane and the band draw: the view of what happens now, or the one line said when there
+// is no board to draw.
+async function viewNow($: any): Promise<{ msg: string | null; view: any; nowMs: number }> {
+  const shownRepos = await read($, repos)
+  const nowMs = await read($, drawnAt)
+  const msg = messageOf(shownRepos)
+  if (msg) return { msg, view: null, nowMs }
+  const story = storyOf(shownRepos, await timelineOpts($, nowMs))
+  const lv = await read($, live)
+  const named = await read($, prep)
+  // prep's first word names a feature only when a roadmap has it.
+  const pr = named && named.id && !titleOf(shownRepos, named.id) ? { ...named, id: null } : named
+  const mode = modeOf({ live: lv, story, prep: pr })
+  const view = viewOf({
+    mode, live: lv, story, prep: pr,
+    pins: await read($, pins), started: await read($, started),
+    title: titleOf(shownRepos, mode === 'prep' ? pr?.id : lv?.id), now: nowMs,
+  })
+  return { msg: null, view, nowMs }
+}
+
 async function drawPane($: any, e: any) {
   const els = $.ui.resolve(e) as any
   const { Box, Text } = els
   if (!themeKnown) await readTheme($)
-  const shownRepos = await read($, repos)
-  const msg = messageOf(shownRepos)
+  const { msg, view, nowMs } = await viewNow($)
   if (msg) {
     return (
       <Box flexDirection="column" paddingX={1}>
@@ -957,20 +820,26 @@ async function drawPane($: any, e: any) {
       </Box>
     )
   }
-  const nowMs = await read($, drawnAt)
-  const story = storyOf(shownRepos, await timelineOpts($, nowMs))
-  const lv = await read($, live)
-  const named = await read($, prep)
-  // prep's first word names a feature only when a roadmap has it.
-  const pr = named && named.id && !titleOf(shownRepos, named.id) ? { ...named, id: null } : named
-  const mode = modeOf({ live: lv, story, prep: pr })
-  const view: any = viewOf({
-    mode, live: lv, story, prep: pr,
-    pins: await read($, pins), started: await read($, started),
-    title: titleOf(shownRepos, mode === 'prep' ? pr?.id : lv?.id), now: nowMs,
-  })
   // The terminal resolves an Svg but draws it as nothing: text there.
   return els.Svg && e.surface !== 'terminal' ? richPane(els, view, nowMs) : textPane(els, view)
+}
+
+// The band above the prompt: the chip, the view at a glance; one line of text on the terminal.
+async function drawBand($: any, e: any) {
+  const { msg, view, nowMs } = await viewNow($)
+  const c = msg ? null : chipOf(view)
+  if (!c) return null
+  const els = $.ui.resolve(e) as any
+  const alt = `ristretto ${c.label}: ${c.word}`
+  if (els.Svg && e.surface !== 'terminal') {
+    return (
+      <els.Box flexDirection="column">
+        <els.Svg alt={alt} height={44} source={phaseLock(chipSvg({ ...c, now: nowMs }), nowMs)} />
+      </els.Box>
+    )
+  }
+  const color = c.tone === 'you' ? 'permission' : c.step || c.tone === 'brass' ? 'claude' : 'text'
+  return <els.Text color={color} wrap="truncate-end">{`${c.label} · ${c.word}`}</els.Text>
 }
 
 function richPane(els: any, view: any, nowMs: number) {

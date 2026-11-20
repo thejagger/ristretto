@@ -43,8 +43,6 @@ export type BoardLive = {
   // A builder subagent runs it: the main agent's turns are not its own.
   agent?: boolean
 }
-export type BoardPage = { kind: 'feature'; id: string; folder?: string | null } | { kind: 'history' } | { kind: 'queue' }
-export type BoardFile = { path: string; add: number; del: number; bin: boolean }
 // The branch the session is on (board-branch.mjs): `ids` null when nothing can be scoped to it.
 export type BoardBranch = { name: string; base: string | null; ids: string[] | null; lastBrew: string; onDefault?: boolean }
 // The full-suite verdict as the Branch card reads it: green or red only while it proves the code there.
@@ -75,12 +73,8 @@ declare module 'claude-code' {
       siblings: Record<string, Record<string, BoardStatus>>
       ownRec: BoardAtWork | null
       live: BoardLive | null
-      page: BoardPage | null
       run: BoardRun | null
       runs: BoardRecord[]
-      files: Record<string, BoardFile[]>
-      folders: Record<string, Record<string, boolean>>
-      paneOpen: boolean
       roles: Record<string, BoardRole[]>
       started: BoardStarted | null
       prep: BoardPrep | null

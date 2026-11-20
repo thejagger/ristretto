@@ -468,47 +468,52 @@ describe('a folder of repos', () => {
 
   test('the band names the brewing feature with its repo', async ($, on) => {
     await start($, on, folder())
-    const t = await texts(await band($))
-    expect(t).toContain('web')
-    expect(t).toContain('web-order-title')
-    expect(t).toContain('code')
-    expect(t).toContain('1 need you')
+    const all = await (await band($)).findAll({ type: 'Svg' })
+    expect(all.length).toBe(1)
+    expect(all[0].props.alt).toContain('web-order-title')
+    expect(all[0].props.alt).toContain('BUILD')
   })
 })
 
-describe('the band', () => {
-  test('idle: what is next, how many can start, who is needed; the board toggle', async ($, on) => {
-    const w = world()
-    w.git['rev-parse --abbrev-ref HEAD'] = { exitCode: 0, stdout: 'main\n' }
-    await start($, on, w)
-    const ui = await band($)
-    const t = await texts(ui)
-    expect(t).toContain('next')
-    expect(t).toContain('p1')
-    expect(t).toContain('2 can start')
-    expect(t).toContain('3 need you')
-    expect((await ui.findAll({ type: 'Button' })).length).toBe(1)
-  })
-
-  test('a brew branch with nothing running: what it holds', async ($, on) => {
-    await start($, on)
-    expect(await texts(await band($))).toContain('1 done on this branch')
-  })
-
-  test('running: the cup, a 96px chip, the ID and its step', async ($, on) => {
+describe('the band (v1): the chip above the prompt', () => {
+  test('during a brew: one image, 44px high, naming the mode and the step; no Button', async ($, on) => {
     const clock = await start($, on)
     await pull($, clock, 'p1')
     const ui = await band($)
-    const t = await texts(ui)
-    expect(t).toContain('p1')
-    expect(t).toContain('plan')
-    expect((await svgs(ui)).some((s: string) => /width="96" height="14"/.test(s))).toBe(true)
-    expect(await texts(await band($, 'terminal'))).toMatch(/[▓▒░·█▪]/)
+    const all = await ui.findAll({ type: 'Svg' })
+    expect(all.length).toBe(1)
+    expect(all[0].props.height).toBe(44)
+    expect(all[0].props.alt).toContain('BREW')
+    expect(all[0].props.alt).toContain('p1')
+    expect(all[0].props.alt).toContain('PLAN')
+    expect((await ui.findAll({ type: 'Button' })).length).toBe(0)
+    expect(String(all[0].props.source)).toContain('width="100%"')
   })
 
-  test('the terminal draws no emoji', async ($, on) => {
+  test('at rest: whose turn it is', async ($, on) => {
     await start($, on)
-    expect(await texts(await band($, 'terminal'))).not.toContain('☕')
+    const all = await (await band($)).findAll({ type: 'Svg' })
+    expect(all[0].props.alt).toContain('YOUR TURN')
+  })
+
+  test('no roadmap: the band draws nothing of its own', async ($, on) => {
+    const w = world()
+    delete w.files['docs/ristretto/roadmap.md']
+    // This hook stands for the engine's own band.
+    on('ui.render', { component: 'AbovePrompt' } as any, ($: any, e: any) => ($.ui.resolve(e) as any).Text({ children: 'engine' }))
+    await start($, on, w)
+    const ui = await band($)
+    expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
+    expect(await texts(ui)).toBe('engine')
+  })
+
+  test('the terminal: one line of text, no emoji', async ($, on) => {
+    await start($, on)
+    const ui = await band($, 'terminal')
+    const all = await ui.findAll({ type: 'Text' })
+    expect(all.length).toBe(1)
+    expect(all[0].text).toContain('YOUR TURN')
+    expect(all[0].text).not.toContain('☕')
   })
 })
 
