@@ -13,7 +13,7 @@ Each input is a **tracked feature** (an ID like `BREW-224` — keep it exactly, 
 
 ## 0. A format notice comes first
 
-If this session opened with a `ristretto format notice` for this project: `behind` → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.23`; then continue. `newer` → stop and report a stale install. `unstamped` → cannot tell: stop. No notice → nothing to do.
+If this session opened with a `ristretto format notice` for this folder, and this session has not already migrated it: `behind` → run `node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate.js" apply`, say that the project was migrated, and commit what it changed under `docs/ristretto/` as `docs(ristretto): migrate to format 0.23`; then continue. `newer` → stop and report a stale install. `unstamped` → cannot tell: stop. No notice → nothing to do.
 
 ## Setup
 
