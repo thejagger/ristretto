@@ -4,7 +4,7 @@ Write a merge-request description for the branch: a ticket-named `<TICKET>.md` a
 
 ## Resolve `<TICKET>` and `<BASE_BRANCH>`
 
-- `<TICKET>` — the ticket key in the current branch name (e.g. `feature/ABC-123-...` → `ABC-123`) or in commit subjects. If neither yields a confident match, ask the user.
+- `<TICKET>` — the ticket key in the current branch name (e.g. `feature/ABC-123-...` → `ABC-123`) or in commit subjects. If neither yields a confident match, ask the user — except when `after-build.md` sent you: then never ask; `<TICKET>` is the branch's last segment and the title comes from the features on it.
 - `<BASE_BRANCH>` — the repo's default branch: `origin/HEAD`, then `main`, then `master`. Ask if none exists.
 
 If `git log --format='%an' <BASE_BRANCH>..HEAD | sort -u` names more than one author, name them in the description so reviewers know whose work the branch carries.

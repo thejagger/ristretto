@@ -161,7 +161,7 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1568,
 // The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
 // Totals moved by the +54 of git rules common.md took over from the closer.
 // 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
-const CAPS = { 'briefs/planner.md': [450, 1213] };
+const CAPS = { 'briefs/planner.md': [450, 1218] }; // +5 more with the push rule in Commits (2026-11-20)
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -396,6 +396,29 @@ assert.ok(/announce the next step instead of taking it/.test(brew) && /offer to 
   assert.ok(/^user-invocable: false$/m.test(front), 'nobody types /ristretto:confirm — it acts on what the user says, so it stays out of the / menu');
   for (const cmd of ['confirm.js" list', 'confirm.js" tick']) assert.ok(s.includes(cmd), `the skill must run ${cmd}`);
   assert.ok(s.includes("only the user's own words in chat"), "the skill must act on only the user's own words in chat");
+}
+
+// 34. After a build (2026-11-20): the session the owner started walks the boxes the setup reaches,
+//     pushes and posts as the setup says — one brief, read by attended pull, prep and the brewer;
+//     a builder never pushes. "run the checks" in chat walks them any time.
+{
+  const ab = 'briefs/after-build.md';
+  assert.ok(fs.existsSync(path.join(ROOT, ab)), `${ab} must exist`);
+  const t = fs.existsSync(path.join(ROOT, ab)) ? read(ab) : '';
+  for (const c of ['commands/pull.md', 'commands/prep.md', 'commands/brew.md']) assert.ok(read(c).includes('after-build.md'), `${c} points at ${ab}`);
+  for (const s of ['confirm.js" tick', '--by', 'never the default branch', 'a builder never', 'ticket not updated:', 'draft']) {
+    assert.ok(t.includes(s), `${ab} must carry "${s}"`);
+  }
+  const walk = 'skills/walk/SKILL.md';
+  const w = fs.existsSync(path.join(ROOT, walk)) ? read(walk) : '';
+  const front = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(w) || [])[1] || '';
+  assert.ok(/^name: walk$/m.test(front) && /^user-invocable: false$/m.test(front) && /^description:.*run the checks/m.test(front), `${walk} is a hidden skill that acts on "run the checks"`);
+  const help = read('commands/help.md');
+  assert.ok(help.includes('never push unless the setup says so') && help.includes('"run the checks"'), 'help names the push rule and "run the checks"');
+  const bare = ['commands', 'briefs'].flatMap((d) => fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.md')).map((f) => `${d}/${f}`))
+    .filter((f) => /Never push[.,]/.test(read(f)));
+  assert.deepStrictEqual(bare, [], 'a bare "Never push" is gone: the setup decides');
+  assert.ok(read('commands/status.md').includes('run the checks'), 'status names "run the checks" beside "manual checks done"');
 }
 
 if (failures.length) {

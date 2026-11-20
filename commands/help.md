@@ -15,6 +15,7 @@ You are running **HELP**. Do no work — no reads, no git, no tools. Print the m
      /ristretto:brew                  the brewer: a builder subagent per feature, unattended
   4. /ristretto:status [filter]       the roadmap; bare: the live board. checks = your turn
      say "manual checks done"         ticks a feature's checks · "except <what>" keeps one open
+     say "run the checks"             ristretto walks what the setup reaches
   /ristretto:tamp [target] [fix]      lean-code review, read-only unless "fix"
-house rules: never push · a green tree is finished work · only blocked holds dependents
+house rules: never push unless the setup says so · a green tree is finished work · only blocked holds dependents
 ```

@@ -19,7 +19,7 @@ Filter (optional): $ARGUMENTS
    - `open` → everything not `done`
    - `done` → only `done`
    - `blocked` → only `blocked`, each with its recorded reason — this is the **refinement queue** after a `brew` run
-   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open `[ ] [human]` boxes with their `how:` lines, and any open box under `## Manual checks (migrated)`; then its `## Open findings`, as "open findings" — say in chat which to fix. Older plans' `note` and `lean` items are records, never your turn. This is the **your-turn queue**: say "manual checks done" in the chat once they are. Decisions taken during a build are not on it — they are in force, not a question.
+   - `checks` → only `done` rows whose plan (`docs/ristretto/plans/<ID>.md`) still asks a person something, each with what it asks: its open `[ ] [human]` boxes with their `how:` lines, and any open box under `## Manual checks (migrated)`; then its `## Open findings`, as "open findings" — say in chat which to fix. Older plans' `note` and `lean` items are records, never your turn. This is the **your-turn queue**: say "manual checks done" in the chat once they are, or "run the checks" to have ristretto do the ones the setup reaches. Decisions taken during a build are not on it — they are in force, not a question.
    - `easy` → only rows whose `Tier` is `easy`
    - a feature ID → just that row, then its plan's `taken:` decisions as information, with `overrule one in chat: /ristretto:prep overrule <ID> — <what instead>`
    - a flight slug → only rows in that flight

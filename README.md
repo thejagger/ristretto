@@ -110,9 +110,11 @@ One entry, because one is a realistic number. The same feature's "does the banne
 
 The part that matters for an unattended `brew`: **an open box never holds up another feature.** A `Depends:` is satisfied by `done`, because the prerequisite's `Provides:` exist in the code — what's outstanding is in a database console or on a screen, not in the repo. Only `blocked` stops dependents. One pending `alter table` can't stall a whole flight.
 
-Run the check, then say "manual checks done" in the chat, with the feature's ID if more than one has open checks. Your word is the signature that it really happened: ristretto ticks the boxes, writes `confirmed in chat <date>` into the Evidence, and commits the plan. You never edit a file. Say "except the banner one — still overlaps" and that box stays open with your note. Nothing else ticks a box, not even another agent.
+Run the check, then say "manual checks done" in the chat, with the feature's ID if more than one has open checks. Your word is the signature that it really happened: ristretto ticks the boxes, writes `confirmed in chat <date>` into the Evidence, and commits the plan. You never edit a file. Say "except the banner one — still overlaps" and that box stays open with your note.
 
-**The bar for getting on this list is reach, not subject.** A check exists only where the repo gives the agent no path to the thing — a hosted console with no credential in the environment, a device that isn't there. A migration the dev stack already applies is run, not delegated; a screen the repo can drive is tested, not eyeballed. And **nothing on this list is ever about production**: no backfills, no prod flags, no key rotations. This is a development loop, and a checklist that fills up with things you could have automated is one you stop reading — including the entry that mattered.
+**A box is ticked by whoever did the check.** Where the setup (`/ristretto:init`, below) gives ristretto a tool to look at the running app, it walks the boxes that tool reaches itself, after the build or when you say "run the checks", and ticks each with what it saw — `- [x] [human] the list keeps its scroll position · checked by ristretto in <tool>, 2026-11-20: scrollY 840 before, 840 after`. A look that came back wrong is never ticked: the box stays open and the finding goes under `## Open findings`. Nothing else ticks a box: not another agent, not a file, only you or ristretto having looked.
+
+**The bar for getting on this list is reach, not subject.** A check exists only where neither the repo nor the setup gives the agent a path to the thing — a hosted console with no credential in the environment, a device that isn't there. A migration the dev stack already applies is run, not delegated; a screen the repo can drive is tested, not eyeballed. And **nothing on this list is ever about production**: no backfills, no prod flags, no key rotations. This is a development loop, and a checklist that fills up with things you could have automated is one you stop reading — including the entry that mattered.
 
 ## Open findings: the pot never stops
 
@@ -120,13 +122,13 @@ A finding nobody fixed is not a reason to stop. The gates are **green** at that 
 
 **And where a build meets a question the plan never answered, it takes the reading the plan's goal implies rather than stalling** — then says so: when a user could see the answer, a `- taken: <question> → <ruling>` line under the plan's `Decisions:`, listed in the run's report. It is information, not a question — already in force, no box to tick. Leave it and it stands; disagree and say so in chat, `/ristretto:prep overrule <ID> — <what instead>`, and prep plans the change as a follow-up. Naming, file placement, internal structure and test mechanics never reach you: they are build-plan detail. A stall costs the whole night; a default you can overrule costs nothing until you want it changed.
 
-## Git: branch & commit, never push
+## Git: branch & commit, push only if the setup says so
 
-`pull`, `shot`, and `brew` handle git for you, with one firm boundary — **they never push.**
+`pull`, `shot`, and `brew` handle git for you, with one firm boundary — **they never push unless this machine's setup says so.** With no setup, or no `## Git` in it, nothing is ever pushed. With `push` or `push + merge request`, the session you started (never a builder) pushes the feature or brew branch once its last feature is closed and its boxes are walked — never the default branch, never force, never merge — and opens one merge request per branch, as a draft when a look ristretto did itself came back wrong. A repo whose `CLAUDE.md` says never push is never pushed.
 
 - `pull` and `shot` work on a `feature/<FEATURE-ID>` branch (created from a clean tree, or your current feature branch is reused). The brewer puts each repo on one `feature/brew-<date>` branch, or keeps the branch you are on, one commit per feature, so you review the batch linearly.
 - At close they stage only the files touched and commit `feat(<FEATURE-ID>): …`, then write the real hash into the roadmap row.
-- Committing locally is reversible; pushing is the one team-visible, irreversible step — so that stays with you. They never push, set an upstream, force, amend, reset, or open a PR.
+- Committing locally is reversible; pushing is the one team-visible, irreversible step — so it stays with you unless you hand it over in the setup. They never force, amend, reset, or merge.
 - Pass `nocommit` to skip the commit and leave the changes in your working tree: `/ristretto:pull BREW-224 nocommit`.
 
 ## Flavor

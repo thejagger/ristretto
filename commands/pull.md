@@ -67,7 +67,7 @@ A builder subagent — one that brew or prep started — runs `gate.js arm build
 
 ## 6. Branch, and parked work
 
-Attended: create or reuse `feature/<FEATURE-ID>`. Unattended: stay on the current branch unless it is the default branch; then create `feature/<FEATURE-ID>`. Never push, never set an upstream.
+Attended: create or reuse `feature/<FEATURE-ID>`. Unattended: stay on the current branch unless it is the default branch; then create `feature/<FEATURE-ID>`. Push only through after-build.md (step 13).
 
 Then: if `git stash list` shows `ristretto <FEATURE-ID> blocked`, this feature was parked by an earlier unattended pull. `git stash apply` that entry, and drop it once it applied cleanly. A conflict → step 12.
 
@@ -136,6 +136,8 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
   Only this feature's code and plan: never `docs/ristretto/roadmap.md`, never `.ristretto.json`, never the `left alone:` files from step 3, and never discard anything. Then set the roadmap row's status to `blocked — <reason>`, nothing else, and commit it together with `.ristretto.json` if this pull created it: `docs(<FEATURE-ID>): blocked - <reason>`. Step 14, then the `blocked:` line, naming the stash.
 
 ## 13. MR description
+
+Attended, once committed: follow `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md` first; a merge request it opened replaces this offer.
 
 When the feature is committed, offer to write the MR description — attended: ask; unattended: list it. Yes → follow `${CLAUDE_PLUGIN_ROOT}/briefs/mr.md`.
 
