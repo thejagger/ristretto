@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+// Self-check for hooks/board-look.mjs — run with: node scripts/board-look.test.js
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
+
+(async () => {
+  const file = path.join(__dirname, '..', 'hooks', 'board-look.mjs');
+  const look = await import(pathToFileURL(file).href);
+
+  // The header: fluid, both schemes, the display face, the strip capped at 12.
+  const head = { mode: 'brew', big: '3', step: null, tone: 'ink', small: '/ 7', label: 'RUNNING', since: 1000, now: 61000, strip: { n: 7, done: 2, live: 'review', red: 0 }, caption: ['2 pulled', '1 in review', '4 to go'] };
+  const h = look.header(head);
+  assert.ok(h.src.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%"'));
+  assert.ok(!/^<svg[^>]*viewBox/.test(h.src), 'fluid: no viewBox on the root');
+  assert.ok(h.src.includes('prefers-color-scheme: dark') && h.src.includes('#1F1E1D') && h.src.includes('#ECEEF0'));
+  assert.ok(h.src.includes('Bahnschrift') && h.src.includes('#A58BE8'));
+  assert.strictEqual(h.h, 156, 'with a strip and its caption');
+  assert.strictEqual(look.header(head).src, h.src, 'deterministic');
+  assert.strictEqual((look.header({ ...head, strip: { n: 40, done: 2, live: 'review', red: 0 } }).src.match(/height="6"/g) || []).length, 12, 'the strip stops at 12');
+  assert.ok(!look.header({ ...head, since: null }).src.includes('animation-delay'), 'no clock without a start');
+  assert.ok(h.src.includes('animation-delay'), 'a clock with a start');
+  assert.strictEqual(look.header({ ...head, strip: null, caption: null }).h, 118);
+  assert.ok(look.header({ ...head, label: 'A<B' }).src.includes('A&lt;B'), 'words are escaped');
+  assert.ok(look.header({ ...head, strip: { n: 7, done: 6, live: null, red: 1 } }).src.includes('f-red'), 'a blocked feature is a red segment');
+  assert.ok(look.header({ ...head, mode: 'pull', big: 'BUILD', step: 'build' }).src.includes('class="f-build"'), 'the step word takes its hue');
+  assert.ok(/<text[^>]*class="i"[^>]*>BREW</.test(h.src) || h.src.includes('>BREW</text>'), 'the mode row');
+
+  // The step word, the meter, the rail, the chip.
+  const w = look.stepWord({ word: 'REVIEW', step: 'review', count: '4 / 5' });
+  assert.ok(w.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="44"') && w.includes('f-review') && w.includes('4 / 5'));
+  assert.ok(look.meter({ phases: [{ name: 'build', state: 'current', progress: 0.5 }] }).includes('preserveAspectRatio="none"'));
+  assert.ok(look.meter({ phases: [{ name: 'build', state: 'current', progress: 0.5 }] }).includes('width="100%" height="21"'));
+  assert.ok(look.meter({ phases: [{ name: 'build', state: 'current', progress: 0.5 }] }).includes('#E0896A'), 'the meter in step colours');
+  assert.ok(look.rail('first').includes('viewBox="0 0 16 600"'));
+  for (const stop of ['first', 'done', 'live', 'next', 'last']) assert.ok(look.rail(stop, 'review').startsWith('<svg'), stop);
+  assert.ok(look.rail('live', 'review').includes('f-review'), 'the live dot takes its step');
+  const c = look.chip({ label: 'BREW 3 / 7 · a<b&c', word: 'REVIEW', step: 'review', tone: 'ink', since: null, now: 0, strip: null });
+  assert.ok(c.includes('a&lt;b&amp;c'));
+  assert.ok(c.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="44"'));
+  assert.ok(look.chip({ label: 'L', word: 'W', step: null, tone: 'brass', since: 0, now: 60000, strip: { n: 6, done: 4, live: 'brass', red: 0 } }).includes('animation-delay'), 'the chip has a clock');
+
+  // The step inks, as the spec gives them.
+  assert.deepStrictEqual(look.STEP_INK.dark, { plan: '#A3A29C', build: '#E0896A', prove: '#3FB574', review: '#A58BE8', close: '#8FA1B6' });
+  assert.deepStrictEqual(look.STEP_INK.light, { plan: '#6B6A66', build: '#B4532F', prove: '#1F7A4D', review: '#6B4FC0', close: '#55677C' });
+  assert.strictEqual(look.BRASS, '#E8B64A');
+  assert.ok(!/Math\.random|Date/.test(fs.readFileSync(file, 'utf8')), 'no randomness and no clock');
+
+  console.log('board-look.test.js: all checks passed');
+})().catch((err) => { console.error(err); process.exit(1); });

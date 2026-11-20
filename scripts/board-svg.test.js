@@ -34,6 +34,12 @@ const { pathToFileURL } = require('url');
   assert.ok(/\.c\d\{animation:k10 10s steps\(10\) infinite;animation-delay:-7s\}/.test(c.svg), '9m57s: the seconds wheel is 7s into its 10s loop');
   assert.ok(/font-weight="600"/.test(c.svg) && /fill="#F0EEE6"/.test(c.svg));
   assert.strictEqual(s.svgClock({ ms: 1000 }).svg, s.svgClock({ ms: 1000 }).svg, 'the same time gives the same bytes');
+  // v1: the clock takes a face and a size; everything scales with the size.
+  const big = s.svgClock({ ms: 1000, font: 'Bahnschrift, sans-serif', size: 26 });
+  assert.ok(big.svg.includes('font-size="26"') && big.svg.includes('font-family="Bahnschrift, sans-serif"'));
+  assert.strictEqual(big.height, 36);
+  assert.ok(big.width > s.svgClock({ ms: 1000 }).width * 1.9, 'twice the size, twice as wide');
+  assert.strictEqual(s.svgClock({ ms: 1000 }).height, 18, 'the default clock is as before');
   assert.strictEqual(s.clockWords(9 * 60000 + 57000, 'clock'), '9m57s');
   assert.strictEqual(s.clockWords(2 * 3600000 + 5 * 60000, 'dur'), '2h05m');
 

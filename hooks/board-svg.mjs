@@ -261,8 +261,12 @@ function wheelsOf(ms, format) {
   return { t, wheels: out };
 }
 
-export function svgClock({ ms = 0, format = 'clock', color = INK.dark.text, bold = false } = {}) {
+// `font` and `size` (v1): the face and its size; the wheels, advances and height scale with it.
+export function svgClock({ ms = 0, format = 'clock', color = INK.dark.text, bold = false, font = CLOCK_FONT, size = CLOCK_SIZE } = {}) {
   const { t, wheels } = wheelsOf(ms, format);
+  const k = size / CLOCK_SIZE;
+  const H = Math.round(CLOCK_H * k);
+  const BASE = CLOCK_BASE * k;
   let x = 0;
   let body = '';
   let css = '';
@@ -271,30 +275,30 @@ export function svgClock({ ms = 0, format = 'clock', color = INK.dark.text, bold
   const steps = new Set();
   wheels.forEach((w, i) => {
     if (w.u) {
-      const a = ADV[w.u];
-      body += text(w.u, x + a / 2, CLOCK_BASE);
+      const a = ADV[w.u] * k;
+      body += text(w.u, x + a / 2, BASE);
       x += a;
       return;
     }
-    const a = ADV.d;
+    const a = ADV.d * k;
     const n = w.g.length;
     steps.add(n);
     let col = '';
-    w.g.forEach((g, k) => { col += text(g, x + a / 2, CLOCK_BASE + k * CLOCK_H); });
+    w.g.forEach((g, j) => { col += text(g, x + a / 2, BASE + j * H); });
     // The wheel's place in its loop now: how far into its period the time is.
     const delay = -(t % w.p);
     css += `.c${i}{animation:k${n} ${w.p}s steps(${n}) infinite;animation-delay:${num3(delay)}s}`;
     body += `<g class="c${i}">${col}</g>`;
     x += a;
   });
-  for (const n of steps) css += `@keyframes k${n}{from{transform:translateY(0)}to{transform:translateY(-${n * CLOCK_H}px)}}`;
+  for (const n of steps) css += `@keyframes k${n}{from{transform:translateY(0)}to{transform:translateY(-${n * H}px)}}`;
   const W = Math.ceil(x);
   return {
     width: W,
-    height: CLOCK_H,
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${CLOCK_H}" viewBox="0 0 ${W} ${CLOCK_H}">` +
-      `<style>${css}</style><defs><clipPath id="v"><rect width="${W}" height="${CLOCK_H}"/></clipPath></defs>` +
-      `<g clip-path="url(#v)" fill="${color}" font-family="${CLOCK_FONT}" font-size="${CLOCK_SIZE}" font-weight="${weight}">${body}</g></svg>`,
+    height: H,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
+      `<style>${css}</style><defs><clipPath id="v"><rect width="${W}" height="${H}"/></clipPath></defs>` +
+      `<g clip-path="url(#v)" fill="${color}" font-family="${font}" font-size="${size}" font-weight="${weight}">${body}</g></svg>`,
   };
 }
 
