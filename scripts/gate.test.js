@@ -1715,4 +1715,20 @@ assert.ok(/no \.ristretto\.json/.test(r.stderr) && r.stderr.includes(dir), 'and 
 r = gate(dir, 'prove');
 assert.strictEqual(r.status, 3, 'prove without a config is unverified');
 
+// 162. stateSaysBehind: a builder subagent never sees session-start output, so state carries the format.
+{
+  const stamp = (d, v) => { fs.mkdirSync(path.join(d, 'docs', 'ristretto'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'docs', 'ristretto', 'roadmap.md'), `# Ristretto Roadmap\n<!-- ristretto-format: ${v} -->\n`); };
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-fmt-'));
+  r = gate(d, 'state');
+  assert.strictEqual(r.stdout.split(/\r?\n/)[0], 'format: no roadmap');
+  stamp(d, '0.22'); r = gate(d, 'state');
+  assert.ok(/^format: behind \(0\.22 → \d+\.\d+\)/.test(r.stdout), 'state must say behind — got: ' + r.stdout);
+  assert.strictEqual(r.status, 0, 'state still exits 0 when the format is behind');
+  stamp(d, '9.9'); r = gate(d, 'state');
+  assert.ok(/^format: newer \(9\.9, this plugin writes /.test(r.stdout));
+  stamp(d, require('./migrate.js').FORMAT); r = gate(d, 'state');
+  assert.strictEqual(r.stdout.split(/\r?\n/)[0], 'format: current');
+}
+
 console.log('gate.test.js: all checks passed');

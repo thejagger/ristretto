@@ -46,6 +46,7 @@ const crypto = require('crypto');
 const { spawn, spawnSync, execSync } = require('child_process');
 const { readReport } = require('./testreport');
 const { ratchet, load: loadBaseline, save: saveBaseline } = require('./baseline');
+const { formatState, FORMAT } = require('./migrate.js');
 
 const MODE = process.argv[2] || 'quick';
 const ARG = process.argv[3] || '';
@@ -1335,6 +1336,16 @@ async function main() {
   // creates, deletes, or refreshes anything — a command that reports state must never be the
   // reason the state changes.
   if (MODE === 'state') {
+    // First line, always: a builder subagent never sees the session-start hook's output, so the
+    // project's format reaches it through here.
+    const fmt = formatState(projectDir);
+    console.log('format: ' + {
+      none: 'no roadmap',
+      current: 'current',
+      behind: `behind (${fmt.found} → ${FORMAT})`,
+      newer: `newer (${fmt.found}, this plugin writes ${FORMAT})`,
+      unstamped: 'unstamped',
+    }[fmt.state]);
     for (const [label, p] of [['pulling', markerPath]]) {
       const who = ownerLabel(p);
       if (who === null) { console.log(`${label}: not armed`); continue; }
