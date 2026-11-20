@@ -488,6 +488,30 @@ async function observeMarker($: EngineInterface) {
   }
 }
 
+// A builder's run outlives a reload of this module in its state, but the builder's id does not:
+// the builder still running is taken up again; with none running the run is over, and the
+// record this session left (before the reload, so not lastRec) is marked ended.
+async function settleBuilder($: EngineInterface) {
+  try {
+    if (!(await read($, live))?.agent) return
+    const top = (await $.agent.list()).filter(a => !a.parentId && ['pending', 'running', 'waiting'].includes(a.status))
+    if (top.length) {
+      builder = top[top.length - 1].id
+      return
+    }
+    await observe($, { kind: 'run-end' })
+    if (!ownRoot) return
+    const there = (await readRaw($, ownRoot)).rec
+    if (there && there.session === sessionId && there.endedAt === null) {
+      const ended = endedOf(there, await $.clock.now()) as BoardAtWork
+      await writeRec($, ended)
+      { const v = ended; if (!same(await read($, ownRec), v)) { await update($, ownRec, () => v); await stamp($) } }
+    }
+  } catch {
+    // Unknown: the run stays as it was, and a builder's end or the marker still ends it.
+  }
+}
+
 // Every 5 s: what changed on disk, read again; nothing changed, nothing written. A run at work
 // here refreshes its heartbeat at most once a minute: a file write, never an atom.
 async function poll($: EngineInterface) {
@@ -552,6 +576,7 @@ export const register: Register = on => {
     sessionId = await $.session.id()
     cache.clear()
     lastRec = null
+    builder = null
     roots = await findRoots($)
     // Run records live in the engine's store, per repo, so the history outlives the session.
     storeKey = ownRoot ? `runs:${ownRoot}` : ''
@@ -569,6 +594,8 @@ export const register: Register = on => {
     }
     await readTheme($)
     await refreshRepos($, true)
+    // Before the poll, which would write a kept run as a fresh record.
+    await settleBuilder($)
     await poll($)
     await stamp($)
     return begun

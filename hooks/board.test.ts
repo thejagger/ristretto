@@ -31,7 +31,7 @@ const ROADMAP = table([
   '| b | pw | Waits on blk | normal | planned |',
 ]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number; closes?: number }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number; closes?: number; agents?: { id: string; status: string; parentId?: string }[] }
 
 // git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
 function gitFor(prefix: string, head: string, log: string) {
@@ -152,6 +152,7 @@ function install(on: any, w: World, theme = 'dark') {
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
   on('ui.open', () => { w.opens = (w.opens ?? 0) + 1; return { value: { isPlaced: true } } as any })
   on('ui.close', () => { w.closes = (w.closes ?? 0) + 1; return { value: undefined } as any })
+  on('agent.list', () => ({ value: (w.agents ?? []).map(a => ({ description: 'build', type: 'general-purpose', ...a })) }) as any)
   // The engine's end of a turn, beneath the plugin, as a session has it.
   on('turn.complete', () => ({ text: '' }) as any)
   // What the board last wrote to each of its values, as the engine keeps it.
@@ -622,6 +623,30 @@ describe('v1: the steps, prep and its pins', () => {
     await $.turn.complete(turnEnd('', { agentId: 'b1', reason: 'aborted', isAborted: true }) as any).catch(() => {})
     expect(w.state!.live).toBe(null)
     expect(JSON.parse(w.files['.ristretto/at-work.json']).endedAt).not.toBeNull()
+  })
+
+  // Seen live next: the board reloaded in that session, brought the stopped builder's run back
+  // from its state and wrote it as a fresh RUNNING record (0m), with no builder left to end it.
+  test('loading with a builder\'s run kept: no builder running, the run is over', async ($, on) => {
+    const { w } = await start($, on)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Skill', skill: 'ristretto:pull', args: 'p1 unattended', agentId: 'b1' } as any).catch(() => {})
+    expect(w.state!.live.id).toBe('p1')
+    w.agents = [{ id: 'b1', status: 'killed' }]
+    await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true } as any)
+    expect(w.state!.live).toBe(null)
+    expect(JSON.parse(w.files['.ristretto/at-work.json']).endedAt).not.toBeNull()
+  })
+
+  test('loading with a builder\'s run kept: its builder still running keeps it, and its end ends it', async ($, on) => {
+    const { w } = await start($, on)
+    await $.command.run({ command: 'ristretto:brew', args: '' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Skill', skill: 'ristretto:pull', args: 'p1 unattended', agentId: 'b2' } as any).catch(() => {})
+    w.agents = [{ id: 'b2', status: 'running' }, { id: 'pl', status: 'running', parentId: 'b2' }]
+    await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true } as any)
+    expect(w.state!.live.id).toBe('p1')
+    await $.turn.complete(turnEnd('', { agentId: 'b2' }) as any).catch(() => {})
+    expect(w.state!.live).toBe(null)
   })
 
   test('on the desktop, which docks panes, prep opens the pane by itself', async ($, on) => {
