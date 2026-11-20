@@ -1,8 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardAtWork, BoardFile, BoardLive, BoardPage, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
-import { EMPTY_BOARD, commandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText } from './board-model.mjs'
+import type { Board, BoardAtWork, BoardFile, BoardLive, BoardPage, BoardPins, BoardPrep, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
+import { EMPTY_BOARD, commandOf, duration, elapsed, fold, formatOf, inline, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, signalOf } from './board-model.mjs'
+import { EMPTY_PINS, foldPins, pinsOf } from './board-pins.mjs'
 import { featureIdOf, featureLogArgs, isDocs, parseNumstat, sumFiles } from './board-files.mjs'
 import { BASES, ago, baseArgs, branchOf, defaultBranch, headArgs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
 import { chip, terminalSegments, tracker } from './board-effort.mjs'
@@ -54,6 +55,9 @@ const started = atom({ plugin: 'ristretto', key: 'started' } as const, null as B
 const runs = atom({ plugin: 'ristretto', key: 'runs' } as const, [] as BoardRecord[])
 const roles = atom({ plugin: 'ristretto', key: 'roles' } as const, {} as Record<string, BoardRole[]>)
 const drawnAt = atom({ plugin: 'ristretto', key: 'drawnAt' } as const, 0)
+// v1: prep running in this session, and what its answers pinned (spec 2026-11-20).
+const prep = atom({ plugin: 'ristretto', key: 'prep' } as const, null as BoardPrep | null)
+const pins = atom({ plugin: 'ristretto', key: 'pins' } as const, EMPTY_PINS as BoardPins)
 
 let timers: { cancel: () => void }[] = []
 let storeKey = ''
@@ -425,7 +429,11 @@ async function account($: EngineInterface) {
   const current = await read($, live)
   const step = track(before, current, now)
   if (step.run === before) {
-    if (before) await update($, run, r => (r && r.id === before.id ? markPhase(r, current, now) : r))
+    if (before) {
+      await update($, run, r => (r && r.id === before.id ? markPhase(r, current, now) : r))
+      // A step that changed changes the times the drawing shows.
+      { const v = startedOf(await read($, run)); if (!same(await read($, started), v)) { await update($, started, () => v); await stamp($) } }
+    }
     return
   }
   // Tokens and gate time keep arriving while this ran: only the call that still finds the run
@@ -440,7 +448,7 @@ async function account($: EngineInterface) {
   })
   if (!moved) return
   const begun = step.run as BoardRun | null
-  { const v = begun ? { id: begun.id, startedAt: begun.startedAt } : null; if (!same(await read($, started), v)) { await update($, started, () => v); await stamp($) } }
+  { const v = startedOf(begun); if (!same(await read($, started), v)) { await update($, started, () => v); await stamp($) } }
   // A feature's run starting again starts its roles over.
   if (begun && (await read($, roles))[begun.id]?.length) await update($, roles, r => ({ ...r, [begun.id]: [] }))
   if (!closing || !ownRoot) return
@@ -453,6 +461,39 @@ async function account($: EngineInterface) {
   const next = keep(Array.isArray(stored) ? (stored as BoardRecord[]) : await read($, runs), endRun(ended, now, status))
   { const v = next; if (!same(await read($, runs), v)) { await update($, runs, () => v); await stamp($) } }
   if (storeKey) await $.store.set(storeKey, next)
+}
+
+// What the drawing needs of a run: its start, and each step's time by step name (a run record
+// keeps the build step's time under `code`).
+const STEP_OF: Record<string, string> = { code: 'build' }
+function startedOf(r: BoardRun | null): BoardStarted | null {
+  if (!r) return null
+  const steps: Record<string, number> = {}
+  for (const [k, ms] of Object.entries(r.phases ?? {})) if (typeof ms === 'number' && ms > 0) steps[STEP_OF[k] ?? k] = ms
+  return { id: r.id, startedAt: r.startedAt, steps, at: r.at ? { step: STEP_OF[r.at.bucket] ?? r.at.bucket, since: r.at.since } : null }
+}
+
+// v1: prep starts in this session; a build or another ristretto command ends it. Prep and a
+// build open the pane by themselves, where the surface docks one beside the transcript.
+async function startPrep($: EngineInterface, args: string) {
+  const id = /^[A-Za-z][\w.-]*-\d+\b/.exec(args.trim())?.[0] ?? null
+  const now = await $.clock.now()
+  await update($, prep, () => ({ startedAt: now, id }))
+  await update($, pins, () => EMPTY_PINS)
+  await stamp($)
+}
+async function endPrep($: EngineInterface) {
+  if ((await read($, prep)) === null && (await read($, pins)).points.length === 0) return
+  await update($, prep, () => null)
+  await update($, pins, () => EMPTY_PINS)
+  await stamp($)
+}
+// What an answer pins: prep's points while prep runs, a build's rulings while one is live.
+async function pinFrom($: EngineInterface, text: string) {
+  if ((await read($, prep)) === null && (await read($, live)) === null) return
+  const before = await read($, pins)
+  const after = foldPins(before, pinsOf(text))
+  if (after !== before && !same(before, after)) { await update($, pins, () => after); await stamp($) }
 }
 
 // Whose run the pull marker is, from the session id gate.js writes into it and its age: what
@@ -614,6 +655,22 @@ export const register: Register = on => {
       return { text: 'Roadmap opened in the side pane — /ristretto:status <filter> prints it as text.' }
     }
     const cmd = commandOf(e.command) as 'pull' | 'shot' | 'brew' | null
+    try {
+      const docked = !!e.presentation?.isFullscreen && roots.length > 0
+      if (e.command === 'ristretto:prep') {
+        await startPrep($, e.args)
+        if (docked) await openPane($)
+      } else if (cmd) {
+        await endPrep($)
+        if (docked) await openPane($)
+      } else if (/^ristretto:/.test(e.command)) {
+        await endPrep($)
+      }
+      const signal = signalOf({ tool: 'Skill', skill: e.command })
+      if (signal) await observe($, signal)
+    } catch {
+      // The board never stands between the person and a command.
+    }
     if (cmd) await observe($, { kind: 'command', command: cmd, args: e.args })
     return next(e)
   })
@@ -623,7 +680,12 @@ export const register: Register = on => {
   // call carries its agentId.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     try {
-      const cmd = commandOf(String((e as any).skill ?? '')) as 'pull' | 'shot' | 'brew' | null
+      const skill = String((e as any).skill ?? '')
+      const cmd = commandOf(skill) as 'pull' | 'shot' | 'brew' | null
+      if (skill === 'ristretto:prep') await startPrep($, String((e as any).args ?? ''))
+      else if (cmd && (e as any).agentId === undefined) await endPrep($)
+      const signal = signalOf({ tool: 'Skill', skill })
+      if (signal) await observe($, signal)
       if (cmd) await observe($, { kind: 'command', command: cmd, args: String((e as any).args ?? ''), agent: (e as any).agentId !== undefined })
     } catch {
       // The board never stands between the model and a skill.
@@ -641,6 +703,8 @@ export const register: Register = on => {
       if (brief && (ran as any).result?.status === 'completed' && !(ran as any).isError) {
         const verdict = parseReport(brief.role, reportText(ran))
         if (verdict) await observe($, { kind: 'report', role: brief.role, verdict })
+        // A planner's rulings are what the build decided for the person.
+        if (brief.role === 'planner') await pinFrom($, reportText(ran))
         // Its own duration corrects when its role ended.
         const ms = Number((ran as any).result?.totalDurationMs)
         if (Number.isFinite(ms) && ms > 0) {
@@ -671,6 +735,17 @@ export const register: Register = on => {
       // The table shows what it saw.
     }
     return res
+  })
+
+  // v1's steps: `gate.js verify` proves the build, `close.js` closes the feature.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    try {
+      const signal = signalOf({ tool: 'Bash', command: String((e as any).command ?? '') })
+      if (signal) await observe($, signal)
+    } catch {
+      // A missed step leaves the board as it was.
+    }
+    return next(e)
   })
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
@@ -718,6 +793,14 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    // The answer is whole before the turn's end runs on: pin from it first.
+    if (e.agentId === undefined) {
+      try {
+        await pinFrom($, String((e as any).answer ?? ''))
+      } catch {
+        // An answer that pins nothing leaves the pins as they were.
+      }
+    }
     const done = await next(e)
     if (e.agentId === undefined) {
       await observeMarker($)

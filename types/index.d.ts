@@ -63,7 +63,10 @@ export type BoardRepo = {
 }
 export type BoardRole = { role: string; model: string; startedAt: number; endedAt: number | null }
 // The run in progress, as the drawing needs it: which feature, since when.
-export type BoardStarted = { id: string; startedAt: number }
+export type BoardStarted = { id: string; startedAt: number; steps?: Record<string, number>; at?: { step: string; since: number } | null }
+// v1: prep running in this session, and what its answers pinned (board-pins.mjs).
+export type BoardPrep = { startedAt: number; id: string | null }
+export type BoardPins = { points: { topic: string; question: string; ruling: string | null }[]; found: string[]; live: string | null }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -80,6 +83,8 @@ declare module 'claude-code' {
       paneOpen: boolean
       roles: Record<string, BoardRole[]>
       started: BoardStarted | null
+      prep: BoardPrep | null
+      pins: BoardPins
       drawnAt: number
     }
   }

@@ -27,7 +27,7 @@ const ROADMAP = table([
   '| b | pw | Waits on blk | normal | planned |',
 ]) + '\n- **blk** — waiting on Anatol: the API doc\n'
 
-type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number }
+type World = { files: Record<string, string>; git: Record<string, { exitCode: number; stdout: string }>; session: string; store?: Record<string, unknown>; mtimes?: Record<string, number>; writes: string[]; seen: string[]; spawns?: number; state?: Record<string, any>; opens?: number }
 
 // git answers for one repo, keyed `<folder>|<argv>` at a folder ('' for the root repo).
 function gitFor(prefix: string, head: string, log: string) {
@@ -146,7 +146,9 @@ function install(on: any, w: World, theme = 'dark') {
     return { value: { exitCode: hit ? hit.exitCode : 1, stdout: hit ? hit.stdout : '', stderr: '' } } as any
   })
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
-  on('ui.open', () => ({ value: { isPlaced: true } }) as any)
+  on('ui.open', () => { w.opens = (w.opens ?? 0) + 1; return { value: { isPlaced: true } } as any })
+  // What the board last wrote to each of its values, as the engine keeps it.
+  on('state.set', async ($: any, e: any, next: any) => { if (e.plugin === 'ristretto') w.state = { ...(w.state ?? {}), [e.key]: e.value }; return next(e) })
   mock.store(on, w.store ?? {})
 }
 
@@ -155,7 +157,7 @@ async function start($: any, on: any, w = world(), theme = 'dark') {
   install(on, w, theme)
   await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true } as any)
   await clock.settle()
-  return clock
+  return Object.assign(Object.create(clock), { w })
 }
 
 const mount = ($: any, surface: 'desktop' | 'terminal' | 'mobile' | 'vscode' = 'desktop') =>
@@ -460,5 +462,65 @@ describe('the band', () => {
   test('the terminal draws no emoji', async ($, on) => {
     await start($, on)
     expect(await texts(await band($, 'terminal'))).not.toContain('☕')
+  })
+})
+
+describe('v1: the steps, prep and its pins', () => {
+  const turnEnd = (answer: string, more: any = {}) => ({ answer, durationMs: 1, isAborted: false, turnId: 't', reason: 'answer', ...more })
+  const shown = { isFullscreen: true, columns: 120 }
+
+  test('verify, /code-review and close.js move a run through prove, review and close', async ($, on) => {
+    const clock = await start($, on)
+    await $.command.run({ command: 'ristretto:pull', args: 'p1' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: '> IMPLEMENTER for ristretto feature **p1**', description: 'build', subagent_type: 'general-purpose' } as any).catch(() => {})
+    await clock.settle()
+    expect(clock.w.state!.live.phase).toBe('coding')
+    await clock.advance(60000)
+    await $.tool.call({ tool: 'Bash', command: 'node "/p/scripts/gate.js" verify' } as any).catch(() => {})
+    expect(clock.w.state!.live.phase).toBe('proving')
+    await $.tool.call({ tool: 'Skill', skill: 'code-review', args: 'high /repo' } as any).catch(() => {})
+    expect(clock.w.state!.live.phase).toBe('review')
+    await $.tool.call({ tool: 'Bash', command: 'node "/p/scripts/close.js" p1 --input .ristretto/close-p1.json' } as any).catch(() => {})
+    expect(clock.w.state!.live.phase).toBe('closing')
+    // The time each step took is kept for the drawing, by step name.
+    const started = clock.w.state!.started
+    expect(started.id).toBe('p1')
+    expect(Object.keys(started.steps ?? {})).toContain('build')
+  })
+
+  test('a typed /code-review is a review too', async ($, on) => {
+    const clock = await start($, on)
+    await $.command.run({ command: 'ristretto:pull', args: 'p1' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: '> IMPLEMENTER for ristretto feature **p1**', description: 'build', subagent_type: 'general-purpose' } as any).catch(() => {})
+    await clock.settle()
+    await $.command.run({ command: 'code-review', args: 'high /repo' } as any).catch(() => {})
+    expect(clock.w.state!.live.phase).toBe('review')
+  })
+
+  test('prep pins what its answers decide; a subagent pins nothing', async ($, on) => {
+    const { w } = await start($, on)
+    await $.command.run({ command: 'ristretto:prep', args: 'R-33 the board' } as any).catch(() => {})
+    expect(w.state!.prep.id).toBe('R-33')
+    await $.turn.complete(turnEnd('Here we are.\n\ndecided: Modes → Prep, pull, brew.\nopen: Init — its own mode?\nfound: A pane is cells.') as any).catch(() => {})
+    let pins = w.state!.pins
+    expect(pins.points).toEqual([{ topic: 'Init', question: 'its own mode?', ruling: null }, { topic: 'Modes', question: '', ruling: 'Prep, pull, brew.' }])
+    expect(pins.found).toEqual(['A pane is cells.'])
+    await $.turn.complete(turnEnd('decided: Other → x', { agentId: 'sub1' }) as any).catch(() => {})
+    pins = w.state!.pins
+    expect(pins.points.length).toBe(2)
+  })
+
+  test('a build ends prep, clears its pins and opens the pane where it docks', async ($, on) => {
+    const { w } = await start($, on)
+    const opened0 = w.opens ?? 0
+    await $.command.run({ command: 'ristretto:prep', args: '', presentation: { ...shown, isFullscreen: false } } as any).catch(() => {})
+    expect((w.opens ?? 0) - opened0).toBe(0)
+    await $.command.run({ command: 'ristretto:prep', args: '', presentation: shown } as any).catch(() => {})
+    expect((w.opens ?? 0) - opened0).toBe(1)
+    await $.turn.complete(turnEnd('decided: A → B') as any).catch(() => {})
+    await $.command.run({ command: 'ristretto:pull', args: 'p1', presentation: shown } as any).catch(() => {})
+    expect(w.state!.prep).toBe(null)
+    expect(w.state!.pins.points).toEqual([])
+    expect((w.opens ?? 0) - opened0).toBe(2)
   })
 })
