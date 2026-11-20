@@ -111,11 +111,8 @@ export function header(head) {
   const size = big.length <= 7 ? 80 : 56;
   const bigCls = head.step ? `f-${head.step}` : head.tone === 'you' ? 'f-you' : 'i';
   let body = `<g font-family="${DIN}" font-weight="600">`;
-  ['prep', 'pull', 'brew'].forEach((name, i) => {
-    const on = name === head.mode;
-    body += `<text class="${on ? 'i' : 'd'}" x="${i * 58}" y="14" font-size="13" letter-spacing="2">${name.toUpperCase()}</text>`;
-    if (on) body += `<rect class="i" x="${i * 58}" y="21" width="40" height="2"/>`;
-  });
+  // The mode it is in, one word: three in a row read as a switch, and nothing here switches.
+  if (head.mode !== 'rest') body += `<text class="d" x="0" y="14" font-size="13" letter-spacing="2">${esc(String(head.mode).toUpperCase())}</text>`;
   body += `<text x="0" y="110"><tspan class="${bigCls}" font-size="${size}" style="font-stretch:80%">${esc(big)}</tspan>`;
   if (head.small) body += `<tspan class="d" dx="10" font-size="30" font-weight="500">${esc(head.small)}</tspan>`;
   body += '</text>';
@@ -173,26 +170,27 @@ export function rail(stop, step = null) {
 // strip pinned right.
 export function chip(c) {
   const hue = c.step ? `f-${c.step}` : c.tone === 'brass' ? 'f-brass' : c.tone === 'you' ? 'f-you' : 'i';
-  let body = '<rect width="100%" height="44" rx="10" fill="#808080" fill-opacity=".12"/>' +
-    `<circle class="h ${hue}" cx="18" cy="22" r="10"/><circle class="${hue}" cx="18" cy="22" r="6"/>` +
+  // 40px: two rows of the pane, so the press area laid over it covers all of it.
+  let body = '<rect width="100%" height="40" rx="10" fill="#808080" fill-opacity=".12"/>' +
+    `<circle class="h ${hue}" cx="18" cy="20" r="10"/><circle class="${hue}" cx="18" cy="20" r="6"/>` +
     `<g font-family="${DIN}" font-weight="600">` +
-    `<text class="d" x="38" y="17" font-size="11" letter-spacing="1.6">${esc(c.label ?? '')}</text>` +
-    `<text class="${hue}" x="38" y="37" font-size="22" style="font-stretch:80%">${esc(c.word ?? '')}</text></g>`;
-  body += clockAt({ since: c.since, now: c.now, size: 15, base: 20, inset: 14 });
+    `<text class="d" x="38" y="15" font-size="11" letter-spacing="1.6">${esc(c.label ?? '')}</text>` +
+    `<text class="${hue}" x="38" y="34" font-size="21" style="font-stretch:80%">${esc(c.word ?? '')}</text></g>`;
+  body += clockAt({ since: c.since, now: c.now, size: 15, base: 18, inset: 14 });
   const s = c.strip ? fit(c.strip) : null;
   if (s) {
     const n = s.n;
     let segs = '';
     for (let i = 0; i < n; i++) {
       const x = -14 - (n - i) * 17 + 3;
-      const at = `x="${x}" y="28" width="14" height="6"`;
+      const at = `x="${x}" y="25" width="14" height="6"`;
       const st = segState(i, s);
       if (st === 'done') segs += `<rect class="i" ${at}/>`;
-      else if (st === 'live') segs += liveSeg(at, x, x + 14, 28, s.live, 4);
+      else if (st === 'live') segs += liveSeg(at, x, x + 14, 25, s.live, 4);
       else if (st === 'red') segs += `<rect class="f-red" ${at}/>`;
       else segs += `<rect class="t" ${at}/>`;
     }
     body += `<svg x="100%" overflow="visible">${segs}</svg>`;
   }
-  return fluid(44, body, HALO + FLOW.replace('-16', '-8'));
+  return fluid(40, body, HALO + FLOW.replace('-16', '-8'));
 }

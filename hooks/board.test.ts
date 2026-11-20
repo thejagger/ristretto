@@ -485,7 +485,7 @@ describe('the band (v1): the chip above the prompt', () => {
     const ui = await band($)
     const all = await ui.findAll({ type: 'Svg' })
     expect(all.length).toBe(1)
-    expect(all[0].props.height).toBe(44)
+    expect(all[0].props.height).toBe(40)
     expect(all[0].props.alt).toContain('BREW')
     expect(all[0].props.alt).toContain('p1')
     expect(all[0].props.alt).toContain('PLAN')
@@ -498,6 +498,8 @@ describe('the band (v1): the chip above the prompt', () => {
     const ui = await band($)
     const press = (await ui.findAll({ type: 'Client' }))[0]
     expect(String(press?.props.module)).toContain('board-press.tsx')
+    // The press area covers the whole chip: two rows, as tall as the image.
+    expect(press.props.height).toBe(2)
     const opens = w.opens ?? 0
     await clickOn(ui, press.props.key)
     expect((w.opens ?? 0) - opens).toBe(1)
@@ -593,6 +595,14 @@ describe('v1: the steps, prep and its pins', () => {
     expect(w.state!.live.phase).toBe('closing')
     await $.turn.complete(turnEnd('pulled: web-flat-rate-orders abc') as any).catch(() => {})
     expect(w.state!.live).toBe(null)
+  })
+
+  test('on the desktop, which docks panes, prep opens the pane by itself', async ($, on) => {
+    const { w } = await start($, on)
+    await band($)
+    const opens = w.opens ?? 0
+    await $.command.run({ command: 'ristretto:prep', args: '', presentation: { isFullscreen: false, columns: 80 } } as any).catch(() => {})
+    expect((w.opens ?? 0) - opens).toBe(1)
   })
 
   test('a build ends prep, clears its pins and opens the pane where it docks', async ($, on) => {

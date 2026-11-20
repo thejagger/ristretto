@@ -35,7 +35,9 @@ const { pathToFileURL } = require('url');
   assert.ok(look.header({ ...head, label: 'A<B' }).src.includes('A&lt;B'), 'words are escaped');
   assert.ok(look.header({ ...head, strip: { n: 7, done: 6, live: null, red: 1 } }).src.includes('f-red'), 'a blocked feature is a red segment');
   assert.ok(look.header({ ...head, mode: 'pull', big: 'BUILD', step: 'build' }).src.includes('class="f-build"'), 'the step word takes its hue');
-  assert.ok(/<text[^>]*class="i"[^>]*>BREW</.test(h.src) || h.src.includes('>BREW</text>'), 'the mode row');
+  // The mode is one word, not a row of three that reads as a switch.
+  assert.ok(h.src.includes('>BREW</text>') && !h.src.includes('>PREP</text>') && !h.src.includes('>PULL</text>'), 'only the mode it is in');
+  assert.ok(!/>(PREP|PULL|BREW)<\/text>/.test(look.header({ ...head, mode: 'rest', strip: null, caption: null }).src), 'rest names no mode');
 
   // The step word, the meter, the rail, the chip.
   const w = look.stepWord({ word: 'REVIEW', step: 'review', count: '4 / 5' });
@@ -48,7 +50,7 @@ const { pathToFileURL } = require('url');
   assert.ok(look.rail('live', 'review').includes('f-review'), 'the live dot takes its step');
   const c = look.chip({ label: 'BREW 3 / 7 · a<b&c', word: 'REVIEW', step: 'review', tone: 'ink', since: null, now: 0, strip: null });
   assert.ok(c.includes('a&lt;b&amp;c'));
-  assert.ok(c.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="44"'));
+  assert.ok(c.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="40"'), 'the chip is two rows high');
   assert.ok(look.chip({ label: 'L', word: 'W', step: null, tone: 'brass', since: 0, now: 60000, strip: { n: 6, done: 4, live: 'brass', red: 0 } }).includes('animation-delay'), 'the chip has a clock');
 
   // The step inks, as the spec gives them.

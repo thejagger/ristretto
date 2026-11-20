@@ -506,6 +506,10 @@ async function poll($: EngineInterface) {
 // draw that came before either; dark by default. Never on a timer.
 let theme: 'dark' | 'light' = 'dark'
 let themeKnown = false
+// Whether a surface drawing this session docks panes beside the transcript: the desktop says so
+// on its drawings (a command's presentation speaks for the terminal only). A plain variable, so
+// a drawing that learns it writes no state.
+let docks = false
 async function readTheme($: any) {
   themeKnown = true
   try {
@@ -621,7 +625,7 @@ export const register: Register = on => {
     }
     const cmd = commandOf(e.command) as 'pull' | 'shot' | 'brew' | null
     try {
-      const docked = !!e.presentation?.isFullscreen && roots.length > 0
+      const docked = (!!e.presentation?.isFullscreen || docks) && roots.length > 0
       if (e.command === 'ristretto:prep') {
         await startPrep($, e.args)
         if (docked) await openPane($)
@@ -847,6 +851,7 @@ async function viewNow($: any): Promise<{ msg: string | null; view: any; nowMs: 
 }
 
 async function drawPane($: any, e: any) {
+  if (e.viewport?.isFullscreen === true) docks = true
   const els = $.ui.resolve(e) as any
   const { Box, Text } = els
   if (!themeKnown) await readTheme($)
@@ -864,24 +869,27 @@ async function drawPane($: any, e: any) {
 
 // The band above the prompt: the chip, the view at a glance; one line of text on the terminal.
 async function drawBand($: any, e: any) {
+  if (e.viewport?.isFullscreen === true) docks = true
   const { msg, view, nowMs } = await viewNow($)
   const c = msg ? null : chipOf(view)
   if (!c) return null
   const els = $.ui.resolve(e) as any
   const alt = `ristretto ${c.label}: ${c.word}`
+  const rich = !!els.Svg && e.surface !== 'terminal'
+  // A press area sized in percent took one row only; it is given the chip's two rows.
   // The press area lies over the chip where the surface draws one (the desktop and the terminal;
   // VS Code resolves a Client but drops it, and mobile takes no presses).
   const press = (e.surface === 'desktop' || e.surface === 'terminal') && els.Client
     ? (
-      <els.Box position="absolute" top={0} left={0} width="100%" height="100%">
-        <els.Client key="chip-press" module="./board-press.tsx" width="100%" height="100%" props={{ id: 'toggle', blank: true }} />
+      <els.Box position="absolute" top={0} left={0} width="100%">
+        <els.Client key="chip-press" module="./board-press.tsx" width="100%" height={rich ? 2 : 1} props={{ id: 'toggle', blank: true }} />
       </els.Box>
     )
     : null
-  if (els.Svg && e.surface !== 'terminal') {
+  if (rich) {
     return (
       <els.Box flexDirection="column" position="relative">
-        <els.Svg alt={alt} height={44} source={phaseLock(chipSvg({ ...c, now: nowMs }), nowMs)} />
+        <els.Svg alt={alt} height={40} source={phaseLock(chipSvg({ ...c, now: nowMs }), nowMs)} />
         {press}
       </els.Box>
     )
