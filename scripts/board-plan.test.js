@@ -165,6 +165,9 @@ const { pathToFileURL } = require('url');
     { done: true, text: 'Ran the redirect script.', how: '' },
   ]);
 
+  // walkedBoxCountsDone: a box ristretto ticked with what it saw is done, like the owner's tick.
+  assert.deepStrictEqual(p.parseChecks('- Acceptance:\n  - [x] [human] X · checked by ristretto in T, 2026-11-20: Y\n').map((c) => c.done), [true]);
+
   // parsesPlanDecisions: a prep ruling is plain; the agent's is `taken:`, in force. An early 0.22
   // box, open or ticked, reads as taken too — there is nothing left to confirm.
   assert.deepStrictEqual(p.parseDecisions(boxed), [

@@ -211,5 +211,51 @@ test('keepOutOfRangeRefuses', () => {
   assert.strictEqual(fs.readFileSync(path.join(root, 'docs', 'ristretto', 'plans', 'r.md'), 'utf8'), plan, 'nothing ticked');
 });
 
+// Walking: ristretto ticks a box it checked itself, with what it saw.
+const W = '2026-11-20';
+test('listShowsHow', () => {
+  assert.deepStrictEqual(c.openChecks(plan).map((o) => o.how), ['hosted project · run the migration', null]);
+  const root = tmp(); repo(root, { h: plan });
+  assert.strictEqual(JSON.parse(cli(root, 'list').stdout).features[0].checks[0].how, 'hosted project · run the migration');
+});
+
+test('walkTicksNamedBox', () => {
+  const r = c.tick(plan, { date: W, by: 'T', boxes: new Map([[2, '840 before, 840 after']]) });
+  assert.deepStrictEqual([r.ticked, r.kept, r.failed], [[2], [], []]);
+  assert.ok(r.text.includes('  - [x] [human] the mail arrives in Outlook · checked by ristretto in T, 2026-11-20: 840 before, 840 after\n'));
+  assert.ok(r.text.includes('  - [ ] [human] a free user sees the upgrade banner\n'), 'an unnamed box is left as it is');
+  assert.ok(r.text.includes(`- 3: seen in T ${W}\n`));
+  assert.ok(r.text.includes('- 2: pending human\n'));
+});
+
+test('failedStaysOpen', () => {
+  const r = c.tick(plan, { date: W, by: 'T', failed: new Map([[1, 'jumps to top']]) });
+  assert.deepStrictEqual([r.ticked, r.failed], [[], [1]]);
+  assert.ok(r.text.includes('  - [ ] [human] a free user sees the upgrade banner\n'), 'a failed look never ticks');
+  assert.ok(r.text.includes('- 2: pending human\n'));
+  const findings = r.text.slice(r.text.indexOf('## Open findings'));
+  assert.ok(r.text.includes('## Open findings') && findings.includes(`- a free user sees the upgrade banner — not as expected in T, ${W}: jumps to top`), r.text);
+});
+
+test('walkRefusesBadNumbers', () => {
+  const root = tmp(); repo(root, { w: plan });
+  const file = path.join(root, 'docs', 'ristretto', 'plans', 'w.md');
+  for (const args of [
+    ['--by', 'T', '--box', '5', '--saw', 'x'],
+    ['--by', 'T', '--box', '1', '--saw', 'x', '--failed', '1', '--saw', 'y'],
+    ['--by', 'T', '--box', '1', '--saw', 'x', '--box', '1', '--saw', 'y'],
+    ['--by', 'T', '--keep', '1', '--box', '2', '--saw', 'x'],
+    ['--by', 'T', '--box', '1'],
+    ['--by', 'T'],
+  ]) {
+    const r = cli(root, 'tick', 'w', ...args, '--date', W);
+    assert.strictEqual(r.status, 2, `${args.join(' ')} → ${r.status} ${r.stderr}`);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), plan, `${args.join(' ')} wrote the plan`);
+  }
+  const ok = cli(root, 'tick', 'w', '--by', 'T', '--box', '1', '--saw', 'ok', '--failed', '2', '--saw', 'no', '--date', W);
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.deepStrictEqual(JSON.parse(ok.stdout), { plan: file, ticked: [1], kept: [], failed: [2] });
+});
+
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

@@ -126,5 +126,5 @@ function main(argv) {
   process.stdout.write(`${JSON.stringify({ plan, roadmap })}\n`);
 }
 
-module.exports = { closePlan, closeRoadmap };
+module.exports = { closePlan, closeRoadmap, sectionRange, setSection };
 if (require.main === module) main(process.argv.slice(2));
