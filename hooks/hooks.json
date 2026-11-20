@@ -1,6 +1,18 @@
 {
-  "description": "ristretto deterministic gates: guards the house-rule files while a run is armed, formats touched files, and runs lint+typecheck+test on Stop/SubagentStop and on a subagent's hand-back until green — see scripts/gate.js.",
+  "description": "ristretto deterministic gates: checks the project's format once at session start, guards the house-rule files while a run is armed, formats touched files, and runs lint+typecheck+test on Stop/SubagentStop and on a subagent's hand-back until green — see scripts/gate.js.",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "SubagentHandback",
