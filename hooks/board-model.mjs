@@ -184,6 +184,14 @@ export function fold(live, obs, now) {
       const coding = live.command === 'shot' && live.phase === 'starting';
       return { ...live, armed: true, ...(coding ? { phase: 'coding', since: now } : {}) };
     }
+    // v1's steps after build: a verify proves it (a verify while fixing stays in review), a
+    // /code-review reviews it, close.js closes it.
+    case 'verify':
+      return live && live.phase === 'coding' ? { ...live, phase: 'proving', since: now } : live;
+    case 'review':
+      return live && (live.phase === 'coding' || live.phase === 'proving') ? { ...live, phase: 'review', round: 1, since: now, gate: null } : live;
+    case 'close':
+      return live && live.id && live.phase !== 'closing' ? { ...live, phase: 'closing', since: now } : live;
     case 'main-turn-end':
       if (live && live.agent) return live;
       if (!live || !live.armed) return null;
@@ -422,29 +430,34 @@ export function stateOf(board, live, elsewhere = false, opts = {}) {
 // phases before the current one done. Code sits mid-phase (no unit record, spec 0.3 #11); review
 // moves by round, 3 for brew and 2 for pull and shot; a fix round stays in review. Progress moves
 // only with the phase or round, never with the clock.
-const AT = { planning: 'plan', coding: 'code', fixing: 'review', review: 'review', closing: 'close' };
+export const STEPS = ['plan', 'build', 'prove', 'review', 'close'];
+const AT = { planning: 'plan', coding: 'build', proving: 'prove', fixing: 'review', review: 'review', closing: 'close' };
 export function effortOf(live, command) {
-  const names = command === 'shot' ? ['code', 'review', 'close'] : ['plan', 'code', 'review', 'close'];
+  const names = command === 'shot' ? STEPS.slice(1) : STEPS;
   const phase = live?.phase ?? null;
   const at = AT[phase] ? names.indexOf(AT[phase]) : -1;
-  const round = Math.max(1, live?.round || 0);
-  const max = command === 'brew' ? 3 : 2;
-  const progress = (name) => {
-    if (name !== 'review') return 0.5;
-    const p = phase === 'fixing' ? (round - 0.25) / max : (round - 0.5) / max;
-    return Math.min(0.95, Math.max(0.05, p));
-  };
-  const step = phase === 'review' ? (round > 1 ? `review r${round}` : 'review')
-    : phase === 'fixing' ? `fix r${round}`
-      : AT[phase] ?? (phase || 'starting');
-  const done = phase === 'interrupted' ? -1 : at;
+  const step = phase === 'interrupted' ? 'stopped' : AT[phase] ?? (phase || 'starting');
   return {
-    phases: names.map((name, i) => (i === at && phase !== 'interrupted'
-      ? { name, state: 'current', progress: progress(name) }
-      : { name, state: i < done ? 'done' : 'todo' })),
+    phases: names.map((name, i) => (i === at
+      ? { name, state: 'current', progress: phase === 'fixing' ? 0.75 : 0.5 }
+      : { name, state: i < at ? 'done' : 'todo' })),
     red: !!live?.gate?.red,
     step,
   };
+}
+
+// What a tool call says about the step a run is at (v1): `gate.js verify` proves the build,
+// /code-review reviews it, `close.js` closes it. Anything else says nothing.
+const VERIFY = /\bnode\b[^|;&]*\bgate\.js["']?\s+verify\b/;
+const CLOSE = /\bnode\b[^|;&]*\bclose\.js["']?\s+\S/;
+const REVIEW = /^(?:[\w-]+:)?code-review$/;
+export function signalOf({ tool, command, skill } = {}) {
+  if (tool === 'Skill') return REVIEW.test(String(skill ?? '')) ? { kind: 'review' } : null;
+  if (tool !== 'Bash') return null;
+  const cmd = String(command ?? '');
+  if (VERIFY.test(cmd)) return { kind: 'verify' };
+  if (CLOSE.test(cmd)) return { kind: 'close' };
+  return null;
 }
 
 // The role table: each role's time, the running one live (measured to the drawing's stamp).

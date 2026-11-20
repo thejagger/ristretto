@@ -116,5 +116,15 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(r.spawnModel(undefined, undefined), '');
   assert.strictEqual(r.modelName(r.spawnModel({}, 'haiku')), 'Haiku');
 
+  // v1: prove is a step of its own; a record kept before it still splits.
+  let pv = r.markPhase(r.track(null, ph('coding'), 0).run, ph('coding'), 0);
+  pv = r.markPhase(pv, ph('proving'), 2000);
+  pv = r.markPhase(pv, ph('review'), 5000);
+  assert.strictEqual(pv.phases.prove, 3000);
+  assert.strictEqual(pv.phases.code, 2000, 'run records keep the code key');
+  assert.strictEqual(r.BUCKET.proving, 'prove');
+  assert.deepStrictEqual(r.splitOf({ ms: 7, phases: { plan: 1, code: 5, review: 0, close: 1 } }).map((x) => x.phase), ['plan', 'code', 'close']);
+  assert.deepStrictEqual(r.splitOf(r.endRun(pv, 6000, 'done')).map((x) => x.phase), ['code', 'prove', 'review']);
+
   console.log('board-runs.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

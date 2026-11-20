@@ -38,8 +38,10 @@ export function addGate(run, ms, red) {
 // Where a run's time goes: the fold's phase, read into four buckets. A fix round is review, as
 // on the effort bar (records written before keep the split they had); any other phase
 // (starting, interrupted, another feature's) stops the clock.
-export const BUCKET = { planning: 'plan', coding: 'code', fixing: 'review', review: 'review', closing: 'close' };
-const PHASES = ['plan', 'code', 'review', 'close'];
+// v1's build step keeps the record key `code`, so runs kept before it still read; `prove` is
+// absent from a record that never proved, and counts as 0.
+export const BUCKET = { planning: 'plan', coding: 'code', proving: 'prove', fixing: 'review', review: 'review', closing: 'close' };
+const PHASES = ['plan', 'code', 'prove', 'review', 'close'];
 
 export function markPhase(run, live, now) {
   if (!run) return run;
@@ -48,7 +50,7 @@ export function markPhase(run, live, now) {
   if (at && at.bucket === bucket) return run;
   if (!at && !bucket) return run;
   const phases = { plan: 0, code: 0, review: 0, close: 0, ...(run.phases || {}) };
-  if (at) phases[at.bucket] += Math.max(0, now - at.since);
+  if (at) phases[at.bucket] = (phases[at.bucket] || 0) + Math.max(0, now - at.since);
   return { ...run, phases, at: bucket ? { bucket, since: now } : null };
 }
 

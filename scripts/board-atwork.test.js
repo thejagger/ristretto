@@ -18,12 +18,12 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(r.id, 'web-order-title');
   assert.strictEqual(r.session, 's1');
   assert.strictEqual(r.unattended, true);
-  assert.strictEqual(r.step, 'code');
+  assert.strictEqual(r.step, 'build');
   assert.strictEqual(r.red, false);
   assert.strictEqual(r.beat, 100);
   assert.strictEqual(r.startedAt, 100);
   assert.strictEqual(r.endedAt, null);
-  assert.deepStrictEqual(r.effort.map((p) => p.state), ['done', 'current', 'todo', 'todo']);
+  assert.deepStrictEqual(r.effort.map((p) => p.state), ['done', 'current', 'todo', 'todo', 'todo']);
   assert.strictEqual(a.recordOf(null, { session: 's1', title: '', now: 1 }), null);
   assert.strictEqual(a.recordOf({ ...live, id: null }, { session: 's1', title: '', now: 1 }), null);
   // The same feature keeps the time it started; another feature starts again.

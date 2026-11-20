@@ -235,7 +235,7 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual([v.state, v.cards.map((c) => c.kind)], ['running', ['brewing', 'branch', 'needs', 'done']]);
     assert.deepStrictEqual([v.cards[1].compact, v.cards[3].compact, v.cards[3].rows], [true, true, []]);
     const w = v.cards[0];
-    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.effort.phases.map((x) => x.state)], ['b', 'review', ['done', 'done', 'current', 'todo']], 'plan and code behind it, close ahead');
+    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.effort.phases.map((x) => x.state)], ['b', 'review', ['done', 'done', 'done', 'current', 'todo']], 'plan, build and prove behind it, close ahead');
 
     const reloaded = m.fold(null, { kind: 'marker', state: 'mine' }, 0);
     assert.strictEqual(m.view(board, reloaded, false, {}).cards[0].text, 'starting', 'an armed run with nothing seen yet');
@@ -304,7 +304,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(stopped.phase, 'interrupted');
     const sheet = { ...board, rows: [...board.rows, row('f-1', 'normal', 'planned')] };
     const inset = m.view(sheet, stopped, false, { drawnAt: 99999 }).cards[0].inset;
-    assert.deepStrictEqual([inset.status, inset.elapsed.live], ['interrupted', false], 'no running clock on an interrupted run');
+    assert.deepStrictEqual([inset.status, inset.elapsed.live], ['stopped', false], 'no running clock on an interrupted run');
     assert.strictEqual(m.fold(m.fold(live, { kind: 'command', command: 'shot', args: 'x' }, 0), { kind: 'main-turn-end', interrupted: true }, 1), null,
       'interrupted before arming is no run at all');
 
@@ -557,7 +557,7 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual(m.bandOf(board, null, false, {}), { idle: { open: 2, needYou: 1, ready: false } });
     const live = { command: 'pull', id: 'c', phase: 'coding', round: 0, since: 0, gate: null, armed: true };
     const run = m.bandOf(board, live, false, {}).running;
-    assert.deepStrictEqual([run.id, run.step, run.red, run.needYou, run.effort.phases.length], ['c', 'code', false, 1, 4]);
+    assert.deepStrictEqual([run.id, run.step, run.red, run.needYou, run.effort.phases.length], ['c', 'build', false, 1, 5]);
     assert.strictEqual(m.bandOf(board, { ...live, gate: { since: 0, red: true } }, false, {}).running.step, 'gate red');
     assert.deepStrictEqual(m.bandOf(board, null, true, {}).running.step, 'a run is active in another session');
     assert.ok(!/ahead|done|total|clock/.test(JSON.stringify(m.bandOf(board, null, false, {}))), 'no tally, no time, no ahead');
@@ -712,22 +712,20 @@ const shown = (v) => JSON.stringify(v);
     const L = (o) => ({ command: 'pull', id: 'f', phase: 'coding', round: 0, since: 0, gate: null, armed: true, ...o });
     const states = (e) => e.phases.map((p) => (p.state === 'current' ? `${p.name}:${p.progress}` : `${p.name}:${p.state}`));
 
-    // Effort: phases before the current one done; code sits mid-phase (no unit record, spec 0.3 #11).
+    // Effort (v1): five steps, those before the current one done; the current one sits mid-step.
     let e = m.effortOf(L({}), 'pull');
-    assert.deepStrictEqual(states(e), ['plan:done', 'code:0.5', 'review:todo', 'close:todo']);
-    assert.deepStrictEqual([e.step, e.red], ['code', false]);
+    assert.deepStrictEqual(states(e), ['plan:done', 'build:0.5', 'prove:todo', 'review:todo', 'close:todo']);
+    assert.deepStrictEqual([e.step, e.red], ['build', false]);
     e = m.effortOf(L({ command: 'shot' }), 'shot');
-    assert.deepStrictEqual(e.phases.map((p) => p.name), ['code', 'review', 'close'], 'shot has no plan');
-    // A fix round stays in review, so the thumb never jumps back to code.
+    assert.deepStrictEqual(e.phases.map((p) => p.name), ['build', 'prove', 'review', 'close'], 'shot has no plan');
+    // A fix round stays in review, so the thumb never jumps back to build.
     e = m.effortOf(L({ phase: 'fixing', round: 1 }), 'pull');
-    assert.deepStrictEqual([e.phases[2].state, e.step], ['current', 'fix r1']);
-    e = m.effortOf(L({ phase: 'review', round: 2, command: 'brew' }), 'brew');
-    assert.deepStrictEqual([e.step, e.phases[2].progress], ['review r2', 0.5], 'brew reviews up to 3 rounds');
+    assert.deepStrictEqual([e.phases[3].state, e.phases[3].progress, e.step], ['current', 0.75, 'review']);
     e = m.effortOf(L({ gate: { since: 0, red: true } }), 'pull');
     assert.strictEqual(e.red, true);
     e = m.effortOf(L({ phase: 'interrupted' }), 'pull');
     assert.ok(e.phases.every((p) => p.state !== 'current'));
-    assert.strictEqual(e.step, 'interrupted');
+    assert.strictEqual(e.step, 'stopped');
 
     // Roles: who works, on which model, for how long; the running one is live.
     const roles = { f: [
@@ -761,7 +759,7 @@ const shown = (v) => JSON.stringify(v);
     assert.strictEqual(w.title, 'Brewing');
     assert.deepStrictEqual(w.tally, { brewed: 2, blocked: 1, toGo: 5, total: 8 });
     assert.strictEqual(w.tally.brewed + w.tally.blocked + w.tally.toGo, w.tally.total);
-    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.elapsed], ['c', 'code', { ms: 60000, live: true }]);
+    assert.deepStrictEqual([w.inset.id, w.inset.status, w.inset.elapsed], ['c', 'build', { ms: 60000, live: true }]);
     assert.deepStrictEqual(w.clock, { ms: 149000, live: true }, 'the brew runs from its snapshot');
     assert.strictEqual(w.inset.roles.length, 2);
     // Rest rows: next, two queued, the brewed (newest first), every blocked, what waits on a blocked one.
@@ -787,6 +785,43 @@ const shown = (v) => JSON.stringify(v);
     assert.deepStrictEqual([w.inset, w.text], [null, 'starting']);
     assert.strictEqual(m.brewingOf(board, null, opts), null);
     assert.ok(!/"action"/.test(JSON.stringify(m.brewingOf(board, live, opts))));
+  }
+
+  // 22. v1: the five steps, told by verify, /code-review and close.js.
+  {
+    const run = (phase) => ({ command: 'pull', id: 'a', phase, round: 0, since: 0, gate: null, armed: true });
+    assert.deepStrictEqual(m.STEPS, ['plan', 'build', 'prove', 'review', 'close']);
+    assert.deepStrictEqual(m.signalOf({ tool: 'Bash', command: 'node "C:\\Users\\x\\ristretto\\scripts\\gate.js" verify' }), { kind: 'verify' });
+    assert.deepStrictEqual(m.signalOf({ tool: 'Bash', command: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" verify' }), { kind: 'verify' });
+    assert.deepStrictEqual(m.signalOf({ tool: 'Bash', command: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/close.js" a --input .ristretto/close-a.json' }), { kind: 'close' });
+    assert.deepStrictEqual(m.signalOf({ tool: 'Bash', command: 'node C:\\p\\scripts\\close.js a --input x' }), { kind: 'close' });
+    assert.deepStrictEqual(m.signalOf({ tool: 'Skill', skill: 'code-review' }), { kind: 'review' });
+    assert.deepStrictEqual(m.signalOf({ tool: 'Skill', skill: 'engineering:code-review' }), { kind: 'review' });
+    assert.strictEqual(m.signalOf({ tool: 'Bash', command: 'node scripts/gate.js arm' }), null);
+    assert.strictEqual(m.signalOf({ tool: 'Bash', command: 'git log -- scripts/close.js' }), null);
+    assert.strictEqual(m.signalOf({ tool: 'Bash', command: 'cat scripts/gate.js | grep verify' }), null);
+    assert.strictEqual(m.signalOf({ tool: 'Skill', skill: 'ristretto:pull' }), null);
+    assert.strictEqual(m.signalOf({ tool: 'Bash' }), null);
+
+    assert.strictEqual(m.fold(run('coding'), { kind: 'verify' }, 5).phase, 'proving');
+    assert.strictEqual(m.fold(run('coding'), { kind: 'verify' }, 5).since, 5);
+    assert.strictEqual(m.fold(run('fixing'), { kind: 'verify' }, 5).phase, 'fixing');
+    assert.strictEqual(m.fold(run('review'), { kind: 'verify' }, 5).phase, 'review', 'a verify after review stays in review');
+    assert.strictEqual(m.fold(run('proving'), { kind: 'review' }, 5).phase, 'review');
+    assert.strictEqual(m.fold(run('coding'), { kind: 'review' }, 5).phase, 'review');
+    assert.strictEqual(m.fold(run('review'), { kind: 'close' }, 5).phase, 'closing');
+    assert.strictEqual(m.fold(run('fixing'), { kind: 'close' }, 5).phase, 'closing');
+    assert.strictEqual(m.fold(null, { kind: 'verify' }, 5), null);
+    assert.strictEqual(m.fold({ ...run('coding'), id: null }, { kind: 'close' }, 5).phase, 'coding', 'no feature, nothing to close');
+
+    const e = m.effortOf(run('proving'), 'pull');
+    assert.deepStrictEqual(e.phases.map((p) => [p.name, p.state]), [['plan', 'done'], ['build', 'done'], ['prove', 'current'], ['review', 'todo'], ['close', 'todo']]);
+    assert.strictEqual(e.step, 'prove');
+    assert.deepStrictEqual(m.effortOf(run('coding'), 'shot').phases.map((p) => p.name), ['build', 'prove', 'review', 'close']);
+    assert.strictEqual(m.effortOf(run('fixing'), 'pull').step, 'review');
+    assert.strictEqual(m.effortOf(run('closing'), 'pull').step, 'close');
+    assert.strictEqual(m.effortOf(run('interrupted'), 'pull').step, 'stopped');
+    assert.strictEqual(m.effortOf(run('starting'), 'pull').step, 'starting');
   }
 
   console.log('board-model.test.js: all checks passed');
