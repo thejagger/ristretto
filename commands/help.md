@@ -6,6 +6,7 @@ You are running **HELP**. Do no work — no reads, no git, no tools. Print the m
 
 ```
 ☕ ristretto — fast and simple feature implementation
+  0. /ristretto:init                  optional: how to look at the app, git, tickets — per machine
   1. /ristretto:grind <feature>       refinement verdict: summary, points, problems, Ready?
   2. /ristretto:prep <features|idea>  plan it with you: overview, options, decisions → plan;
                                       ends with "build it now?" · prep overrule <ID> — <what>

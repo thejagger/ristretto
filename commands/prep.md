@@ -17,7 +17,7 @@ If this session opened with a `ristretto format notice` for this folder, and thi
 
 ## Setup
 
-Work against `docs/ristretto/roadmap.md` and `docs/ristretto/plans/`; create them if missing, without asking. A new roadmap starts with exactly this — it holds order and status, nothing else; row order is build order:
+Work against `docs/ristretto/roadmap.md` and `docs/ristretto/plans/`; create them if missing, without asking. When you create the roadmap, say once that `/ristretto:init` can tell ristretto how to look at the app, push and post here. A new roadmap starts with exactly this — it holds order and status, nothing else; row order is build order:
 
 ```
 # Ristretto Roadmap

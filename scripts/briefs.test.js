@@ -421,6 +421,31 @@ assert.ok(/announce the next step instead of taking it/.test(brew) && /offer to 
   assert.ok(read('commands/status.md').includes('run the checks'), 'status names "run the checks" beside "manual checks done"');
 }
 
+// 35. /ristretto:init (2026-11-20) writes the per-machine setup from a scored overview, and its
+//     rulebook describes tools by what they can do. No stack, framework, product or client is named
+//     in the plugin's own text: an example once became the rule, and the plugin quietly turned into
+//     a tool for that one stack. Only a project's own .ristretto/setup.md names concrete tools.
+{
+  const has = (p) => fs.existsSync(path.join(ROOT, p));
+  assert.ok(has('commands/init.md') && has('reference/setup.md'), 'init and its rulebook exist');
+  const init = has('commands/init.md') ? read('commands/init.md') : '';
+  const book = has('reference/setup.md') ? read('reference/setup.md') : '';
+  for (const s of ['reference/setup.md', 'reference/config.md', '.ristretto/setup.md', 'settings.local.json']) assert.ok(init.includes(s), `init names ${s}`);
+  assert.ok(!init.includes('.claude/settings.json'), 'init never writes the shared settings.json');
+  for (const s of ['repeatable in gates', 'runs in the background', 'visible to the owner', "holds the owner's logins"]) assert.ok(book.includes(s), `the rulebook names "${s}"`);
+  assert.ok(words(book) < 700, `reference/setup.md is ${words(book)} words`);
+  const NAMES = ['Flutter', 'Dart', 'Playwright', 'Puppeteer', 'Selenium', 'Cypress', 'Chrome', 'Chromium', 'Firefox', 'Safari',
+    'React', 'Angular', 'Vue', 'Svelte', 'Spring', 'Django', 'Rails', 'Laravel', 'Docker', 'Kubernetes', 'GitLab', 'GitHub',
+    'glab', 'gh', 'Notion', 'Jira', 'Linear', 'Supabase', 'Postgres', 'Java', 'Kotlin', 'Swift', 'Python', 'JavaScript',
+    'TypeScript', 'Gradle', 'Maven', 'npm', 'pnpm', 'yarn', 'pytest', 'Jest', 'Vitest'];
+  for (const f of ['commands/init.md', 'reference/setup.md', 'briefs/after-build.md', 'skills/walk/SKILL.md'].filter(has)) {
+    const hits = NAMES.filter((n) => new RegExp(`\\b${n}\\b`).test(read(f)));
+    assert.deepStrictEqual(hits, [], `${f} names a stack or product: ${hits.join(', ')}`);
+  }
+  assert.ok(read('commands/help.md').includes('/ristretto:init'), 'help lists init');
+  assert.strictEqual((read('commands/prep.md').match(/\/ristretto:init/g) || []).length, 1, 'prep mentions init exactly once');
+}
+
 if (failures.length) {
   for (const m of failures) console.log(`FAIL ${m.split(/\r?\n/)[0]}`);
   console.log(`briefs.test.js: ${failures.length} failed`);

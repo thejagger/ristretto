@@ -85,6 +85,10 @@ On a repo with more than one stack, `testChanged` takes a **list of routes** rat
 
 If `testChanged` is empty, the loop just runs the full suite as before — nothing changes for repos where that's already fast, and that's the right setting until a suite is slow enough to hurt.
 
+## Setup: /ristretto:init
+
+Optional, per project and per machine. `/ristretto:init` scans the repo, this session's tools and this machine's signed-in clients, shows a scored overview — including tools that aren't installed yet, and including repos where ristretto already runs fine — and, once you've talked it through and it has proven the path once (start the app, open it, log in as the test user), writes `.ristretto/setup.md`: how to look at the app, how to log in, whether to push, which tracker gets a copy. It is gitignored, it binds every role, and you can edit it by hand. No setup file, or a section missing from it, means exactly the defaults described here: repo-only reach, never push, tickets read only. Init installs nothing and never touches `CLAUDE.md`; it offers an allow-list for `.claude/settings.local.json` and writes it only on a yes.
+
 ## Manual checks: criteria no agent can prove
 
 Some criteria can't be proven by anything the agent can run. Applying a migration, setting a secret, enabling an API in someone's console — and just as often, *looking at the thing*: does the dropdown open, does the layout hold at 375px, does the German copy read right. A plan that needed one used to collapse into `blocked`, which is the wrong word. `blocked` means *the spec is broken, go refine it*. "Run this migration" and "check this screen" are not spec gaps; the spec is fine and a person has to do something. So a manual check is not a status at all:
