@@ -170,16 +170,22 @@ export function fold(live, obs, now) {
       if (!ours) return live && live.armed ? null : live;
       if (!live) return { ...idle(null, now), armed: true };
       if (live.armed) return live;
-      // shot has no planner: arming is where its coding starts.
-      const coding = live.command === 'shot' && live.phase === 'starting';
+      // shot has no planner, nor has an unattended easy row: arming is where building starts. An
+      // unattended normal row's planner brief, which follows, takes it back to plan.
+      const coding = (live.command === 'shot' || live.unattended) && live.phase === 'starting';
       return { ...live, armed: true, ...(coding ? { phase: 'coding', since: now } : {}) };
     }
     // v1's steps after build: a verify proves it (a verify while fixing stays in review), a
     // /code-review reviews it, close.js closes it.
+    // A run resumed after an interruption, or one that never saw a brief, moves on too.
     case 'verify':
-      return live && live.phase === 'coding' ? { ...live, phase: 'proving', since: now } : live;
+      return live && ['coding', 'starting', 'interrupted'].includes(live.phase) ? { ...live, phase: 'proving', since: now } : live;
     case 'review':
-      return live && (live.phase === 'coding' || live.phase === 'proving') ? { ...live, phase: 'review', round: 1, since: now, gate: null } : live;
+      return live && ['coding', 'proving', 'starting', 'interrupted'].includes(live.phase) ? { ...live, phase: 'review', round: 1, since: now, gate: null } : live;
+    // At a folder there is no marker to say a builder's run ended: the brewer's turn after its
+    // close does.
+    case 'run-end':
+      return null;
     case 'close':
       return live && live.id && live.phase !== 'closing' ? { ...live, phase: 'closing', since: now } : live;
     case 'main-turn-end':

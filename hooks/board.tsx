@@ -659,6 +659,13 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    // prep's last step starts a builder for the feature it planned: prep is over then, and its
+    // pins must not come back when that build ends.
+    try {
+      if ((e as any).agentId === undefined && /\/ristretto:pull\b/.test(String(e.prompt ?? ''))) await endPrep($)
+    } catch {
+      // The board never stands between the model and a subagent.
+    }
     const brief = parseBrief(String(e.prompt ?? ''))
     if (brief) aliasOf.set(brief.id, String((e as any).model ?? ''))
     if (brief) await observe($, { kind: 'brief', ...brief })
@@ -770,6 +777,9 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       await observeMarker($)
       await observe($, { kind: 'main-turn-end', interrupted: e.reason === 'aborted' || e.reason === 'error' })
+      // At a folder no marker says a builder's run ended: the brewer's turn after its close does.
+      const now = await read($, live)
+      if (!ownRoot && now?.agent && now.phase === 'closing') await observe($, { kind: 'run-end' })
     }
     await refreshRepos($)
     return done

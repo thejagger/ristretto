@@ -8,7 +8,9 @@
 
 export const EMPTY_PINS = { points: [], found: [], live: null };
 
-const LINE = /^\s*(?:[-*+]\s+|>\s*)?(open|decided|found):\s*(.+?)\s*$/i;
+// After an optional quote, list mark or number, and a code span or bold around the marker.
+const LINE = /^\s*(?:>\s*)?(?:(?:[-*+]|\d+[.)])\s+)?[`*_]{0,2}(open|decided|found)(?::[`*_]{0,2}|[`*_]{0,2}:)\s*(.+?)\s*$/i;
+const UNWRAP = /^[`*_]+|[`*_]+$/g;
 const FENCE = /^\s*(```|~~~)/;
 const RULED = /\s*(?:→|->)\s*/;
 const ASKED = /\s+(?:—|-)\s+/;
@@ -24,7 +26,8 @@ export function pinsOf(text) {
     const hit = fenced ? null : LINE.exec(line);
     if (!hit) continue;
     const kind = hit[1].toLowerCase();
-    const body = hit[2];
+    const body = hit[2].replace(UNWRAP, '').trim();
+    if (!body) continue;
     if (kind === 'found') {
       out.found.push(body);
       continue;

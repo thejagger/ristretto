@@ -152,6 +152,8 @@ function install(on: any, w: World, theme = 'dark') {
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: theme, provider: 'engine', isLocked: false }] }) as any)
   on('ui.open', () => { w.opens = (w.opens ?? 0) + 1; return { value: { isPlaced: true } } as any })
   on('ui.close', () => { w.closes = (w.closes ?? 0) + 1; return { value: undefined } as any })
+  // The engine's end of a turn, beneath the plugin, as a session has it.
+  on('turn.complete', () => ({ text: '' }) as any)
   // What the board last wrote to each of its values, as the engine keeps it.
   on('state.set', async ($: any, e: any, next: any) => { if (e.plugin === 'ristretto') w.state = { ...(w.state ?? {}), [e.key]: e.value }; return next(e) })
   mock.store(on, w.store ?? {})
@@ -573,6 +575,24 @@ describe('v1: the steps, prep and its pins', () => {
     await $.turn.complete(turnEnd('decided: Other → x', { agentId: 'sub1' }) as any).catch(() => {})
     pins = w.state!.pins
     expect(pins.points.length).toBe(2)
+  })
+
+  test('prep starting its own builder ends prep: its pins do not come back after the build', async ($, on) => {
+    const { w } = await start($, on)
+    await $.command.run({ command: 'ristretto:prep', args: 'p1' } as any).catch(() => {})
+    await $.turn.complete(turnEnd('decided: A → B') as any).catch(() => {})
+    await $.tool.call({ tool: 'Agent', prompt: 'You are the builder for p1. Your whole task: /ristretto:pull p1 unattended', description: 'build p1', subagent_type: 'general-purpose', run_in_background: true } as any).catch(() => {})
+    expect(w.state!.prep).toBe(null)
+    expect(w.state!.pins.points).toEqual([])
+  })
+
+  test('at a folder, a builder\'s run ends when the brewer\'s turn ends after its close', async ($, on) => {
+    const { w } = await start($, on, folder())
+    await $.tool.call({ tool: 'Skill', skill: 'ristretto:pull', args: 'web-flat-rate-orders unattended', agentId: 'b1' } as any).catch(() => {})
+    await $.tool.call({ tool: 'Bash', command: 'node "/p/scripts/close.js" web-flat-rate-orders --input x', agentId: 'b1' } as any).catch(() => {})
+    expect(w.state!.live.phase).toBe('closing')
+    await $.turn.complete(turnEnd('pulled: web-flat-rate-orders abc') as any).catch(() => {})
+    expect(w.state!.live).toBe(null)
   })
 
   test('a build ends prep, clears its pins and opens the pane where it docks', async ($, on) => {

@@ -78,8 +78,19 @@ function liveSeg(at, x1, x2, y, live, dash) {
   return `<rect class="f-${live}" fill-opacity=".4" ${at}/>` +
     `<line class="fl k-${live}" x1="${x1}" y1="${y + 3}" x2="${x2}" y2="${y + 3}" stroke-width="6" stroke-dasharray="${dash} ${dash}"/>`;
 }
-function strip(y, s) {
-  const n = Math.min(12, Math.max(1, s.n));
+// Past 12, the strip is scaled to 12 segments: done, the live one and the blocked ones keep their
+// share, and a live or blocked one never vanishes.
+function fit(s) {
+  const n = Math.max(1, s.n);
+  if (n <= 12) return { ...s, n };
+  const live = s.live ? 1 : 0;
+  const red = s.red ? Math.max(1, Math.round((s.red * 12) / n)) : 0;
+  return { n: 12, done: Math.min(Math.round((s.done * 12) / n), 12 - live - red), live: s.live, red };
+}
+
+function strip(y, raw) {
+  const s = fit(raw);
+  const n = s.n;
   const w = (100 - (n - 1)) / n;
   let out = '';
   for (let i = 0; i < n; i++) {
@@ -168,9 +179,9 @@ export function chip(c) {
     `<text class="d" x="38" y="17" font-size="11" letter-spacing="1.6">${esc(c.label ?? '')}</text>` +
     `<text class="${hue}" x="38" y="37" font-size="22" style="font-stretch:80%">${esc(c.word ?? '')}</text></g>`;
   body += clockAt({ since: c.since, now: c.now, size: 15, base: 20, inset: 14 });
-  const s = c.strip;
+  const s = c.strip ? fit(c.strip) : null;
   if (s) {
-    const n = Math.min(12, Math.max(1, s.n));
+    const n = s.n;
     let segs = '';
     for (let i = 0; i < n; i++) {
       const x = -14 - (n - i) * 17 + 3;

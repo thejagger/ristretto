@@ -21,6 +21,15 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(look.header(head).src, h.src, 'deterministic');
   assert.strictEqual((look.header({ ...head, strip: { n: 40, done: 2, live: 'review', red: 0 } }).src.match(/height="6"/g) || []).length, 12, 'the strip stops at 12');
   assert.ok(!look.header({ ...head, since: null }).src.includes('animation-delay'), 'no clock without a start');
+  // Final review I4: past 12 features the strip is scaled, not filled: done, the live one and
+  // the blocked ones keep their share of the 12 segments.
+  const segs = (strip) => look.header({ ...head, strip }).src.match(/<rect class="(i|t|f-red|f-[a-z]+)"[^>]*y="126"/g).map((r) => /class="([^"]+)"/.exec(r)[1]);
+  const big = segs({ n: 78, done: 30, live: 'review', red: 2 });
+  assert.strictEqual(big.length, 12);
+  assert.strictEqual(big.filter((c) => c === 'i').length, 5, '30 of 78 done is 5 of 12');
+  assert.strictEqual(big.filter((c) => c === 'f-review').length, 1, 'the live one still shows');
+  assert.strictEqual(big.filter((c) => c === 'f-red').length, 1, 'a blocked one still shows');
+  assert.strictEqual(segs({ n: 78, done: 12, live: null, red: 0 }).filter((c) => c === 'i').length, 2, '12 of 78 done does not fill the strip');
   assert.ok(h.src.includes('animation-delay'), 'a clock with a start');
   assert.strictEqual(look.header({ ...head, strip: null, caption: null }).h, 118);
   assert.ok(look.header({ ...head, label: 'A<B' }).src.includes('A&lt;B'), 'words are escaped');

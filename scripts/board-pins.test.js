@@ -38,6 +38,13 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual(pins.pinsOf(undefined), { open: [], decided: [], found: [] });
   assert.deepStrictEqual(pins.pinsOf('decided: A → B\r\nfound: C\r\n').decided, [{ topic: 'A', ruling: 'B' }], 'CRLF answers read');
 
+  // Final review I5: the shapes a model writes the markers in — a code span in a list, bold, a
+  // numbered item — all pin.
+  const shapes = pins.pinsOf('- `decided: auth → OTP`\n**decided:** b → c\n1. decided: d → e\n> - found: `f`\n- **open**: g — h?');
+  assert.deepStrictEqual(shapes.decided, [{ topic: 'auth', ruling: 'OTP' }, { topic: 'b', ruling: 'c' }, { topic: 'd', ruling: 'e' }]);
+  assert.deepStrictEqual(shapes.found, ['f']);
+  assert.deepStrictEqual(shapes.open, [{ topic: 'g', question: 'h?' }]);
+
   // Folding: points keyed by topic, case-insensitive; a ruling settles, an open line reopens.
   let s = pins.foldPins(pins.EMPTY_PINS, pins.pinsOf('decided: Interaction → Visuals only.\nopen: Init — a mode of its own?\nfound: A pane lays out text in cells.'));
   assert.strictEqual(s.points.length, 2);

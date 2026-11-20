@@ -274,6 +274,20 @@ const ROOT = path.join(__dirname, '..');
     assert.strictEqual(m.effortOf(run('closing'), 'pull').step, 'close');
     assert.strictEqual(m.effortOf(run('interrupted'), 'pull').step, 'stopped');
     assert.strictEqual(m.effortOf(run('starting'), 'pull').step, 'starting');
+
+    // Final review I1: a pull resumed after an interruption moves on with its next step.
+    assert.strictEqual(m.fold(run('interrupted'), { kind: 'verify' }, 5).phase, 'proving', 'a resumed pull proves');
+    assert.strictEqual(m.fold(run('interrupted'), { kind: 'review' }, 5).phase, 'review', 'a resumed pull reviews');
+    // Final review I2: an unattended pull builds from arming (an easy row sends no planner); a
+    // planner brief takes it back to plan. An attended pull always plans first.
+    let un = m.fold(null, { kind: 'command', command: 'pull', args: 'x unattended', agent: true }, 0);
+    un = m.fold(un, { kind: 'marker', state: 'mine' }, 1);
+    assert.strictEqual(un.phase, 'coding');
+    assert.strictEqual(m.fold(un, { kind: 'brief', role: 'planner', id: 'x' }, 2).phase, 'planning');
+    assert.strictEqual(m.fold(m.fold(null, { kind: 'command', command: 'pull', args: 'x' }, 0), { kind: 'marker', state: 'mine' }, 1).phase, 'starting');
+    assert.strictEqual(m.fold({ ...run('starting'), unattended: true }, { kind: 'verify' }, 5).phase, 'proving', 'a verify before any brief still proves');
+    // Final review I6: a builder's run ends when the brewer's turn ends after its close.
+    assert.strictEqual(m.fold({ ...run('closing'), agent: true, unattended: true }, { kind: 'run-end' }, 5), null);
   }
 
   console.log('board-model.test.js: all checks passed');
