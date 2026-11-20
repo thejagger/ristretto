@@ -161,7 +161,7 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1568,
 // The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
 // Totals moved by the +54 of git rules common.md took over from the closer.
 // 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
-const CAPS = { 'briefs/planner.md': [450, 1218] }; // +5 more with the push rule in Commits (2026-11-20)
+const CAPS = { 'briefs/planner.md': [450, 1223] }; // +5, +5 more with the push rule and the builder line in Commits (2026-11-20)
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -419,6 +419,14 @@ assert.ok(/announce the next step instead of taking it/.test(brew) && /offer to 
     .filter((f) => /Never push[.,]/.test(read(f)));
   assert.deepStrictEqual(bare, [], 'a bare "Never push" is gone: the setup decides');
   assert.ok(read('commands/status.md').includes('run the checks'), 'status names "run the checks" beside "manual checks done"');
+  // Final review (2026-11-20): only a branch ristretto created is pushed — never one the owner was
+  // already on, which may be shared; a repo with no setup never pays for reading the brief; a
+  // builder is told where it reads the rules that it never pushes.
+  assert.ok(t.includes('a branch ristretto created'), 'after-build pushes only a branch ristretto created');
+  assert.ok(/only where a setup was printed[^\n]*after-build\.md/.test(read('commands/pull.md')), 'pull reads after-build only where a setup was printed');
+  assert.ok(/has a `## Tickets`[^\n]*after-build\.md/.test(read('commands/prep.md')) && /where this repo has a setup, follow `after-build\.md`/.test(read('commands/prep.md')), 'prep reads after-build only where there is a setup');
+  assert.ok(/after-build\.md` there, where that repo has a setup/.test(read('commands/brew.md')), 'the brewer reads after-build only where there is a setup');
+  assert.ok(common.includes('a builder never does'), 'common.md tells every builder it never pushes');
 }
 
 // 35. /ristretto:init (2026-11-20) writes the per-machine setup from a scored overview, and its

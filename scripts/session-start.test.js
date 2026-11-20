@@ -91,6 +91,15 @@ test('setupIsCapped', () => {
   assert.strictEqual(body[0].length, 4000);
   assert.strictEqual(body[1], '… cut at 4000 characters — read .ristretto/setup.md');
 });
+test('setupTotalIsCapped', () => {
+  // Review I4: a folder of repos must not grow the session's context without bound.
+  const d = tmp(); for (const n of ['a', 'b', 'c', 'd', 'e']) setup(d, n, n.repeat(4000));
+  const n = s.notes(d);
+  assert.strictEqual(n.length, 5);
+  assert.ok(n.slice(0, 3).every((b, i) => b.includes('abc'[i].repeat(4000))), 'the first three fit');
+  assert.strictEqual(n[3], 'ristretto setup: d — not printed (session start prints 12000 characters of setups at most): read d/.ristretto/setup.md');
+  assert.ok(n.join('\n').length < 13000, `total ${n.join('\n').length}`);
+});
 test('emptySetupIsSilent', () => { const d = tmp(); setup(d, '.', '  \n\n '); assert.strictEqual(run(d).stdout, ''); });
 
 test('hooksJsonRunsIt', () => {

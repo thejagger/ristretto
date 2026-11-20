@@ -67,7 +67,7 @@ A builder subagent — one that brew or prep started — runs `gate.js arm build
 
 ## 6. Branch, and parked work
 
-Attended: create or reuse `feature/<FEATURE-ID>`. Unattended: stay on the current branch unless it is the default branch; then create `feature/<FEATURE-ID>`. Push only through after-build.md (step 13).
+Attended: create or reuse `feature/<FEATURE-ID>`. Unattended: stay on the current branch unless it is the default branch; then create `feature/<FEATURE-ID>`. Push only in step 13.
 
 Then: if `git stash list` shows `ristretto <FEATURE-ID> blocked`, this feature was parked by an earlier unattended pull. `git stash apply` that entry, and drop it once it applied cleanly. A conflict → step 12.
 
@@ -121,7 +121,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
 
 1. Correct `Provides:` in the plan to what was built — the next planner reads it as fact.
 2. Write the close input to `.ristretto/close-<FEATURE-ID>.json`:
-   - `evidence` — one line for each criterion (a ruled one as ruled), `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits, `<n>: seen in <tool> — <what>` for a look a setup tool did; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
+   - `evidence` — one line for each criterion (a ruled one as ruled), `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits, `<n>: seen in <tool> — <what>` for a setup tool's look; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
    - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
@@ -137,7 +137,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
 
 ## 13. MR description
 
-Attended, once committed: follow `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md` first; a merge request it opened replaces this offer.
+Attended, once committed, and only where a setup was printed: follow `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md` first; a merge request it opened replaces the offer.
 
 When the feature is committed, offer to write the MR description — attended: ask; unattended: list it. Yes → follow `${CLAUDE_PLUGIN_ROOT}/briefs/mr.md`.
 

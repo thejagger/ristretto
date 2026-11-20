@@ -61,10 +61,13 @@ function howOf(lines, i) {
 
 function openChecks(text) {
   const lines = text.split(/\r?\n/);
-  return boxes(lines).filter((b) => b.open).map((b, k) => ({ n: k + 1, criterion: b.criterion, text: b.text, how: howOf(lines, b.line) }));
+  // n counts open boxes only (the owner's --keep); box counts every box, ticked or not, so a walk's
+  // numbers stay put after each tick.
+  return boxes(lines).map((b, j) => ({ ...b, box: j + 1 })).filter((b) => b.open)
+    .map((b, k) => ({ n: k + 1, box: b.box, criterion: b.criterion, text: b.text, how: howOf(lines, b.line) }));
 }
 
-// opts.by set: a walk. Only the boxes in opts.boxes (n → what was seen) are ticked, with the note;
+// opts.by set: a walk, numbered by `box` (every box counts). Only the boxes in opts.boxes (box → what was seen) are ticked, with the note;
 // those in opts.failed stay open and get a line under ## Open findings; the rest are left alone.
 function tick(text, opts) {
   const keep = opts.keep || new Map();
@@ -76,8 +79,8 @@ function tick(text, opts) {
   const failed = [];
   const findings = [];
   const proven = new Set();
-  boxes(lines).filter((b) => b.open).forEach((b, k) => {
-    const n = k + 1;
+  boxes(lines).map((b, j) => ({ ...b, box: j + 1 })).filter((b) => b.open).forEach((b, k) => {
+    const n = opts.by ? b.box : k + 1;
     if (opts.by) {
       if (walked.has(n)) {
         ticked.push(n);
@@ -149,7 +152,7 @@ function main(argv) {
   if (cmd === 'list') {
     const features = findPlans(root)
       .filter((f) => !id || f.id === id)
-      .map((f) => ({ ...f, checks: openChecks(fs.readFileSync(f.plan, 'utf8')).map(({ n, text, how }) => ({ n, text, how })) }))
+      .map((f) => ({ ...f, checks: openChecks(fs.readFileSync(f.plan, 'utf8')).map(({ n, box, text, how }) => ({ n, box, text, how })) }))
       .filter((f) => f.checks.length > 0);
     process.stdout.write(`${JSON.stringify({ features }, null, 2)}\n`);
     return;
@@ -192,10 +195,14 @@ function main(argv) {
   if (found.length > 1) fail(2, `${id} is planned in more than one repo: ${found.map((f) => f.repo).join(', ')} - pass --repo`);
   const { plan } = found[0];
   const text = fs.readFileSync(plan, 'utf8');
-  const open = openChecks(text).length;
+  const openList = openChecks(text);
+  const open = openList.length;
   if (open === 0) fail(1, `nothing open in ${id}`);
-  const beyond = [...keep.keys(), ...boxes.keys(), ...failed.keys()].filter((n) => n > open);
+  const beyond = [...keep.keys()].filter((n) => n > open);
   if (beyond.length) fail(2, `box ${beyond.join(', ')}: ${id} has ${open} open box(es) - nothing ticked`);
+  const openBoxes = new Set(openList.map((b) => b.box));
+  const shut = [...boxes.keys(), ...failed.keys()].filter((n) => !openBoxes.has(n));
+  if (shut.length) fail(2, `box ${shut.join(', ')}: not an open box of ${id} (open: ${[...openBoxes].join(', ')}) - nothing ticked`);
   const r = tick(text, by === null ? { keep, date } : { by, boxes, failed, date });
   fs.writeFileSync(plan, r.text);
   process.stdout.write(`${JSON.stringify(by === null ? { plan, ticked: r.ticked, kept: r.kept } : { plan, ticked: r.ticked, kept: r.kept, failed: r.failed })}\n`);

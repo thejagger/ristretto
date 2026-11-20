@@ -1349,7 +1349,8 @@ async function main() {
     // The setup file binds a builder too, and a builder never sees session start either.
     const setupText = require('./setup.js').readSetup(projectDir);
     if (setupText) {
-      console.log('setup: .ristretto/setup.md binds this build:');
+      // Its Git and Tickets sections are for the owner's session: say so where a builder reads it.
+      console.log('setup: .ristretto/setup.md binds this build — a builder never pushes, posts or walks:');
       for (const l of setupText.split('\n')) console.log(`  ${l}`);
     }
     for (const [label, p] of [['pulling', markerPath]]) {

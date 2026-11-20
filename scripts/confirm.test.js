@@ -257,5 +257,24 @@ test('walkRefusesBadNumbers', () => {
   assert.deepStrictEqual(JSON.parse(ok.stdout), { plan: file, ticked: [1], kept: [], failed: [2] });
 });
 
+// Review C1: a walk done one look at a time must not shift onto the next box.
+test('walkOneCallPerLookStaysOnItsBox', () => {
+  const three = plan.replace('- Provides: —', '  - [ ] [human] the export opens\n- Provides: —').replace('- gates: test ok', '- 4: pending human\n- gates: test ok');
+  const root = tmp(); repo(root, { s: three });
+  const file = path.join(root, 'docs', 'ristretto', 'plans', 's.md');
+  const listed = JSON.parse(cli(root, 'list', 's').stdout).features[0].checks;
+  assert.deepStrictEqual(listed.map((b) => b.box), [1, 2, 3]);
+  assert.strictEqual(cli(root, 'tick', 's', '--by', 'T', '--box', String(listed[0].box), '--saw', 'saw A', '--date', W).status, 0);
+  assert.strictEqual(cli(root, 'tick', 's', '--by', 'T', '--box', String(listed[1].box), '--saw', 'saw B', '--date', W).status, 0);
+  const t = fs.readFileSync(file, 'utf8');
+  assert.ok(t.includes('[x] [human] a free user sees the upgrade banner · checked by ristretto in T, 2026-11-20: saw A'), t);
+  assert.ok(t.includes('[x] [human] the mail arrives in Outlook · checked by ristretto in T, 2026-11-20: saw B'), t);
+  assert.ok(t.includes('  - [ ] [human] the export opens\n'), 'the box nobody looked at stays open');
+  assert.ok(t.includes('- 4: pending human'), t);
+  const again = cli(root, 'tick', 's', '--by', 'T', '--box', '1', '--saw', 'x', '--date', W);
+  assert.strictEqual(again.status, 2, 'a box already ticked is not open: refuse');
+  assert.deepStrictEqual(JSON.parse(cli(root, 'list', 's').stdout).features[0].checks.map((b) => b.box), [3], 'box numbers stay put after a tick');
+});
+
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

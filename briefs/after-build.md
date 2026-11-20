@@ -16,7 +16,7 @@ Read `.ristretto/setup.md` (session start printed it). A section it lacks means 
    - **as expected** → `node "${CLAUDE_PLUGIN_ROOT}/scripts/confirm.js" tick <ID> --by "<tool>" --box <n> --saw "<what you saw>"`
    - **not as expected** → the same with `--failed <n> --saw "<what you saw>"`: the box stays open and a line goes under `## Open findings`. Never tick a look that failed.
    - **could not do it** → leave the box for the owner, untouched.
-   One `tick` call per feature can carry every `--box` and `--failed`. `--saw` is what you saw, not what you expected: a number, a text on screen, a state.
+   The number is the box's `box` from `list`; it stays put after a tick, so one call per look is fine. `--saw` is one line — what you saw, not what you expected: a number, a text on screen, a state.
 4. Commit the plan file only, in its repo: `docs(<ID>): checks walked`.
 5. Report line: `checked for you: <ID> — <n> ticked, <m> not as expected, <k> left for you`.
 
@@ -24,7 +24,7 @@ Read `.ristretto/setup.md` (session start printed it). A section it lacks means 
 
 Only when the setup's `## Git` says `push` or `push + merge request`, and only after the last feature on the branch is closed and its boxes are walked: an attended pull after its walk, prep after its builder, the brewer once per repo at the end.
 
-- Push the feature or brew branch only, with its upstream (`-u`) — never the default branch, never force, never merge.
+- Push only a branch ristretto created for this work — `feature/<ID>` or `feature/brew-<date>` — with its upstream (`-u`). A branch the owner was already on may be shared: it is never pushed, and the report says so — and never the default branch (`origin/HEAD`, then `main`, then `master`), never force, never merge.
 - A branch with nothing closed green on it is not pushed.
 - `push + merge request`: one per branch, so a brew's features share one. Its description comes from `${CLAUDE_PLUGIN_ROOT}/briefs/mr.md`; open it with the client the setup names. A box still waiting for the owner is normal: list it in the description. A look you did yourself that came back not as expected is a known defect: open the merge request as a **draft**, with that finding at the top of the description.
 - Report line: `pushed: <branch>` and the merge request's link.

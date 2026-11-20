@@ -48,4 +48,4 @@ The suite is a shared cost, paid again at every stop, by every feature, for the 
 ## Commits
 
 - **One per feature, at close:** code, plan and roadmap row, `feat(<FEATURE-ID>): <summary>`, plain ASCII, or `git commit -F <path>`.
-- **Stage only what you touched**, never `git add -A`. Never force or reset; push or open a merge request only where `briefs/after-build.md` sends you. `--amend` only fixes the message you just committed, disclosed.
+- **Stage only what you touched**, never `git add -A`. Never force or reset; push or open a merge request only where `briefs/after-build.md` sends you; a builder never does. `--amend` only fixes the message you just committed, disclosed.

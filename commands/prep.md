@@ -104,9 +104,9 @@ Show the plan in chat once, and change what the user corrects.
 
 ## 5. Build it now?
 
-Ask it, as the last thing prep does. Once the plan is agreed, yes or no, post it as `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md`'s Tickets says.
+Ask it, as the last thing prep does. Once the plan is agreed, yes or no, and only where this repo's setup has a `## Tickets`: post it as `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md`'s Tickets says.
 
-- **Yes** → put the repo on `feature/<FEATURE-ID>` unless it is already on a branch that isn't the default one, and commit the plans and the roadmap rows as `docs(<FEATURE-ID>): plan` (stage only those files). Then one feature: start a fresh general-purpose subagent in the background, on your model, whose whole task is `/ristretto:pull <FEATURE-ID> unattended` — it is a builder, as brew's are, and arms as one. Several: invoke `/ristretto:brew` with the Skill tool, never by reading its file — an invoked skill's text is what stays when the conversation is summarized. When the builder returns, show its report as it came, then follow `after-build.md`.
+- **Yes** → put the repo on `feature/<FEATURE-ID>` unless it is already on a branch that isn't the default one, and commit the plans and the roadmap rows as `docs(<FEATURE-ID>): plan` (stage only those files). Then one feature: start a fresh general-purpose subagent in the background, on your model, whose whole task is `/ristretto:pull <FEATURE-ID> unattended` — it is a builder, as brew's are, and arms as one. Several: invoke `/ristretto:brew` with the Skill tool, never by reading its file — an invoked skill's text is what stays when the conversation is summarized. When the builder returns, show its report as it came, then, where this repo has a setup, follow `after-build.md`.
 - **No** → the features stay `planned` for the next brew. Leave the files uncommitted and say so in one line.
 
 ## Overrule — `prep overrule <ID> — <what instead>`

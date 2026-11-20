@@ -1740,7 +1740,7 @@ assert.strictEqual(r.status, 3, 'prove without a config is unverified');
   fs.writeFileSync(path.join(d, '.ristretto', 'setup.md'), '## Git\npush\n');
   r = gate(d, 'state');
   const lines = r.stdout.split(/\r?\n/);
-  assert.strictEqual(lines[1], 'setup: .ristretto/setup.md binds this build:', 'setup comes right after format — got: ' + r.stdout);
+  assert.strictEqual(lines[1], 'setup: .ristretto/setup.md binds this build — a builder never pushes, posts or walks:', 'setup comes right after format — got: ' + r.stdout);
   assert.strictEqual(lines[2], '  ## Git');
   assert.strictEqual(lines[3], '  push');
   assert.ok(!/unrecognised:.*setup\.md/.test(r.stdout), 'setup.md is a known file');

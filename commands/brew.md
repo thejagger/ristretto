@@ -35,7 +35,7 @@ Never merge; push only through `${CLAUDE_PLUGIN_ROOT}/briefs/after-build.md`. Ne
 
 A block is solved or kept for the end; it never shows here. Ending your turn while builders run is how you wait — each return wakes you. Ending it with nothing running, while work is still open, stops the brew on a user who is not there. So never stop to report, to sum up, to announce the next step instead of taking it, to offer to carry on, or to list decisions none of which holds the rest up: start what is free, in the same message as the block. You stop only when nothing is open, or everything left needs a person.
 
-**Then the final report**, per repo, after following `after-build.md` there; short lines and no prose around them:
+**Then the final report**, per repo, after following `after-build.md` there, where that repo has a setup; short lines and no prose around them:
 - each feature's report as its builder gave it — built, how to test, decided for you, open — with after-build's `checked for you:`, `pushed:` and `ticket not updated:` lines, and `⏸ <ID> — <what it needs, from whom>` for each one left blocked, with its parked stash
 - the problems you met, one line each with how you solved it
 - questions for the product owner

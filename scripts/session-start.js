@@ -15,6 +15,8 @@ const LINE = {
   unstamped: () => 'unstamped',
 };
 
+const SETUPS_CAP = 12000;
+
 function repos(dir) {
   let subs = [];
   try {
@@ -36,9 +38,17 @@ function notes(dir) {
     const { state, found } = formatState(repoDir);
     if (LINE[state]) out.push(`ristretto format notice: ${where} — ${LINE[state](found, FORMAT)}`);
   }
+  let room = SETUPS_CAP; // a folder of repos must not grow the context without bound
   for (const [where, repoDir] of all) {
     const text = readSetup(repoDir);
-    if (text) out.push(`ristretto setup: ${where} — binds every role in it:\n${text}`);
+    if (!text) continue;
+    if (text.length > room) {
+      const file = where === 'this folder' ? '.ristretto/setup.md' : `${where}/.ristretto/setup.md`;
+      out.push(`ristretto setup: ${where} — not printed (session start prints ${SETUPS_CAP} characters of setups at most): read ${file}`);
+      continue;
+    }
+    room -= text.length;
+    out.push(`ristretto setup: ${where} — binds every role in it:\n${text}`);
   }
   return out;
 }
