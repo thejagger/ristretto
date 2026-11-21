@@ -168,14 +168,21 @@ docs/ristretto/
                         #   decisions, and once built ## Evidence — the file never moves
 ```
 
-## Install (local, no GitHub needed)
+## Install
 
 ```
-/plugin marketplace add /path/to/ristretto
+/plugin marketplace add thejagger/ristretto
 /plugin install ristretto@ristretto-dev
 ```
 
-To share with the team, push this folder to a Git repo and `/plugin marketplace add <user>/<repo>` instead.
+Then open a new session: commands, hooks and the board load when a session starts. From a local clone instead, `/plugin marketplace add /path/to/ristretto`.
+
+## Upgrading to 1.0
+
+1. **Update and start fresh.** `/plugin` → update ristretto, then open a new session. Your roadmap's format migrates by itself the first time a command runs; there is nothing to do.
+2. **Run `/ristretto:init` once per repo, on each machine.** It writes `.ristretto/setup.md` (how to start and look at the app, the test login, push or not), and its overview shows your slow tests and their share of the suite's time.
+3. **If that share hurts, split the suite:** `/ristretto:prep split the slow tests`, then pull it. That moves them into `testSlow` / `slowPaths` (see *Two suites* above); from then on the gates run only the fast suite and you say "run the slow tests" when you want the rest. Until you do, every build pays for the slow tail again.
+4. **Skipping 2 or 3 breaks nothing.** No setup file means the defaults (repo-only reach, never push), and the slow-test guard only judges tests a build adds.
 
 ## Usage
 
