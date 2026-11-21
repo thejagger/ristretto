@@ -253,6 +253,11 @@ describe('one repo: the four views (v1)', () => {
     expect(all.filter((s: any) => s.props.width === 16).length).toBe(5)
     expect(all.some((s: any) => /^PLAN, step 1 \/ 5$/.test(s.props.alt))).toBe(true)
     expect(all[0].props.alt).toContain('brew')
+    // Measured on the desktop (2026-11-21, a probe pane): a rail box hung at top 0 lands one text
+    // line low and breaks the line between rows; hung one cell up, the rows join.
+    const hangers = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props.position === 'absolute' && b.props.left === 0 && b.props.width === undefined)
+    expect(hangers.length).toBe(5)
+    for (const b of hangers) expect(b.props.top).toBe(-1)
     await displayOnly(ui, 'brew')
   })
 

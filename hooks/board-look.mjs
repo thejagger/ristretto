@@ -150,6 +150,11 @@ export function meter({ phases, red = false }) {
 }
 
 // A row's piece of the timeline, far taller than any row; the row cuts it at its end.
+// The rail's box hangs one cell up (board.tsx): measured on the desktop (2026-11-21, a probe pane),
+// a box at top 0 lands a text line low and the line breaks between rows, while one cell up
+// overshoots the row's top by this many px. The drawing comes down by as much.
+export const RAIL_DROP = 4;
+
 export function rail(stop, step = null) {
   const H = 600;
   const dashed = (from, to) => `<line x1="8" y1="${from}" x2="8" y2="${to}" stroke="${LINE}" stroke-width="2" stroke-dasharray="4 4"/>`;
@@ -163,7 +168,7 @@ export function rail(stop, step = null) {
     : stop === 'live' ? `<circle class="h ${hue}" cx="8" cy="28" r="8"/><circle class="${hue}" cx="8" cy="28" r="5.5"/>`
       : stop === 'next' ? `<circle cx="8" cy="9" r="4" fill="none" stroke="${LINE}" stroke-width="2"/>`
         : `<circle cx="8" cy="9" r="2" fill="${LINE}"/>`;
-  return fixed(16, H, line + node, stop === 'live' ? HALO : '');
+  return fixed(16, H, `<g transform="translate(0 ${RAIL_DROP})">${line + node}</g>`, stop === 'live' ? HALO : '');
 }
 
 // The chip above the prompt: a live dot, a small label, the step word; the clock and a small

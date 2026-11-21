@@ -48,6 +48,10 @@ const { pathToFileURL } = require('url');
   assert.ok(look.rail('first').includes('viewBox="0 0 16 600"'));
   for (const stop of ['first', 'done', 'live', 'next', 'last']) assert.ok(look.rail(stop, 'review').startsWith('<svg'), stop);
   assert.ok(look.rail('live', 'review').includes('f-review'), 'the live dot takes its step');
+  // The box it hangs in sits one cell up (board.tsx), which overshoots by RAIL_DROP px: the drawing
+  // comes down by that much, so a node meets its caption and a line meets the row above.
+  assert.strictEqual(look.RAIL_DROP, 4);
+  for (const stop of ['first', 'done', 'live', 'next', 'last']) assert.ok(look.rail(stop).includes(`<g transform="translate(0 ${look.RAIL_DROP})">`), `${stop} is lowered`);
   const c = look.chip({ label: 'BREW 3 / 7 · a<b&c', word: 'REVIEW', step: 'review', tone: 'ink', since: null, now: 0, strip: null });
   assert.ok(c.includes('a&lt;b&amp;c'));
   assert.ok(c.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="40"'), 'the chip is two rows high');

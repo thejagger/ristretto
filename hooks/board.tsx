@@ -1014,11 +1014,13 @@ function richPane(els: any, view: any, nowMs: number) {
     <Svg key={key} alt={`steps: ${phases.map((p: any) => `${p.name} ${p.state}`).join(', ')}`} height={21} source={img(meter({ phases, red }))} />
   )
   // A timeline row: the rail's box two cells wide and as tall as the words beside it; the rail
-  // image hangs in it out of the flow and is cut at the row's end.
+  // image hangs in it out of the flow and is cut at the row's end. Hung one cell up: at top 0 the
+  // desktop draws it a text line low and the rail breaks between rows (measured 2026-11-21; the
+  // drawing makes up the few px one cell overshoots, RAIL_DROP in board-look.mjs).
   const stop = (key: string, kind: string, step: string | null, children: any) => (
     <Box key={key} flexDirection="row" alignItems="stretch">
       <Box width={2} flexShrink={0} position="relative" overflow="hidden">
-        <Box position="absolute" top={0} left={0}>
+        <Box position="absolute" top={-1} left={0}>
           <Svg alt="timeline" width={16} height={600} source={img(rail(kind, step))} />
         </Box>
       </Box>
