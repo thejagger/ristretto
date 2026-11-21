@@ -1532,6 +1532,7 @@ async function main() {
     for (const rel of reportList(gates.testSlowReport)) known.add(path.basename(rel));
     known.add('build');
     known.add('setup.md'); // written by /ristretto:init, read above
+    known.add('at-work.json'); // written by the board in a pulling session (hooks/board.tsx AT_WORK)
     for (const rel of allReportPaths()) known.add(path.basename(rel));
     let entries = [];
     try { entries = fs.readdirSync(path.join(projectDir, '.ristretto')); } catch { /* not armed yet */ }
