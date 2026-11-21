@@ -155,19 +155,25 @@ export function meter({ phases, red = false }) {
 // overshoots the row's top by this many px. The drawing comes down by as much.
 export const RAIL_DROP = 4;
 
+// Where a plain row's node sits. The box hangs a whole text line above the row (2026-11-21,
+// owner's screenshot: the live node at 28 + RAIL_DROP lands 13 px into its row), so a node
+// higher than that line is cut off with the row's top; at 25 it meets the row's caption.
+export const NODE_Y = 25;
+
 export function rail(stop, step = null) {
   const H = 600;
+  const N = NODE_Y;
   const dashed = (from, to) => `<line x1="8" y1="${from}" x2="8" y2="${to}" stroke="${LINE}" stroke-width="2" stroke-dasharray="4 4"/>`;
-  const line = stop === 'first' ? `<rect x="7" y="9" width="2" height="${H}" fill="${LINE}"/>`
+  const line = stop === 'first' ? `<rect x="7" y="${N}" width="2" height="${H}" fill="${LINE}"/>`
     : stop === 'done' ? `<rect x="7" y="0" width="2" height="${H}" fill="${LINE}"/>`
       : stop === 'live' ? `<rect x="7" y="0" width="2" height="28" fill="${LINE}"/>${dashed(36, H)}`
-        : stop === 'next' ? dashed(0, 4) + dashed(14, H)
-          : dashed(0, 6);
+        : stop === 'next' ? dashed(0, N - 5) + dashed(N + 5, H)
+          : dashed(0, N - 3);
   const hue = hueOf(step);
-  const node = stop === 'first' || stop === 'done' ? '<circle class="i" cx="8" cy="9" r="5"/>'
+  const node = stop === 'first' || stop === 'done' ? `<circle class="i" cx="8" cy="${N}" r="5"/>`
     : stop === 'live' ? `<circle class="h ${hue}" cx="8" cy="28" r="8"/><circle class="${hue}" cx="8" cy="28" r="5.5"/>`
-      : stop === 'next' ? `<circle cx="8" cy="9" r="4" fill="none" stroke="${LINE}" stroke-width="2"/>`
-        : `<circle cx="8" cy="9" r="2" fill="${LINE}"/>`;
+      : stop === 'next' ? `<circle cx="8" cy="${N}" r="4" fill="none" stroke="${LINE}" stroke-width="2"/>`
+        : `<circle cx="8" cy="${N}" r="2" fill="${LINE}"/>`;
   return fixed(16, H, `<g transform="translate(0 ${RAIL_DROP})">${line + node}</g>`, stop === 'live' ? HALO : '');
 }
 
