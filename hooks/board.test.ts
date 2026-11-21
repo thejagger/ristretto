@@ -389,6 +389,17 @@ describe('the at-work record', () => {
     expect(await texts(ui)).toBe(t0)
   })
 
+  test('a reloaded module keeps its own run\'s start: the plugin updated mid-build is not "0m"', async ($, on) => {
+    const w = world()
+    // What this session wrote before its module was reloaded: p1, started two hours ago.
+    w.files['.ristretto/at-work.json'] = JSON.stringify({ v: 1, session: 's1', id: 'p1', command: 'pull', unattended: true, title: '', startedAt: NOW - 7200000, phase: 'coding', step: 'code', red: false, effort: [], beat: NOW - 30000, endedAt: null })
+    const clock = await start($, on, w)
+    await pull($, clock, 'p1')
+    const rec = JSON.parse(w.files['.ristretto/at-work.json'])
+    expect(rec.id).toBe('p1')
+    expect(rec.startedAt).toBe(NOW - 7200000)
+  })
+
   test('the run ending (the session moving on) writes endedAt', async ($, on) => {
     const w = world()
     const clock = await start($, on, w)

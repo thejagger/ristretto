@@ -374,9 +374,18 @@ async function publish($: EngineInterface, after: BoardLive | null) {
   if (!ownRoot) return
   const now = await $.clock.now()
   let next: BoardAtWork | null = null
+  // A reloaded module (the plugin's files changed mid-run) starts with no lastRec: take this
+  // session's own record back from disk, or the run's start resets to now (seen 2026-11-21: a
+  // cache sync turned a 1-hour build into "0m").
+  // Only the start is carried over: a reload with nothing at work yet must not end that record.
   if (after && after.id) {
+    let prev = lastRec
+    if (!prev) {
+      const there = (await readRaw($, ownRoot)).rec
+      if (there && there.session === sessionId) prev = there
+    }
     const title = cache.get(ownRoot)?.repo.board.rows.find(r => r.id === after.id)?.title ?? ''
-    const rec = recordOf(after, { session: sessionId, title: plain(title), now, prev: lastRec }) as BoardAtWork
+    const rec = recordOf(after, { session: sessionId, title: plain(title), now, prev }) as BoardAtWork
     if (!sameShown(lastRec, rec)) next = rec
   } else if (lastRec && lastRec.endedAt === null) {
     next = endedOf(lastRec, now) as BoardAtWork
