@@ -8,7 +8,9 @@ import type { ClientModule } from 'claude-code'
 // and tells the board when it is clicked. Nothing here ticks or sets state, so it never makes the
 // desktop repaint the pane.
 
-type PressProps = { id: string; blank?: boolean }
+// `rows`: how tall the blank area is. The desktop sizes a Client by what it draws, not by the
+// height it is given: an empty Box left a two-row chip clickable on its top row only (2026-11-21).
+type PressProps = { id: string; blank?: boolean; rows?: number }
 
 const Press: ClientModule<PressProps> = (props, surface) => {
   const { Box, Text } = surface.elements
@@ -16,7 +18,7 @@ const Press: ClientModule<PressProps> = (props, surface) => {
   surface.onPointer(event => {
     if (event.type === 'up' && event.button === 'left') surface.post({ press: props.id })
   })
-  return props.blank ? Box({}) : Text({ children: ' ' })
+  return props.blank ? Box({ height: props.rows ?? 1, width: '100%' }) : Text({ children: ' ' })
 }
 
 export default Press

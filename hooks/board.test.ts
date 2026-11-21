@@ -518,6 +518,8 @@ describe('the band (v1): the chip above the prompt', () => {
     expect(String(press?.props.module)).toContain('board-press.tsx')
     // The press area covers the whole chip: two rows, as tall as the image.
     expect(press.props.height).toBe(2)
+    // The desktop sizes a Client by what it draws: the blank area itself is two rows.
+    expect(press.props.props.rows).toBe(2)
     const opens = w.opens ?? 0
     await clickOn(ui, press.props.key)
     expect((w.opens ?? 0) - opens).toBe(1)

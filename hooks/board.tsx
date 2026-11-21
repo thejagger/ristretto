@@ -974,13 +974,16 @@ async function drawBand($: any, e: any) {
   const els = $.ui.resolve(e) as any
   const alt = `ristretto ${c.label}: ${c.word}`
   const rich = !!els.Svg && e.surface !== 'terminal'
-  // A press area sized in percent took one row only; it is given the chip's two rows.
+  // A press area sized in percent took one row only, and so did a height of 2 with nothing drawn
+  // inside: the desktop sizes a Client by its content. So the box, the Client and what it draws
+  // are all the chip's two rows.
   // The press area lies over the chip where the surface draws one (the desktop and the terminal;
   // VS Code resolves a Client but drops it, and mobile takes no presses).
+  const rows = rich ? 2 : 1
   const press = (e.surface === 'desktop' || e.surface === 'terminal') && els.Client
     ? (
-      <els.Box position="absolute" top={0} left={0} width="100%">
-        <els.Client key="chip-press" module="./board-press.tsx" width="100%" height={rich ? 2 : 1} props={{ id: 'toggle', blank: true }} />
+      <els.Box position="absolute" top={0} left={0} width="100%" height={rows}>
+        <els.Client key="chip-press" module="./board-press.tsx" width="100%" height={rows} props={{ id: 'toggle', blank: true, rows }} />
       </els.Box>
     )
     : null
