@@ -86,4 +86,21 @@ for (const open of ['<testsuites>', '<testsuites name="x">', '<testsuite tests="
   assert.ok(readReport(f), `a real opening tag must still parse: ${open}`);
 }
 
+// 9. Per-test times (2026-11-21): the test-time guard reads each testcase's `time` (seconds) as
+//    ms; a testcase without one has no entry; a repeated id keeps its largest time; a skipped test
+//    has none, since it did not run.
+r = readReport(fixture('pytest.xml'));
+assert.ok(r.times instanceof Map, 'a report carries a times map');
+assert.strictEqual(r.times.get('test_sample::test_passes'), 1, 'seconds become ms');
+assert.ok(!r.times.has('test_sample::test_skipped'), 'a skipped test has no time');
+{
+  const f = path.join(dir, 'times.xml');
+  fs.writeFileSync(f, '<testsuites><testsuite>' +
+    '<testcase classname="a" name="twice" time="0.5"/><testcase classname="a" name="twice" time="2.25"/>' +
+    '<testcase classname="a" name="untimed"/><testcase classname="a" name="bad" time="soon"/></testsuite></testsuites>');
+  const t = readReport(f).times;
+  assert.strictEqual(t.get('a::twice'), 2250, 'a repeated id keeps the largest time');
+  assert.ok(!t.has('a::untimed') && !t.has('a::bad'), 'no time, or no number, means no entry');
+}
+
 console.log('junit.test.js: all checks passed');

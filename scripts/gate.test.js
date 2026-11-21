@@ -1747,4 +1747,137 @@ assert.strictEqual(r.status, 3, 'prove without a config is unverified');
   fs.rmSync(d, { recursive: true, force: true });
 }
 
+// 120. The test-time guard and the slow suite (2026-11-21, design
+//      docs/superpowers/specs/2026-11-21-behaviour-tests-design.md). A new test slower than
+//      `slowTest` fails verify while a build is armed; elsewhere it is a warning. "New" means absent
+//      from the known-test list arm copied, and that list is only trusted on the HEAD it was written
+//      on. Slow tests live under `slowPaths`, never reach the fast suite's {files}, and run only
+//      through `gate.js slow`, which no gate calls.
+{
+  // Writes a JUnit report from cases.json — [[id, seconds, failing?], …] — and exits 1 on a failure.
+  const TIMED_SRC = `
+const fs = require('fs');
+const cases = JSON.parse(fs.readFileSync('cases.json', 'utf8'));
+const xml = cases.map(([id, secs, bad]) => {
+  const [c, n] = id.split('::');
+  return '<testcase classname="' + c + '" name="' + n + '" time="' + secs + '"' + (bad ? '><failure>x</failure></testcase>' : '/>');
+}).join('');
+fs.mkdirSync('.ristretto', { recursive: true });
+fs.writeFileSync('.ristretto/report.xml', '<testsuites><testsuite>' + xml + '</testsuite></testsuites>');
+process.exit(cases.some((c) => c[2]) ? 1 : 0);
+`;
+  const g = (d, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: d, encoding: 'utf8' });
+  const timedRepo = (cases, extra = {}) => {
+    const d = gitTmpRepo(JSON.stringify(Object.assign({ gates: { test: 'node timed.js', testReport: '.ristretto/report.xml' } }, extra)));
+    fs.writeFileSync(path.join(d, 'timed.js'), TIMED_SRC);
+    fs.writeFileSync(path.join(d, 'cases.json'), JSON.stringify(cases));
+    g(d, 'add', '-A'); g(d, 'commit', '-qm', 'suite');
+    return d;
+  };
+  const setCases = (d, cases) => fs.writeFileSync(path.join(d, 'cases.json'), JSON.stringify(cases));
+  const readState = (d, f) => { try { return JSON.parse(fs.readFileSync(path.join(d, '.ristretto', f), 'utf8')); } catch { return null; } };
+  const head = (d) => g(d, 'rev-parse', 'HEAD').stdout.trim();
+  const realArm = (d, arg) => gate(d, 'arm', '{}', {}, arg);
+
+  // 120a. A green full verify outside a build writes the known-test list on its HEAD; nothing is judged.
+  let d = timedRepo([['a::fast', 0.01], ['a::old', 3]]);
+  r = gate(d, 'verify');
+  assert.strictEqual(r.status, 0, 'verify outside a build never judges times — ' + r.stderr);
+  let known = readState(d, 'tests.json');
+  assert.ok(known && known.head === head(d) && known.times['a::old'] === 3000 && known.armed === false, 'tests.json records times on HEAD — got ' + JSON.stringify(known));
+  assert.ok(/slowest: 1 test over 2 s/.test(r.stdout + r.stderr), 'verify names the slow tail — got ' + r.stdout + r.stderr);
+  assert.ok(!/guard off/.test(r.stderr), 'no guard talk outside a build');
+
+  // 120b. Armed on that HEAD: a new test over the limit fails verify, names itself, and is its own red gate.
+  assert.strictEqual(realArm(d).status, 0);
+  assert.ok(readState(d, 'tests-armed.json'), 'arm copies the list when its HEAD is the HEAD');
+  setCases(d, [['a::fast', 0.01], ['a::old', 3], ['a::new', 3.8]]);
+  fs.writeFileSync(path.join(d, 'src.txt'), 'v2');
+  r = gate(d, 'verify');
+  assert.strictEqual(r.status, 1, 'a new slow test fails verify — ' + r.stdout + r.stderr);
+  assert.ok(r.stderr.includes('new test "a::new" took 3.8 s (limit 2 s)') && /cheaper level/.test(r.stderr), 'the message names the test and the way out — got ' + r.stderr);
+  assert.ok(!r.stderr.includes('"a::old"'), 'a test known at arm is never blamed');
+  assert.ok(/test-time ✗/.test(r.stdout) && readState(d, 'suite.json').failing === 'test-time', 'the board sees test-time as the red gate');
+
+  // 120c. The stop hook only warns; a fast new test passes verify and the growth line says what it cost.
+  r = gate(d, 'full');
+  assert.strictEqual(r.status, 0, 'the hook never fails on a time — ' + r.stderr);
+  assert.ok(/warning/.test(r.stderr) && r.stderr.includes('a::new'), 'the hook warns — got ' + r.stderr);
+  setCases(d, [['a::fast', 0.01], ['a::old', 3], ['a::new', 0.2]]);
+  fs.writeFileSync(path.join(d, 'src.txt'), 'v3');
+  r = gate(d, 'verify');
+  assert.strictEqual(r.status, 0, 'a fast new test passes — ' + r.stderr);
+  assert.ok(/tests: \+1 new · \+0\.2 s in new tests/.test(r.stdout), 'verify prints the growth line — got ' + r.stdout);
+
+  // 120d. disarm after the build's commit restamps the list the build wrote, and drops the armed copy.
+  g(d, 'add', '-A'); g(d, 'commit', '-qm', 'feat(x): new');
+  assert.strictEqual(gate(d, 'disarm').status, 0);
+  known = readState(d, 'tests.json');
+  assert.ok(known.head === head(d) && known.times['a::new'] === 200, 'disarm moves the list to the commit the build made — got ' + JSON.stringify(known));
+  assert.strictEqual(readState(d, 'tests-armed.json'), null, 'disarm removes the armed copy');
+
+  // 120e. A list from another commit (a pull, a branch switch) is not trusted: the guard is off, and says so.
+  fs.writeFileSync(path.join(d, 'other.txt'), 'theirs'); g(d, 'add', '-A'); g(d, 'commit', '-qm', 'someone else');
+  realArm(d);
+  assert.strictEqual(readState(d, 'tests-armed.json'), null, 'no armed copy from another commit');
+  setCases(d, [['a::fast', 0.01], ['a::old', 3], ['a::new', 0.2], ['b::theirs', 4]]);
+  r = gate(d, 'verify');
+  assert.strictEqual(r.status, 0, 'a slow test that arrived by git is never the build\'s red — ' + r.stderr);
+  assert.ok(/test-time guard off: .*another commit/.test(r.stderr), 'the guard says why it is off — got ' + r.stderr);
+  gate(d, 'disarm');
+
+  // 120f. `slowTest` sets the limit.
+  d = timedRepo([['a::fast', 0.01]], { slowTest: 5 });
+  gate(d, 'verify'); realArm(d);
+  setCases(d, [['a::fast', 0.01], ['a::new', 3]]);
+  assert.strictEqual(gate(d, 'verify').status, 0, 'under a raised limit a 3 s test passes');
+  gate(d, 'disarm');
+
+  // 120g. Slow tests never reach the fast suite's {files}; verify names testSlow without slowPaths.
+  d = gitTmpRepo(JSON.stringify({ gates: {
+    test: PASS,
+    testChanged: 'node -e "require(\'fs\').writeFileSync(\'files.txt\', process.argv.slice(1).join(\',\'))" {files}',
+    testSlow: 'node -e "require(\'fs\').writeFileSync(\'slowran\', \'x\')"',
+    slowPaths: ['e2e/**'],
+  } }));
+  fs.mkdirSync(path.join(d, 'e2e')); fs.mkdirSync(path.join(d, 'src'));
+  fs.writeFileSync(path.join(d, 'e2e', 'order.spec.js'), 'x'); fs.writeFileSync(path.join(d, 'src', 'a.js'), 'x');
+  arm(d);
+  gate(d, 'full');
+  assert.strictEqual(fs.readFileSync(path.join(d, 'files.txt'), 'utf8'), 'src/a.js', 'a file under slowPaths is not a fast-suite file');
+  gate(d, 'verify');
+  assert.ok(!fs.existsSync(path.join(d, 'slowran')), 'no gate mode runs testSlow');
+  const bare = tmpRepo(JSON.stringify({ gates: { test: PASS, testSlow: PASS } }));
+  assert.ok(/"testSlow" is set but "slowPaths" is not/.test(gate(bare, 'verify').stderr), 'verify names testSlow without slowPaths');
+
+  // 120h. `slow`: refuses while armed, runs only on its own, writes slow.json and nothing a gate owns.
+  const slow = (dd, ...args) => spawnSync(process.execPath, [GATE, 'slow', ...args], { encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: dd, CLAUDE_CODE_SESSION_ID: '' } });
+  r = slow(d);
+  assert.strictEqual(r.status, 2, 'slow refuses while a build is armed');
+  assert.ok(/armed/.test(r.stderr), 'and says why — got ' + r.stderr);
+  fs.unlinkSync(path.join(d, '.ristretto', 'pulling'));
+  for (const f of ['gate-green', 'suite.json', 'tests.json']) { try { fs.unlinkSync(path.join(d, '.ristretto', f)); } catch { /* none */ } }
+  r = slow(d);
+  assert.strictEqual(r.status, 0, 'a green slow run exits 0 — ' + r.stderr);
+  assert.ok(fs.existsSync(path.join(d, 'slowran')), 'slow runs testSlow');
+  const s = readState(d, 'slow.json');
+  assert.ok(s && s.verdict === 'green' && s.head === head(d), 'slow.json records the verdict on HEAD — got ' + JSON.stringify(s));
+  for (const f of ['gate-green', 'suite.json', 'tests.json']) assert.ok(!fs.existsSync(path.join(d, '.ristretto', f)), `slow never writes ${f}`);
+  assert.strictEqual(slow(tmpRepo(JSON.stringify({ gates: { test: PASS } }))).status, 1, 'no testSlow → exit 1');
+
+  // 120i. --only with {files} runs that file; a failing report is red, names the test, and blocks nothing else.
+  const e = timedRepo([['a::fast', 0.01]], { gates: { test: PASS,
+    testSlow: 'node -e "require(\'fs\').writeFileSync(\'only.txt\', process.argv.slice(1).join(\',\')); require(\'./timed.js\')" {files}',
+    testSlowReport: '.ristretto/report.xml', slowPaths: ['e2e/**'] } });
+  setCases(e, [['e2e::journey', 40, true]]);
+  r = slow(e, '--only', 'e2e/journey.spec.js');
+  assert.strictEqual(r.status, 1, 'a red slow run exits 1');
+  assert.strictEqual(fs.readFileSync(path.join(e, 'only.txt'), 'utf8'), 'e2e/journey.spec.js', '--only fills {files}');
+  assert.ok(r.stdout.includes('e2e::journey') && readState(e, 'slow.json').failing[0] === 'e2e::journey', 'the failing slow test is named');
+
+  // 120j. The new files are known to state.
+  r = gate(e, 'state');
+  assert.ok(!/unrecognised:.*(tests\.json|tests-armed\.json|slow\.json)/.test(r.stdout), 'state knows the new files — got ' + r.stdout);
+}
+
 console.log('gate.test.js: all checks passed');

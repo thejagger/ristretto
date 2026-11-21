@@ -11,7 +11,7 @@ Target: $ARGUMENTS
 - `nocommit` — skip the commit at the end
 - `decided: <question> → <ruling>` lines — the brewer's rulings; they bind the build (passed to the planner and the fixer as `Decided (binding)`) and go to the close with the build's own decisions
 - `contract: <repo>@<hash>:<file>` lines — a producer's contract in another repo, at a committed snapshot; every role reads it with `git -C <repo> show <hash>:<file>`, never from that repo's working tree
-- `shot` — shot sent it: skip the planner (step 7) and review at `medium`. That is the only difference.
+- `shot` — shot sent it: skip the planner (step 7) and review at `medium`; nothing else differs.
 
 > **`unattended` changes only this:**
 > 1. You never ask. Whatever would be a question becomes a one-line report and a stop.
@@ -97,7 +97,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/briefs/implementer.md` and follow it yourself. The b
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" verify
 ```
 
-Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green; you are the implementer here too, and no gate is ever weakened.
+Lint, typecheck and the *full* test gate, ignoring the scoped shortcut and the green-tree cache. Exit 0 → continue. Exit 1 → fix until green; you are the implementer here too.
 
 ## 10. Review — one `/code-review`
 
@@ -121,7 +121,7 @@ Then step 9's `verify` again. No second review: each fix's red-then-green test i
 
 1. Correct `Provides:` in the plan to what was built — the next planner reads it as fact.
 2. Write the close input to `.ristretto/close-<FEATURE-ID>.json`:
-   - `evidence` — one line for each criterion (a ruled one as ruled), `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits, `<n>: seen in <tool> — <what>` for a setup tool's look; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
+   - `evidence` — one line for each criterion (a ruled one as ruled), `<n>: <how it was proven>` (red→green test names, command output), `<n>: measured <number> — <command>` for a `[measure]`, `<n>: pending human` where a manual check waits, `<n>: seen in <tool> — <what>` for a setup tool's look, `<n>: no test — <what already guarantees it>`, `<n>: a ruling — read in <file>`; several lines may cite one test; then `gates: <gate summary>` and `review: /code-review <level> · fixed: <n> · open: <m>`
    - `decisions` — every `decided: <question> → <ruling>` from the planner, the implementer and the brewer's arguments, as `{question, ruling}`
    - `findings` — a measure that came back empty or the same for every case, first; then what review left open
    - `escalated` — the trigger, or null
@@ -158,8 +158,11 @@ The report is for trying the feature: short lines, nothing around them.
   built:  <two or three lines: what the user can do now>
   test:   <the exact steps — URL, button, command — and what they should see>
   decided for you: <question> → <ruling>; …  (overrule: `/ristretto:prep overrule`)
-  open:   <each manual check with its how:, each finding left open, anything unfinished> — or —
+  open:   <each manual check with its how:, each finding left open, anything unfinished; a slow test this build touched: `say "run the slow tests"`> — or —
+  setup:  <a start command, test user or tool that drives the app this build added> — only then
 ```
+
+Never edit `.ristretto/setup.md`; the `setup:` line changes it. No setup printed → end that line `— /ristretto:init would record it`.
 
 Blocked: `⏸ <FEATURE-ID> — <what it needs, from whom>`, and its stash.
 

@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, BoardAtWork, BoardLive, BoardPins, BoardPrep, BoardRecord, BoardRepo, BoardRole, BoardRun, BoardStarted, BoardStatus } from '../types'
 import { EMPTY_BOARD, commandOf, duration, fold, formatOf, mainRoleOf, markerState, plain, parseBrief, parseReport, parseRoadmap, reportText, signalOf } from './board-model.mjs'
 import { EMPTY_PINS, foldPins, pinsOf } from './board-pins.mjs'
-import { BASES, ago, baseArgs, branchOf, defaultBranch, featureIdOf, headArgs, isDocs, logArgs, parseBase, parseLog, shortHeadArgs, suiteArgs, suiteOf } from './board-branch.mjs'
+import { BASES, ago, baseArgs, branchOf, defaultBranch, featureIdOf, headArgs, isDocs, logArgs, parseBase, parseLog, shortHeadArgs, slowOf, suiteArgs, suiteOf } from './board-branch.mjs'
 import { phaseLock, scope } from './board-svg.mjs'
 import { parseChecks, parseDecisions, parsePlan, siblingOf } from './board-plan.mjs'
 import { addGate, addRole, addTokens, closeRole, endRun, keep, markPhase, spawnModel, track } from './board-runs.mjs'
@@ -30,9 +30,13 @@ import { BRASS, STEP_INK, chip as chipSvg, header, meter, rail, stepWord } from 
 // animated images are phase-locked to that stamp.
 
 const PANE = 'ristretto-board'
+// The commands that talk a project through with the owner, and pin what they settle.
+const TALK = new Map<string, 'prep' | 'init'>([['ristretto:prep', 'prep'], ['ristretto:init', 'init']])
 const ROADMAP = 'docs/ristretto/roadmap.md'
 const MARKER = '.ristretto/pulling'
 const SUITE = '.ristretto/suite.json'
+// The slow suite's last run, written by `gate.js slow` when the owner asked for it (2026-11-21).
+const SLOW = '.ristretto/slow.json'
 const AT_WORK = '.ristretto/at-work.json'
 
 const repos = atom({ plugin: 'ristretto', key: 'repos' } as const, [] as BoardRepo[])
@@ -195,6 +199,17 @@ async function readBranchAt($: EngineInterface, root: string, rows: { id: string
 }
 
 // The full-suite verdict, current only while it proves the code that is there (spec 4.5).
+// The slow suite's last run, or null: information for the rest view, never a verdict.
+async function readSlowAt($: EngineInterface, root: string): Promise<BoardRepo['slow']> {
+  try {
+    if (!(await $.fs.exists(`${root}/${SLOW}`))) return null
+    const rec = JSON.parse(String(await $.fs.read(`${root}/${SLOW}`)))
+    return rec && typeof rec.at === 'number' ? { at: rec.at, verdict: String(rec.verdict ?? ''), failing: Array.isArray(rec.failing) ? rec.failing.map(String) : [] } : null
+  } catch {
+    return null // half-written or unreadable: nothing to say
+  }
+}
+
 async function readSuiteAt($: EngineInterface, root: string) {
   let record: any = null
   try {
@@ -255,6 +270,7 @@ async function sigOf($: EngineInterface, root: string, kept: Kept | undefined) {
     await mtime($, `${root}/${ROADMAP}`),
     kept ? await planSig($, root, kept.repo.board.rows) : '',
     await mtime($, `${root}/${SUITE}`),
+    await mtime($, `${root}/${SLOW}`),
   ]
   if (kept?.gitDir) parts.push(await mtime($, `${kept.gitDir}/HEAD`), await mtime($, `${kept.gitDir}/logs/HEAD`))
   if (kept?.baseLog) parts.push(await mtime($, kept.baseLog))
@@ -288,9 +304,10 @@ async function refreshRepos($: EngineInterface, force = false) {
         }
         const { branch, age } = await readBranchAt($, root, board.rows, Array.isArray(runList) ? runList : [], next)
         const suite = await readSuiteAt($, root)
+        const slow = await readSlowAt($, root)
         const raw = await readRaw($, root)
         const s = folder === null ? await readSiblings($, root, board) : {}
-        kept = { sig: '', rawSig, repo: { folder, board, branch, suite, runs: Array.isArray(runList) ? runList : [], atWork: { state: 'none', rec: null }, age }, raw, gitDir: next.gitDir, baseLog: next.baseLog, sibs: s }
+        kept = { sig: '', rawSig, repo: { folder, board, branch, suite, slow, runs: Array.isArray(runList) ? runList : [], atWork: { state: 'none', rec: null }, age }, raw, gitDir: next.gitDir, baseLog: next.baseLog, sibs: s }
         kept.sig = await sigOf($, root, kept)
         cache.set(root, kept)
       }
@@ -449,11 +466,12 @@ function startedOf(r: BoardRun | null): BoardStarted | null {
 
 // v1: prep starts in this session; a build or another ristretto command ends it. Prep and a
 // build open the pane by themselves, where the surface docks one beside the transcript.
-async function startPrep($: EngineInterface, args: string) {
+// Init talks the setup through the same way: the same pins, its own word, no feature.
+async function startPrep($: EngineInterface, args: string, kind: 'prep' | 'init' = 'prep') {
   // The first word, when the drawing finds it on a roadmap; free text names no feature.
-  const id = args.trim().split(/\s+/)[0] || null
+  const id = kind === 'prep' ? args.trim().split(/\s+/)[0] || null : null
   const now = await $.clock.now()
-  await update($, prep, () => ({ startedAt: now, id }))
+  await update($, prep, () => ({ startedAt: now, id, kind }))
   await update($, pins, () => EMPTY_PINS)
   await stamp($)
 }
@@ -516,7 +534,8 @@ async function settleBuilder($: EngineInterface) {
 // here refreshes its heartbeat at most once a minute: a file write, never an atom.
 async function poll($: EngineInterface) {
   try {
-    if ((await $.session.root()) !== bootRoot) {
+    // A folder with no roadmap is looked at again until one appears: the first prep writes it.
+    if ((await $.session.root()) !== bootRoot || (roots.length === 0 && (await findRoots($)).length > 0)) {
       await loadRoots($)
       await refreshRepos($, true)
     }
@@ -681,10 +700,13 @@ export const register: Register = on => {
     }
     const cmd = commandOf(e.command) as 'pull' | 'shot' | 'brew' | null
     try {
-      const docked = (!!e.presentation?.isFullscreen || docks) && roots.length > 0
-      if (e.command === 'ristretto:prep') {
-        await startPrep($, e.args)
-        if (docked) await openPane($)
+      const docksHere = !!e.presentation?.isFullscreen || docks
+      const docked = docksHere && roots.length > 0
+      const talk = TALK.get(e.command)
+      if (talk) {
+        // Prep and init are where a project starts: they open the pane before any roadmap exists.
+        await startPrep($, e.args, talk)
+        if (docksHere) await openPane($)
       } else if (cmd) {
         await endPrep($)
         if (docked) await openPane($)
@@ -708,7 +730,8 @@ export const register: Register = on => {
     try {
       const skill = String((e as any).skill ?? '')
       const cmd = commandOf(skill) as 'pull' | 'shot' | 'brew' | null
-      if (skill === 'ristretto:prep') await startPrep($, String((e as any).args ?? ''))
+      const talk = TALK.get(skill)
+      if (talk) await startPrep($, String((e as any).args ?? ''), talk)
       else if (cmd && (e as any).agentId === undefined) await endPrep($)
       const signal = signalOf({ tool: 'Skill', skill })
       if (signal) await observe($, signal)
@@ -906,11 +929,12 @@ const headAlt = (view: any) => `ristretto ${view.mode}: ${caption([`${view.head.
 async function viewNow($: any): Promise<{ msg: string | null; view: any; nowMs: number }> {
   const shownRepos = await read($, repos)
   const nowMs = await read($, drawnAt)
-  const msg = messageOf(shownRepos)
+  const named = await read($, prep)
+  // Prep or init talking in a folder with no roadmap yet: the talk has a view, the roadmap not.
+  const msg = named ? null : messageOf(shownRepos)
   if (msg) return { msg, view: null, nowMs }
   const story = storyOf(shownRepos, await timelineOpts($, nowMs))
   const lv = await read($, live)
-  const named = await read($, prep)
   // prep's first word names a feature only when a roadmap has it.
   const pr = named && named.id && !titleOf(shownRepos, named.id) ? { ...named, id: null } : named
   const mode = modeOf({ live: lv, story, prep: pr })
@@ -919,6 +943,8 @@ async function viewNow($: any): Promise<{ msg: string | null; view: any; nowMs: 
     pins: await read($, pins), started: await read($, started),
     title: titleOf(shownRepos, mode === 'prep' ? pr?.id : lv?.id), now: nowMs,
   })
+  // The slow suite's last run per repo: shown at rest, a line each, never a verdict.
+  view.slow = shownRepos.map((r) => { const s = slowOf(r.slow ?? null, nowMs); return s ? caption([r.folder, s]) : null }).filter(Boolean)
   return { msg: null, view, nowMs }
 }
 
@@ -1121,6 +1147,7 @@ function richPane(els: any, view: any, nowMs: number) {
       <Box height={1} />
       {body}
       <Box height={1} />
+      {view.mode === 'rest' ? (view.slow ?? []).map((s: string, i: number) => <Text key={`slow-${i}`} mono size="caption" color="inactive">{s}</Text>) : null}
       <Text mono size="caption" color="inactive">{caption([rootName, version ? `v${version}` : null])}</Text>
     </Box>
   )
@@ -1150,6 +1177,7 @@ function textPane(els: any, view: any) {
     for (const c of view.checks) add(`to test: ${caption([c.tag, c.id, c.text])}`, 'permission')
     for (const b of view.blocked) add(`blocked: ${caption([b.tag, b.id, b.reason])}`, 'error')
     for (const r of view.next) add(`next: ${caption([r.tag, r.id, r.title])}`, 'inactive')
+    for (const s of view.slow ?? []) add(s, 'inactive')
   }
   return (
     <Box flexDirection="column">

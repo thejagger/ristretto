@@ -33,7 +33,7 @@ for (const b of BRIEFS) {
 const FINGERPRINTS = [
   'git add -A',              // stage only what you touched
   'plain ASCII',             // commit subject safety
-  'per criterion',           // test proportionality
+  'per behaviour',           // test proportionality: a behaviour, not a plan line (2026-11-21)
   'cheapest level',          // prove it at the cheapest honest level
   'a user is worse off',     // what red has to mean before a test is written
   'label or key',            // find the value by meaning, never by position
@@ -105,7 +105,7 @@ for (const c of COMMANDS) {
 
 // 7. common.md carries what more than one role needs, and stays a reference not an essay.
 const common = read('briefs/common.md');
-for (const fp of ['ticked by whoever did the check', 'about production', 'cheapest level', 'per criterion',
+for (const fp of ['ticked by whoever did the check', 'about production', 'cheapest level', 'per behaviour',
                   'weaken, skip, or delete', 'a user is worse off', 'change detector',
                   'never by position']) {
   assert.ok(common.includes(fp), `common.md must carry "${fp}"`);
@@ -120,7 +120,9 @@ for (const fp of ['ticked by whoever did the check', 'about production', 'cheape
 // 750 with the git rules moved in from the deleted closer brief (2026-11-09): the feature commit
 // is made by whoever closes, and pull, shot and the fixer all may — so every role reads them.
 // 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
-assert.ok(words(common) < 835, `common.md is ${words(common)} words — it is shared, so every role pays it`);
+// 2026-11-21: one test per behaviour, the obvious and intent filtered first, slow tests out of
+// the gates — a rule every role needs (+47 after cutting the duplicated reuse bullet, so +35).
+assert.ok(words(common) < 870, `common.md is ${words(common)} words — it is shared, so every role pays it`);
 
 // 7b. The setup widens the reach test (2026-11-20): a tool the setup names is a path, and what
 //     ristretto saw with it is the proof.
@@ -145,8 +147,9 @@ assert.ok(words(impl) < 800, `implementer.md is ${words(impl)} words — baselin
 //    1429 with the 0.22 statuses and boxes (2026-10-23): +81 in common.md, so the target moved by 81.
 //    1483 with the git rules moved into common.md (2026-11-09): +54, the closer's own rules.
 //    2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
-assert.ok(words(impl) + words(read('briefs/common.md')) < 1568,
-  'an implementer dispatch must cost well under 1901 words — 1568 is the target, not the baseline');
+//    2026-11-21: behaviour tests (+47 in common.md) and the slow test on request (+61 here), so +115.
+assert.ok(words(impl) + words(read('briefs/common.md')) < 1683,
+  'an implementer dispatch must cost well under 1901 words — 1683 is the target, not the baseline');
 
 // 10. Each role brief exists, defers to common.md, and does not restate it.
 // Totals moved with common.md's +125; each role's own file is still capped where it was.
@@ -161,7 +164,7 @@ assert.ok(words(impl) + words(read('briefs/common.md')) < 1568,
 // The reviewer and closer briefs went in 2026-11-09: review is /code-review, closing is close.js.
 // Totals moved by the +54 of git rules common.md took over from the closer.
 // 2026-11-20: the setup widens the reach test and who ticks — every role needs it (+81, so +85).
-const CAPS = { 'briefs/planner.md': [450, 1223] }; // +5, +5 more with the push rule and the builder line in Commits (2026-11-20)
+const CAPS = { 'briefs/planner.md': [450, 1295] }; // 2026-11-21: behaviours and the look (+20 here, +47 in common.md), so +72. // +5, +5 more with the push rule and the builder line in Commits (2026-11-20)
 for (const [b, [own, total]] of Object.entries(CAPS)) {
   const t = read(b);
   assert.ok(/common\.md/.test(t), `${b} must send the reader to common.md`);
@@ -185,7 +188,8 @@ assert.ok(!/trim pass/i.test(impl), 'the trim pass went with the reviewer');
 
 // 13. The config reference keeps only what gate.js cannot detect.
 const cfg = read('reference/config.md');
-assert.ok(words(cfg) < 700, `reference/config.md is ${words(cfg)} words — pull.md carried ~2500`);
+// 2026-11-21: the two suites and their four keys need judgment gate.js cannot make (+112).
+assert.ok(words(cfg) < 820, `reference/config.md is ${words(cfg)} words — pull.md carried ~2500`);
 assert.ok(/gate\.js" verify|gate\.js verify/.test(cfg), 'it must point at verify for everything detectable');
 for (const gone of ['--no-progress', 'formatPaths must', 'route them instead']) {
   assert.ok(!cfg.includes(gone), `"${gone}" is detected by gate.js now — it must not be text`);
@@ -205,7 +209,9 @@ for (const f of [...COMMANDS, ...BRIEFS]) {
 // 15. pull is the one build flow: it hands out paths, arms through gate.js, reviews once with
 //     /code-review, closes through close.js, and runs attended or unattended.
 const pull = read('commands/pull.md');
-assert.ok(words(pull) < 1900, `pull.md is ${words(pull)} words — was 8961`);
+// +24 more on 2026-11-21 (cap 1975): the no-test evidence forms and the unrun slow suite.
+// +38 on 2026-11-21 (cap +50): the report's `setup:` line, and that a build never edits the setup itself.
+assert.ok(words(pull) < 1975, `pull.md is ${words(pull)} words — was 8961`);
 assert.ok(/implementer\.md/.test(pull), 'pull must read the implementer brief, not restate it');
 assert.ok(/gate\.js" arm/.test(pull) && /gate\.js" disarm/.test(pull), 'pull must arm and disarm through gate.js');
 assert.ok(/gate\.js" state/.test(pull) && /gate\.js" verify/.test(pull), 'pull must run the state pre-flight and verify');
@@ -446,12 +452,79 @@ assert.ok(/announce the next step instead of taking it/.test(brew) && /offer to 
     'React', 'Angular', 'Vue', 'Svelte', 'Spring', 'Django', 'Rails', 'Laravel', 'Docker', 'Kubernetes', 'GitLab', 'GitHub',
     'glab', 'gh', 'Notion', 'Jira', 'Linear', 'Supabase', 'Postgres', 'Java', 'Kotlin', 'Swift', 'Python', 'JavaScript',
     'TypeScript', 'Gradle', 'Maven', 'npm', 'pnpm', 'yarn', 'pytest', 'Jest', 'Vitest'];
-  for (const f of ['commands/init.md', 'reference/setup.md', 'briefs/after-build.md', 'skills/walk/SKILL.md'].filter(has)) {
+  for (const f of ['commands/init.md', 'reference/setup.md', 'briefs/after-build.md', 'skills/walk/SKILL.md', 'skills/slow/SKILL.md'].filter(has)) {
     const hits = NAMES.filter((n) => new RegExp(`\\b${n}\\b`).test(read(f)));
     assert.deepStrictEqual(hits, [], `${f} names a stack or product: ${hits.join(', ')}`);
   }
   assert.ok(read('commands/help.md').includes('/ristretto:init'), 'help lists init');
   assert.strictEqual((read('commands/prep.md').match(/\/ristretto:init/g) || []).length, 1, 'prep mentions init exactly once');
+}
+
+// 36. The setup keeps up with the repo (2026-11-21). A project started bare has nothing to look
+//     at; its first features add a start command, a test user, a tool that drives the app, and a
+//     setup written on day one goes stale. A builder never edits the setup — it is the owner's,
+//     per machine — it reports a `setup:` line; the owner's session applies it in after-build,
+//     before the walk, so the walk already uses it. A filled `none yet` slot is applied and said;
+//     a change to what the owner chose is asked. Init writes a slot it cannot fill yet as
+//     `none yet`, and prep and status name such a slot in one line.
+{
+  const pull = read('commands/pull.md');
+  const ab = read('briefs/after-build.md');
+  const book = read('reference/setup.md');
+  assert.ok(/setup: +<[^\n]*>/.test(pull), 'the pull report has a `setup:` line');
+  assert.ok(/never edit[^\n]*\.ristretto\/setup\.md/i.test(pull), 'a build never edits the setup itself');
+  assert.ok(/\/ristretto:init would record it/.test(pull), 'with no setup, the line says init would record it — after-build is not read there');
+  const refresh = ab.indexOf('## 0. Refresh the setup');
+  assert.ok(refresh > -1 && refresh < ab.indexOf('## 1. Walk the boxes'), 'after-build refreshes the setup before the walk');
+  assert.ok(ab.includes('`none yet`') && ab.includes('setup updated:'), 'after-build fills `none yet` slots and reports `setup updated:`');
+  assert.ok(/owner chose[^\n]*ask/i.test(ab), 'a change to what the owner chose is asked, never applied silently');
+  assert.ok(book.includes('`none yet`'), 'the rulebook writes an unfillable slot as `none yet`');
+  assert.ok(read('commands/init.md').includes('`none yet`'), 'init writes `none yet` slots on a bare project');
+  assert.ok(read('commands/prep.md').includes('`none yet`') && read('commands/status.md').includes('`none yet`'), 'prep and status name a `none yet` slot');
+  assert.ok(read('commands/brew.md').includes('setup updated:'), "the brewer's final report carries after-build's `setup updated:` lines");
+}
+
+// 37. Behaviour tests and a fast suite by construction (2026-11-21, design
+//     docs/superpowers/specs/2026-11-21-behaviour-tests-design.md). Tests mirrored the plan: a
+//     crema build wrote three tests that each asserted the same 378 cents, one per acceptance
+//     line. A test is for a behaviour — when a user does X, they get Y — never for a plan line,
+//     for what is obvious, or for intent. Slow tests (a browser, a model, an upload) run when the
+//     owner asks in the chat, never in a gate; a new test over the limit fails verify.
+{
+  const common = read('briefs/common.md');
+  const tests = common.slice(common.indexOf('## Tests'));
+  assert.ok(tests.indexOf('a user is worse off') < tests.indexOf('per behaviour'), 'the worse-off filter comes before the behaviour rule');
+  assert.ok(/when a user does/i.test(common) && /rows of that test/.test(common), 'a behaviour is when → then, its variants are rows');
+  assert.ok(/obvious/.test(tests) && /change detector/.test(tests), 'no test for what is obvious or for intent');
+  assert.ok(/a real run can tell[^\n]*assert nothing/.test(common), 'a number only a real run can tell still gets no test');
+  assert.ok(!/over a browser/.test(common), 'a browser is no level a builder picks');
+  assert.ok(/path to look/.test(common), 'a driver in the dev dependencies is a path to look, not a kept test');
+  const planner = read('briefs/planner.md');
+  assert.ok(/behaviours that prove/.test(planner) && !/one test for each criterion/.test(planner), 'the planner lists behaviours');
+  assert.ok(/a look, not a test/.test(planner), "the planner's manual checks look instead of keeping a browser test");
+  const impl = read('briefs/implementer.md');
+  assert.ok(/behaviours that prove the criteria/.test(impl), 'the easy path lists behaviours too');
+  assert.ok(/only asks for a test/.test(impl), 'a fixer leaves a finding that only asks for a test of the obvious');
+  assert.ok(/slow test only where the owner asked/i.test(impl) && impl.includes('gate.js" slow --only'), 'a slow test only on request, run once');
+  const prep = read('commands/prep.md');
+  assert.ok(!/Every line becomes a test/.test(prep) && /proven by the build/.test(prep), 'prep no longer turns every line into a test');
+  assert.ok(prep.includes('make sure →'), 'prep names how the owner asks for a slow test');
+  const pull = read('commands/pull.md');
+  for (const f of ['no test — <what already guarantees it>', 'a ruling — read in <file>']) assert.ok(pull.includes(f), `pull's evidence has the form "${f}"`);
+  assert.ok(pull.includes('run the slow tests'), "pull's report names an unrun slow suite");
+  const cfg = read('reference/config.md');
+  for (const k of ['testSlow', 'slowPaths', 'slowTest']) assert.ok(cfg.includes(`\`${k}\``), `config.md names ${k}`);
+  assert.ok(/stays fast/.test(read('reference/setup.md')), "setup.md's gates row keeps only what stays fast");
+  assert.ok(/slow t(ests|ail)/.test(read('commands/init.md')), "init's overview shows the slow tail");
+  assert.ok(read('commands/status.md').includes('slow tests:'), 'status prints the slow-suite line');
+  assert.ok(read('commands/help.md').includes('"run the slow tests"'), 'help names "run the slow tests"');
+  const slow = 'skills/slow/SKILL.md';
+  assert.ok(fs.existsSync(path.join(ROOT, slow)), `${slow} exists`);
+  if (fs.existsSync(path.join(ROOT, slow))) {
+    const t = read(slow);
+    assert.ok(/user-invocable: false/.test(t) && t.includes('gate.js" slow'), 'the slow skill runs gate.js slow and is not typed');
+    assert.ok(/own words/.test(t) && /armed/.test(t), "the slow skill acts on the owner's words only and refuses while a build is armed");
+  }
 }
 
 if (failures.length) {

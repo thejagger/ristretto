@@ -12,7 +12,7 @@ A roadmap status is `planned · in-progress · blocked · done`, nothing else. E
 
 ## Manual checks — the reach test
 
-- **The reach test**: a manual check exists only where neither this repo nor the setup (`.ristretto/setup.md`) gives you a path to a criterion's subject — not merely because the subject is a database, a screen, or an external service. Look for a path first: a compose file, a seed script, a driver already in the dev dependencies, a tool the setup names. A setup tool that runs in the background is yours while you build: what you saw with it is the proof, `<n>: seen in <tool> — <what>`. One that needs the owner's session keeps the box; its `how:` names that tool and the steps.
+- **The reach test**: a manual check exists only where neither this repo nor the setup (`.ristretto/setup.md`) gives you a path to a criterion's subject — not merely because the subject is a database, a screen, or an external service. Look for a path first: a compose file, a seed script, a driver already in the dev dependencies (a path to look, not a test to keep), a tool the setup names. A setup tool that runs in the background is yours while you build: what you saw with it is the proof, `<n>: seen in <tool> — <what>`. One that needs the owner's session keeps the box; its `how:` names that tool and the steps.
 - **Never a check about production** — not yours, not the user's, not on the list.
 - **A box is ticked by whoever did the check** — ristretto, with what it saw beside it, where the setup gave it the path; otherwise only the owner's own word in chat. Never on anyone else's say-so, never without having looked.
 
@@ -20,11 +20,10 @@ A roadmap status is `planned · in-progress · blocked · done`, nothing else. E
 
 The suite is a shared cost, paid again at every stop, by every feature, for the life of the repo.
 
-- **Red first**: write the test, run it, confirm it fails before implementing. A test that passes before implementation proves nothing.
-- **One test per criterion.** A criterion only a real run can tell — a score, a latency, `[measure]` in older plans — gets none: run it, record the number, assert nothing.
-- **Prove it at the cheapest level that is still honest** — a pure function over a component, a component over an HTTP request, over a browser — and say which criterion forced you lower.
-- **Reuse before writing**: cite an existing test that covers the criterion instead of adding one. A criterion enforced repo-wide earns zero tests, and saying so is a complete proof.
-- **Red must mean a user is worse off** — a wrong value, a lost record, a dead link, an unhandled error. If red could only mean *someone changed the design on purpose* — a column order, a label's wording, a style, the arrangement of chrome, a fixture matching a fixture, a migration that already ran — it is a change detector: like a `Decisions:` ruling, it binds the code and is read, never asserted. Sorting that works earns its test; the default sort is a ruling.
+- **Red must mean a user is worse off** — a wrong value, a lost record, a dead link, an unhandled error. It decides whether a test exists at all. None for the obvious: what the language, the framework, a type or an existing test already guarantees — cite it instead. None for intent: if red could only mean *someone changed the design on purpose* — a wording, a style, a column order, a default, a fixture matching a fixture — it is a change detector: like a `Decisions:` ruling, it binds the code and is read, never asserted. Sorting that works earns its test; the default sort is a ruling.
+- **One test per behaviour**: when a user does X, they get Y, and the test's name says so. One test may prove several criteria; variants of an input — case, spaces, the edges of one rule — are rows of that test. A criterion only a real run can tell — a score, a latency, `[measure]` in older plans — gets none: run it, record the number, assert nothing.
+- **Red first**: write the test, run it, confirm it fails before implementing.
+- **Prove it at the cheapest level that is still honest** — a pure function over a component, a component over an HTTP request — and say what forced you lower. A browser, a model call, an upload is a slow test: never in the suite the gates run.
 - **Test code where it lives, once**: shared code — a component, a service, a helper — is proven in its own test; each screen using it earns one wiring test plus tests for what it does differently. A spec copied from a sibling means the logic was copied too; the copy is the finding.
 - **Find it by its label or key, never by position**: a test a reorder turns red was pinning the order.
 

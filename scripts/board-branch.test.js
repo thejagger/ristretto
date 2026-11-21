@@ -107,5 +107,13 @@ const { pathToFileURL } = require('url');
   assert.strictEqual(b.featureIdOf('Merge branch main'), null);
   assert.strictEqual(b.isDocs('docs(lnw-export): manual checks passed'), true);
   assert.strictEqual(b.isDocs('feat(lnw-export): x'), false);
+  // The slow suite's last run (2026-11-21), as the rest view says it; nothing to say without one.
+  const noon = new Date(2026, 10, 21, 12, 0).getTime();
+  const day = 86400000;
+  assert.strictEqual(b.slowOf(null, noon), null);
+  assert.strictEqual(b.slowOf({ verdict: 'green' }, noon), null, 'no time, no line');
+  assert.strictEqual(b.slowOf({ at: noon - 12 * day, verdict: 'green', failing: [] }, noon), 'slow tests · last run 12 days ago · green');
+  assert.strictEqual(b.slowOf({ at: noon - day, verdict: 'red', failing: ['a', 'b'] }, noon), 'slow tests · last run yesterday · 2 failing');
+  assert.strictEqual(b.slowOf({ at: noon, verdict: 'unverified', failing: [] }, noon), 'slow tests · last run today 12:00 · unverified');
   console.log('board-branch.test.js: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

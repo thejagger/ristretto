@@ -80,14 +80,17 @@ function prepView({ prep, pins, title }) {
   const points = pins?.points ?? [];
   const ruled = points.filter((p) => p.ruling !== null);
   const open = points.filter((p) => p.ruling === null);
+  // Init talks the setup through the way prep talks a feature: the same view, no feature.
+  const kind = prep?.kind === 'init' ? 'init' : 'prep';
   return {
     mode: 'prep',
+    kind,
     head: {
       mode: 'prep', big: String(ruled.length), step: null, tone: 'ink', small: `/ ${points.length}`,
       label: 'POINTS SETTLED', since: prep?.startedAt ?? null,
       strip: points.length ? { n: points.length, done: ruled.length, live: open.length ? 'brass' : null, red: 0 } : null, caption: null,
     },
-    feature: prep?.id ? { id: prep.id, title: title || '' } : null,
+    feature: kind === 'prep' && prep?.id ? { id: prep.id, title: title || '' } : null,
     decided: ruled.map(({ topic, ruling }) => ({ topic, ruling })),
     open: open.map(({ topic, question }) => ({ topic, question, live: topic === pins?.live })),
     found: [...(pins?.found ?? [])],
@@ -140,7 +143,7 @@ export function chipOf(view) {
   }
   if (view.mode === 'prep') {
     const n = view.decided.length + view.open.length;
-    return { label: `PREP${view.feature ? ` · ${view.feature.id}` : ''}`, word: n ? `${view.decided.length} / ${n} SETTLED` : 'TALKING', step: null, tone: 'brass', since: h.since, strip: h.strip };
+    return { label: `${view.kind === 'init' ? 'INIT' : 'PREP'}${view.feature ? ` · ${view.feature.id}` : ''}`, word: n ? `${view.decided.length} / ${n} SETTLED` : 'TALKING', step: null, tone: 'brass', since: h.since, strip: h.strip };
   }
   const yours = view.checks.length + view.blocked.length;
   if (!yours && !view.counts.n) return null;

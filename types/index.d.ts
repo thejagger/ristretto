@@ -55,6 +55,8 @@ export type BoardRepo = {
   board: Board
   branch: BoardBranch | null
   suite: BoardSuite | null
+  // The slow suite's last run, as .ristretto/slow.json holds it (2026-11-21); null when never run.
+  slow?: { at: number; verdict: string; failing: string[] } | null
   runs: BoardRecord[]
   atWork: { state: 'running' | 'stopped' | 'ended' | 'none'; rec: BoardAtWork | null }
   age: string | null
@@ -63,7 +65,8 @@ export type BoardRole = { role: string; model: string; startedAt: number; endedA
 // The run in progress, as the drawing needs it: which feature, since when.
 export type BoardStarted = { id: string; startedAt: number; steps?: Record<string, number>; at?: { step: string; since: number } | null }
 // v1: prep running in this session, and what its answers pinned (board-pins.mjs).
-export type BoardPrep = { startedAt: number; id: string | null }
+// `kind: 'init'` is /ristretto:init talking the setup through the same way (2026-11-21).
+export type BoardPrep = { startedAt: number; id: string | null; kind?: 'prep' | 'init' }
 export type BoardPins = { points: { topic: string; question: string; ruling: string | null }[]; found: string[]; live: string | null }
 
 declare module 'claude-code' {

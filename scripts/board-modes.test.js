@@ -84,6 +84,13 @@ const { pathToFileURL } = require('url');
   assert.deepStrictEqual([modes.chipOf(pull).label, modes.chipOf(pull).word], ['PULL 2 / 5 · a', 'BUILD']);
   assert.deepStrictEqual([modes.chipOf(prep).label, modes.chipOf(prep).word, modes.chipOf(prep).tone], ['PREP · R-33', '1 / 2 SETTLED', 'brass']);
   assert.deepStrictEqual([modes.chipOf(rest).word, modes.chipOf(rest).tone], ['YOUR TURN · 1', 'you']);
+  // Init (2026-11-21) talks the setup through as prep talks a feature: the same view, its own word,
+  // and never a feature, even when its first word happens to be one.
+  const init = view({ mode: 'prep', prep: { startedAt: 9, id: 'R-33', kind: 'init' }, pins, title: 'Board' });
+  assert.strictEqual(init.kind, 'init');
+  assert.strictEqual(init.feature, null);
+  assert.deepStrictEqual([modes.chipOf(init).label, modes.chipOf(init).word], ['INIT', '1 / 2 SETTLED']);
+  assert.strictEqual(prep.kind, 'prep');
   assert.strictEqual(modes.chipOf(view({ mode: 'rest' })), null);
 
   console.log('board-modes.test.js: all checks passed');

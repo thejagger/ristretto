@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reads JUnit XML into "what ran" and "what failed". Nothing else.
+// Reads JUnit XML into "what ran", "what failed" and how long each took. Nothing else.
 //
 // JUnit XML is the one result format nearly every runner can already emit — pytest --junitxml,
 // vitest --reporter=junit, jest-junit, Gradle and Maven surefire natively, and most others with a
@@ -60,6 +60,8 @@ function readReport(absPath) {
 
   const executed = new Set();
   const failing = new Set();
+  // Per-test time in ms, for the test-time guard. A repeated id keeps its largest time.
+  const times = new Map();
   let m;
   TESTCASE_RE.lastIndex = 0;
   while ((m = TESTCASE_RE.exec(flat)) !== null) {
@@ -71,8 +73,10 @@ function readReport(absPath) {
     if (/<skipped\b/.test(body)) continue; // did not run — carries no information either way
     executed.add(id);
     if (/<(failure|error)\b/.test(body)) failing.add(id);
+    const secs = a.time === undefined || a.time.trim() === '' ? NaN : Number(a.time);
+    if (Number.isFinite(secs)) times.set(id, Math.max(times.get(id) ?? 0, Math.round(secs * 1000)));
   }
-  return { executed, failing };
+  return { executed, failing, times };
 }
 
 module.exports = { readReport, decodeEntities, SEP };

@@ -1,12 +1,21 @@
 # After a build
 
-What the session the owner started does once a feature is closed: walk the boxes the setup reaches, push, post to the tracker. It is a reference; do each part only where the setup asks for it.
+What the session the owner started does once a feature is closed: bring the setup up to date, walk the boxes the setup reaches, push, post to the tracker. It is a reference; do each part only where the setup asks for it.
 
 ## Who reads this
 
 The session the owner started, at these moments only: an attended pull after its commit; prep after its builder returns; the brewer once per repo, before its final report; the walk skill, when the owner says "run the checks". Not a builder: a builder never reads this, and never pushes, posts or walks.
 
 Read `.ristretto/setup.md` (session start printed it). A section it lacks means nothing to do for that part — no walk without `## Look at the app`, no push without `## Git`, tickets read only without `## Tickets`. No setup file: stop here. `CLAUDE.md` / `AGENTS.md` win over the setup: a house rule against pushing means no push.
+
+## 0. Refresh the setup
+
+The setup is the owner's: a builder never edits it, it reports a `setup:` line instead — a start command, a test user, a tool that drives the app, added by its build. Take those lines from the reports of the features closed here: your own, your builder's, or every builder's in this repo. For each, work out the edit to `.ristretto/setup.md` in the shape `${CLAUDE_PLUGIN_ROOT}/reference/setup.md` gives, never with a password:
+
+- **It fills a `none yet` slot** in a section the setup has → make the edit, add ` · updated <YYYY-MM-DD> after <ID>` to the header comment, and report `setup updated: <slot> → <value>`.
+- **It changes or drops what the owner chose**, or needs a section the setup lacks → never edit; ask, with your recommended answer: in this session if the owner is here, in the brewer's final report otherwise. On a yes, edit as above.
+
+`.ristretto/` is not in git: nothing to commit. The walk below already uses the updated setup.
 
 ## 1. Walk the boxes
 

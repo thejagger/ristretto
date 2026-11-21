@@ -4,11 +4,11 @@ Read `briefs/common.md` first — it binds you before anything below does.
 
 ## Find your build plan
 
-Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago: a map of files, signatures and test names. The code and the test bodies are yours; check its `verify:` lines first, and do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md` yourself against the current code — real file paths, real names and signatures, the test cases that prove each criterion — and make each surviving manual check (common.md's reach test) its criterion's box, with a `how:` line. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
+Look for `.ristretto/build/<FEATURE-ID>.md`. If it exists, that's your plan, written against the current code minutes ago: a map of files, signatures and test names. The code and the test bodies are yours; check its `verify:` lines first, and do not re-plan. If it doesn't exist, this is the easy path: before writing anything, expand `docs/ristretto/plans/<FEATURE-ID>.md` yourself against the current code — real file paths, real names and signatures, the behaviours that prove the criteria — and make each surviving manual check (common.md's reach test) its criterion's box, with a `how:` line. A missing build-plan file is the easy path, never an error to report. Below, "the build plan" means whichever of the two you have.
 
 ## Tests first, red first
 
-See common.md's Tests section. Two additions. A criterion waiting on a manual check gets its test written skipped, naming the check that unblocks it — it cannot go red honestly without that environment. A criterion only a real run can tell gets no test: run its command and report the number.
+See common.md's Tests section. Two additions. A criterion waiting on a manual check gets its test written skipped, naming the check that unblocks it — it cannot go red honestly without that environment. A criterion only a real run can tell gets no test: run its command and report the number. A slow test only where the owner asked for one — a `make sure →` decision, or the owner in this chat: write it where `slowPaths` says, run it once red then green with `node "${CLAUDE_PLUGIN_ROOT}/scripts/gate.js" slow --only <file>`, and never in the suite the gates run.
 
 ## Implement
 
@@ -43,7 +43,7 @@ Never lower a tier yourself, and never reach for `blocked:` instead — `blocked
 
 ## If you were dispatched as a fixer
 
-Your input is the `/code-review` findings chosen for fixing, instead of a build plan. Fix exactly those. For each, first write a test that reproduces it and watch it go red, then make it green. Finish with prove as above; the caller runs `gate.js verify` again. No review follows, because the red-then-green test is the proof. A finding no test can reproduce: leave it, and say so. Everything else above is unchanged.
+Your input is the `/code-review` findings chosen for fixing, instead of a build plan. Fix exactly those. For each, first write a test that reproduces it and watch it go red, then make it green. Finish with prove as above; the caller runs `gate.js verify` again. No review follows, because the red-then-green test is the proof. A finding no test can reproduce, or one that only asks for a test of the obvious or of a ruling: leave it, and say so. Everything else above is unchanged.
 
 ## Final message
 

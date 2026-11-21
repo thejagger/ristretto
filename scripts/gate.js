@@ -26,6 +26,12 @@
 //                    tree and does nothing — one run instead of two. Exits 0 green, 1 red, 3
 //                    UNVERIFIED (a stall, an unobtained lock, or an unparseable config), never the
 //                    hook's 2.
+//   slow [--only f]  Not a hook — the owner's "run the slow tests". Runs gates.testSlow (one file
+//                    through its {files} with --only), writes .ristretto/slow.json and nothing a gate
+//                    owns. Refuses while a build is armed. 0 green, 1 red, 2 refused, 3 unverified.
+//
+// A new test in the fast suite slower than `slowTest` fails verify while a build is armed (the
+// test-time guard, see judgeTimes); at every other stop it is a warning.
 //
 // LOCK. Exactly one gate run at a time, repo-wide (.ristretto/gate-lock). Two concurrent suites
 // sharing one database or port produce failures that belong to neither — a red that is pure
@@ -141,7 +147,7 @@ function formatAge(ms) {
 // silence carries no information whatsoever. Test runners stream progress as they go, so silence
 // from one is a much stronger signal. These are budgets per gate KIND, not per tool, which is
 // why they hold across every stack rather than needing a table of runners.
-const DEFAULT_SILENCE = { format: 30, lint: 600, typecheck: 600, test: 300, testChanged: 300 };
+const DEFAULT_SILENCE = { format: 30, lint: 600, typecheck: 600, test: 300, testChanged: 300, testSlow: 300 };
 
 // Kept back from the silence budget for the same reason LOCK_SLACK is kept back from the wait: the
 // kill has to land early enough that the report gets written, read, and answered by an agent that
@@ -173,7 +179,8 @@ function hookSilenceCeilingSec() {
   return Math.max(MIN_SILENCE, watchdog - SILENCE_SLACK);
 }
 function silenceCeilingSec() {
-  if (MODE === 'verify') return Infinity;
+  // `slow` likewise: the owner asked for it in the chat, and its caller backgrounds and polls it.
+  if (MODE === 'verify' || MODE === 'slow') return Infinity;
   return hookSilenceCeilingSec();
 }
 
@@ -255,6 +262,18 @@ const suitePath = path.join(projectDir, '.ristretto', 'suite.json');
 // Untracked files already there when the run armed, path → content hash. They are the user's —
 // a dump waiting on a privacy scan, a scratch note — not a dead subagent's leftovers.
 const untrackedPath = path.join(projectDir, '.ristretto', 'untracked-before.json');
+// The test-time guard (2026-11-21). tests.json: every test the full fast suite ran on its last
+// green, report-attributed run on this machine, with its time — { head, armed, times: {id: ms} }.
+// `arm` copies it to tests-armed.json only while its HEAD is the HEAD: a test missing from that
+// copy is the build's own, and a list from another commit (a pull, a branch switch) is never
+// trusted to say so. `disarm` moves a list the build itself wrote onto the commit it made.
+const testsPath = path.join(projectDir, '.ristretto', 'tests.json');
+const testsArmedPath = path.join(projectDir, '.ristretto', 'tests-armed.json');
+// The slow suite's last run, written only by `slow`; status and the board read it.
+const slowPath = path.join(projectDir, '.ristretto', 'slow.json');
+// A new test in the fast suite slower than this fails verify. One number for every stack: the
+// slow tests worth keeping out — a browser, a model, an upload — sit far above it.
+const DEFAULT_SLOW_TEST_SEC = 2;
 
 // Files ristretto reads and never writes. A hand-curated memory file that an agent appends to
 // stops being worth reading, so every brief in every command says so — and prose held right up
@@ -269,14 +288,14 @@ const HOUSE_RULE_FILES = new Set(['claude.md', 'agents.md']);
 // verify and prove are a build's proof, run by an agent from where it stands. Without a config they
 // were run from the wrong folder (the parent of a folder of repos) or in an unset repo: nothing ran,
 // and an exit 0 would read as green.
-if (!fs.existsSync(configPath) && (MODE === 'verify' || MODE === 'prove')) {
-  console.error(`ristretto: no .ristretto.json in ${projectDir} - nothing was verified. Run it from the feature's repo.`);
-  process.exit(MODE === 'verify' ? 1 : 3);
+if (!fs.existsSync(configPath) && (MODE === 'verify' || MODE === 'prove' || MODE === 'slow')) {
+  console.error(`ristretto: no .ristretto.json in ${projectDir} - nothing was ${MODE === 'slow' ? 'run' : 'verified'}. Run it from the feature's repo.`);
+  process.exit(MODE === 'prove' ? 3 : 1);
 }
 if (!fs.existsSync(configPath) && MODE !== 'state' && MODE !== 'arm' && MODE !== 'disarm') process.exit(0);
 
 let hook = {};
-if (MODE !== 'verify' && MODE !== 'state' && MODE !== 'arm' && MODE !== 'disarm' && MODE !== 'prove') {
+if (MODE !== 'verify' && MODE !== 'state' && MODE !== 'arm' && MODE !== 'disarm' && MODE !== 'prove' && MODE !== 'slow') {
   try { hook = JSON.parse(fs.readFileSync(0, 'utf8')); } catch { /* no/bad stdin is fine */ }
 }
 
@@ -290,6 +309,7 @@ let silence = DEFAULT_SILENCE;
 let hardCaps = DEFAULT_HARD_CAP;
 let lockWait = DEFAULT_LOCK_WAIT;
 let watchdog = DEFAULT_WATCHDOG;
+let slowTestSec = DEFAULT_SLOW_TEST_SEC;
 // Which silence budgets a human actually wrote down, as opposed to inherited.
 let silenceAuthored = [];
 try {
@@ -300,6 +320,7 @@ try {
   hardCaps = { ...DEFAULT_HARD_CAP, ...(config.timeouts || {}) };
   if (Number.isFinite(config.lockWait)) lockWait = config.lockWait;
   if (Number.isFinite(config.watchdog)) watchdog = config.watchdog;
+  if (Number.isFinite(config.slowTest) && config.slowTest > 0) slowTestSec = config.slowTest;
 } catch (e) {
   if (MODE === 'verify') {
     console.error(`ristretto: .ristretto.json is unparseable (${e.message}) — fix it, the gate cannot run.`);
@@ -658,9 +679,11 @@ function treeFingerprint() {
   return h.digest('hex');
 }
 
-// Every changed file that still exists on disk, repo-relative.
+// Every changed file that still exists on disk, repo-relative. A file under `slowPaths` is the
+// slow suite's: it never reaches the fast suite's {files}, nor its unrouted fallback.
 function changedFiles() {
   return (runPaths() || []).filter((p) => {
+    if (matchesAny(p, gates.slowPaths)) return false;
     try { return fs.statSync(path.join(projectDir, p)).isFile(); } catch { return false; }
   });
 }
@@ -925,6 +948,7 @@ function attribute(gate) {
   if (!paths.length) return null;
   const executed = new Set();
   const failing = new Set();
+  const times = new Map();
   let readAny = false;
   for (const rel of paths) {
     const report = readReport(path.join(projectDir, rel));
@@ -932,6 +956,7 @@ function attribute(gate) {
     readAny = true;
     for (const id of report.executed) executed.add(id);
     for (const id of report.failing) failing.add(id);
+    for (const [id, ms] of report.times || []) times.set(id, Math.max(times.get(id) ?? 0, ms));
   }
   if (!readAny) {
     console.error(`ristretto: no test report at ${paths.join(', ')} — falling back to the exit code for '${gate.label}'.`);
@@ -943,7 +968,72 @@ function attribute(gate) {
   // A failure in a tree this run has not changed cannot be the change's doing.
   const changed = newFailures.length ? runPaths() : null;
   const untouched = changed !== null && changed.length === 0;
-  return { verdict: newFailures.length ? 'block' : 'pass', newFailures, tolerated, next, untouched };
+  return { verdict: newFailures.length ? 'block' : 'pass', newFailures, tolerated, next, untouched, times };
+}
+
+// --- The test-time guard (2026-11-21). ---
+// A slow test in the fast suite is paid at every stop of every later feature, for the life of the
+// repo: a suite of them is how a gate reaches 24 minutes. So a test this build added that runs past
+// `slowTest` fails verify, while the build can still prove the behaviour at a cheaper level. Only
+// while armed, only against the list arm copied, and only verify fails on it: a timing taken at one
+// stop, with other builders loading the machine, is a warning.
+const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+const headNow = () => { const h = git('rev-parse --verify --quiet HEAD'); return h === null ? null : (h.trim() || null); };
+const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
+// Written whole or not at all: `arm` reads tests.json without the gate lock.
+function writeJsonAtomic(p, value) {
+  const tmp = `${p}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(value));
+    fs.renameSync(tmp, p);
+  } catch {
+    try { fs.unlinkSync(tmp); } catch { /* never written */ }
+  }
+}
+
+// What the guard makes of one run's times: why it is off, or the new tests and the slow ones.
+// `reported` is false when no test gate of the run had a report it could read.
+function judgeTimes(times, reported) {
+  const limitMs = slowTestSec * 1000;
+  const over = (ids) => ids.filter((id) => times.get(id) > limitMs).sort((a, b) => times.get(b) - times.get(a));
+  if (!fs.existsSync(markerPath)) return { off: null, armedList: null, fresh: [], slow: [], tail: over([...times.keys()]) };
+  let off = null;
+  const armedList = readJson(testsArmedPath);
+  if (!reported) off = 'no test report — set "testReport" to one that records times';
+  else if (!times.size) off = 'the test report records no times';
+  else if (!armedList || !armedList.times || typeof armedList.times !== 'object') {
+    off = readJson(testsPath) ? 'the known-test list is from another commit — a verify outside a build refreshes it'
+      : 'no known-test list yet — the first green verify writes it';
+  }
+  if (off) return { off, armedList: null, fresh: [], slow: [], tail: [] };
+  const fresh = [...times.keys()].filter((id) => !(id in armedList.times));
+  const known = [...times.keys()].filter((id) => id in armedList.times);
+  return { off: null, armedList, fresh, slow: over(fresh), tail: over(known) };
+}
+
+function slowTestLines(t, times) {
+  return t.slow.map((id) => `ristretto: new test "${id}" took ${secs(times.get(id))} (limit ${slowTestSec} s) — prove the behaviour at a cheaper level. A slow test exists only where the owner asked for one.`);
+}
+
+// Information only, from verify: what this build's tests cost, and the slow tail it inherited.
+function timeReport(t, times) {
+  const lines = [];
+  if (t.armedList) {
+    const added = t.fresh.reduce((sum, id) => sum + times.get(id), 0);
+    const before = t.armedList.testMs;
+    const now = observedQuiet['test:ms'];
+    const suite = Number.isFinite(before) && Number.isFinite(now) ? ` · suite ${secs(before)} → ${secs(now)}` : '';
+    lines.push(`tests: +${t.fresh.length} new · +${secs(added)} in new tests${suite}`);
+  }
+  if (t.tail.length) {
+    const tailMs = t.tail.reduce((sum, id) => sum + times.get(id), 0);
+    const allMs = [...times.values()].reduce((a, b) => a + b, 0);
+    const top = t.tail.slice(0, 3).map((id) => `${id} ${secs(times.get(id))}`).join(', ');
+    lines.push(`slowest: ${t.tail.length} test${t.tail.length === 1 ? '' : 's'} over ${slowTestSec} s — ${secs(tailMs)} of ${secs(allMs)} in tests · ${top}`);
+  }
+  return lines;
 }
 
 // Only the NEW failures are named. Naming all of them is the same as naming none — the whole
@@ -1091,6 +1181,10 @@ function hangAdvice(gate, result, usedSec) {
 // them at all. The `full` hook never calls this one: repeating config advice on every green
 // subagent stop is noise, not a pre-flight.
 function auditStaticConfig() {
+  if (gates.testSlow && !(Array.isArray(gates.slowPaths) && gates.slowPaths.length)) {
+    console.error('ristretto: "testSlow" is set but "slowPaths" is not — a slow test a build edits reaches the');
+    console.error('  fast suite\'s {files} and runs at every stop. Name where the slow tests live.');
+  }
   if (gates.format && !(Array.isArray(gates.formatPaths) && gates.formatPaths.length)) {
     console.error('ristretto: a "format" gate is set but "formatPaths" is not — the formatter will rewrite');
     console.error('  every file anyone edits, including docs and generated files. List what it is canonical for.');
@@ -1196,6 +1290,12 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
   let hung = false;
   // A gate that failed, as against one that hung: a hang is unverified, never red.
   let red = false;
+  // Each test's time across this pass's test gates, for the test-time guard; `fullTimes` only
+  // from the full `test` gate, the one run whose list may stand for the whole suite.
+  const times = new Map();
+  let fullTimes = null;
+  let reported = false;
+  let testGateRan = false;
 
   for (const gate of gateList(scoped)) {
     const gateStartedAt = Date.now();
@@ -1215,6 +1315,14 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
     // test LEAVES the tolerated set, and skipping this on a green exit would make the ratchet able
     // to grow and never shrink.
     const attributed = attribute(gate);
+    if (gate.key === 'test' || gate.key === 'testChanged') {
+      testGateRan = true;
+      if (attributed) {
+        reported = true;
+        for (const [id, ms] of attributed.times) times.set(id, Math.max(times.get(id) ?? 0, ms));
+        if (gate.key === 'test') fullTimes = attributed.times;
+      }
+    }
 
     // First capture is a deliberate act that belongs only to a caller that asked for it — never a
     // hook, or a one-shot proof, firing mid-run.
@@ -1272,7 +1380,21 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
       : `\n--- ristretto gate '${gate.label}' FAILED ---\n${result.output.split('\n').slice(-40).join('\n')}`;
   }
 
-  if (failures) return { ok: false, stalled: hung, red, results, failures };
+  // The test-time guard: a red only in verify, a warning at every other stop.
+  const timing = testGateRan ? judgeTimes(times, reported) : null;
+  if (timing && timing.slow.length) {
+    const lines = slowTestLines(timing, times);
+    if (label === 'verify') {
+      results.push('test-time ✗');
+      red = true;
+      failures += `\n${lines.join('\n')}`;
+    } else {
+      console.error(lines.map((l) => l.replace('ristretto: new test', 'ristretto: warning — new test')).join('\n'));
+      console.error('  verify fails on it.');
+    }
+  }
+
+  if (failures) return { ok: false, stalled: hung, red, results, failures, timing, times };
 
   // Nothing is hung any more. A marker left from an older run keeps saying one is, with no expiry
   // and nothing to contradict it — state that lies is worse than state that is missing.
@@ -1282,7 +1404,11 @@ async function runGates({ scoped, stopOnStall, mayCreateBaseline, skipIfProven, 
   if (green !== null) {
     try { fs.mkdirSync(path.dirname(greenPath), { recursive: true }); fs.writeFileSync(greenPath, green); } catch { /* best-effort */ }
   }
-  return { ok: true, stalled: false, results, failures: '' };
+  // Only a green full run may stand for the whole suite; a scoped one names a part of it.
+  if (fullTimes && fullTimes.size) {
+    writeJsonAtomic(testsPath, { head: headNow(), armed: fs.existsSync(markerPath), times: Object.fromEntries(fullTimes) });
+  }
+  return { ok: true, stalled: false, results, failures: '', timing, times };
 }
 
 async function main() {
@@ -1401,7 +1527,9 @@ async function main() {
     const known = new Set([
       markerPath, legacyOrchestratingPath, builderPath, retriesPath, greenPath, stalledPath,
       legacyToolsPath, lockPath, quietPath, formatBrokenPath, baselinePath, suitePath, untrackedPath,
+      testsPath, testsArmedPath, slowPath,
     ].map((p) => path.basename(p)));
+    for (const rel of reportList(gates.testSlowReport)) known.add(path.basename(rel));
     known.add('build');
     known.add('setup.md'); // written by /ristretto:init, read above
     for (const rel of allReportPaths()) known.add(path.basename(rel));
@@ -1445,6 +1573,15 @@ async function main() {
         for (const e of entries) if (e.code === '??') snapshot[e.path] = contentHash(e.path);
         fs.writeFileSync(untrackedPath, JSON.stringify(snapshot));
       }
+      // The test-time guard's "before": the known-test list, only while it is this HEAD's. A list
+      // from another commit would blame the build for tests that arrived with a pull.
+      const knownTests = readJson(testsPath);
+      const headAtArm = headNow();
+      if (knownTests && knownTests.times && headAtArm && knownTests.head === headAtArm) {
+        writeJsonAtomic(testsArmedPath, { head: headAtArm, times: knownTests.times, testMs: observedQuiet['test:ms'] ?? null });
+      } else {
+        try { fs.unlinkSync(testsArmedPath); } catch { /* none */ }
+      }
       fs.writeFileSync(markerPath, me);
       // A plain arm is a session's main agent pulling: whatever an earlier builder left goes.
       if (ARG === 'builder') fs.writeFileSync(builderPath, me);
@@ -1459,7 +1596,16 @@ async function main() {
   if (MODE === 'disarm') {
     // Everything a run creates, in one place. `build/` is deliberately absent: a plan that was
     // paid for and never implemented outlives the run, and its closer deletes it.
-    for (const p of [markerPath, legacyOrchestratingPath, builderPath, retriesPath, stalledPath, untrackedPath]) {
+    // First, while the run's own paths are still known: a known-test list this build wrote moves
+    // onto the commit it made, or the next build's arm would find it on the wrong HEAD and the
+    // guard would be off for every feature after the first.
+    const knownTests = readJson(testsPath);
+    const headAtDisarm = headNow();
+    const clean = (runPaths() || ['unknown']).length === 0;
+    if (knownTests && knownTests.armed && headAtDisarm && knownTests.head !== headAtDisarm && clean) {
+      writeJsonAtomic(testsPath, { ...knownTests, head: headAtDisarm, armed: false });
+    }
+    for (const p of [markerPath, legacyOrchestratingPath, builderPath, retriesPath, stalledPath, untrackedPath, testsArmedPath]) {
       try { fs.unlinkSync(p); } catch { /* never existed */ }
     }
     process.exit(0);
@@ -1501,6 +1647,10 @@ async function main() {
       process.exit(0);
     }
     console.log(`gates: ${r.results.join(' ')}`);
+    if (r.timing) {
+      if (r.timing.off) console.error(`ristretto: test-time guard off: ${r.timing.off}`);
+      for (const line of timeReport(r.timing, r.times)) console.log(line);
+    }
     recordSuite(r.failures ? (r.red ? 'red' : 'unverified') : 'green',r.results.join(' '), r.failures ? r.results.filter((x) => x.endsWith('✗')).map((x) => x.slice(0, -2)).join(', ') : '');
     if (r.failures) {
       console.error(r.failures);
@@ -1630,6 +1780,63 @@ async function main() {
       process.exit(1);
     }
     process.exit(0);
+  }
+
+  // The slow suite, run when the owner asks in the chat — never by a hook, verify, prove or a
+  // build. Its verdict goes to slow.json alone: a red slow run makes nothing unproven and changes
+  // no status. Not while a build is armed: a run this long would hold the gate lock for all of it,
+  // and every stop of that build would come back unverified. 0 green, 1 red, 2 refused, 3 neither.
+  if (MODE === 'slow') {
+    if (fs.existsSync(markerPath) && (markerIdleMs(markerPath) ?? 0) <= MARKER_MAX_IDLE_MS) {
+      console.error('ristretto: a build is armed in this repo — the slow suite waits until it is done, since it would');
+      console.error('  hold the gate lock for its whole run and leave every stop of that build unverified.');
+      process.exit(2);
+    }
+    if (!gates.testSlow) {
+      console.error('ristretto: no "testSlow" in .ristretto.json — no slow suite to run. reference/config.md says how to set one.');
+      process.exit(1);
+    }
+    const only = ARG === '--only' ? (process.argv[4] || '') : '';
+    let cmd = gates.testSlow;
+    if (cmd.includes('{files}')) {
+      const files = only ? [only] : (git('ls-files') || '').split(/\r?\n/).filter((p) => p && matchesAny(p, gates.slowPaths));
+      cmd = cmd.replace('{files}', quote(files));
+    } else if (only) {
+      console.error(`ristretto: "testSlow" has no {files} — running the whole slow suite, not only ${only}.`);
+    }
+    if (!(await acquireLock('slow'))) {
+      console.error(`ristretto: could not start — ${lockHolder()} still holds the gate lock after ${waitSec}s. Nothing ran.`);
+      process.exit(3);
+    }
+    const reports = reportList(gates.testSlowReport);
+    for (const rel of reports) { try { fs.unlinkSync(path.join(projectDir, rel)); } catch { /* nothing to clear */ } }
+    const result = await run(cmd, budget({ key: 'testSlow' }));
+    let ran = null;
+    let failing = [];
+    let readAny = false;
+    for (const rel of reports) {
+      const report = readReport(path.join(projectDir, rel));
+      if (!report) continue;
+      readAny = true;
+      ran = (ran ?? 0) + report.executed.size;
+      failing.push(...report.failing);
+    }
+    const hung = Boolean(result && (result.stalled || result.hardCapped));
+    failing = [...new Set(failing)];
+    // The report outranks the exit code, as in every gate: it names which test failed.
+    let verdict;
+    if (hung) verdict = 'unverified';
+    else if (readAny) verdict = failing.length ? 'red' : 'green';
+    else verdict = result === null ? 'green' : 'red';
+    writeJsonAtomic(slowPath, { at: Date.now(), head: headNow(), verdict, ran, failing });
+    const count = ran === null ? '' : `${ran} ran · `;
+    if (verdict === 'green') console.log(`slow tests: ${count}green`);
+    else if (verdict === 'red') {
+      console.log(`slow tests: ${count}${failing.length ? `${failing.length} failing` : 'red'}`);
+      for (const id of failing.slice(0, 25)) console.log(`  ${id}`);
+      if (!failing.length && result) console.log(result.output.split('\n').slice(-40).join('\n'));
+    } else console.error(hangAdvice({ key: 'testSlow', label: 'slow tests' }, result, budget({ key: 'testSlow' }).silenceSec));
+    process.exit(verdict === 'green' ? 0 : verdict === 'red' ? 1 : 3);
   }
 
   process.exit(0);

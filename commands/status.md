@@ -13,7 +13,7 @@ Filter (optional): $ARGUMENTS
 1. Read `docs/ristretto/roadmap.md` in this folder and in each of its direct subfolders: the same set the brewer reads. With more than one, tag every row with its folder and read each row's plan from that folder. None anywhere → tell the user there's no roadmap yet and to run `/ristretto:prep` to start one, then stop.
 2. **Brew gauge.** Lead with a 10-segment gauge of done / total, filled proportionally (round to nearest segment), e.g.:
    `☕ [█████░░░░░] 5/10 brewed`
-   If any `done` feature's plan still has an open box or an open finding, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`.
+   If any `done` feature's plan still has an open box or an open finding, add one line under it: `🔧 2 waiting on you — /ristretto:status checks`. If a setup printed at session start has a `none yet` slot, add one line for it: `⚙ setup: <slot> none yet — a build that adds it fills it, or /ristretto:init`. Where a repo's `.ristretto.json` sets `testSlow`, add one line from its `.ristretto/slow.json`: `slow tests: last run <age> · green | <k> failing | never run` — say "run the slow tests" to run them.
 3. Print a one-line count summary: planned / in-progress / blocked / done.
 4. Print the roadmap rows. If a filter was given, show only matching rows:
    - `open` → everything not `done`

@@ -111,6 +111,15 @@ export function suiteOf(record, { treeMatches, head } = {}) {
   return { state: 'red', text: `full suite · red · ${failing}`, failing };
 }
 
+// The slow suite's last run (2026-11-21), from .ristretto/slow.json: information for the rest view,
+// never a verdict on the build. null without a readable record.
+export function slowOf(record, now) {
+  if (!record || typeof record !== 'object' || typeof record.at !== 'number') return null;
+  const failing = Array.isArray(record.failing) ? record.failing.length : 0;
+  const result = record.verdict === 'green' ? 'green' : record.verdict === 'red' ? (failing ? `${failing} failing` : 'red') : 'unverified';
+  return `slow tests · last run ${ago(record.at, now)} · ${result}`;
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const DAY = 86400000;
 

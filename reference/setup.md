@@ -19,7 +19,7 @@ Whatever the app is:
 
 | Job | Kind of tool | Why |
 |---|---|---|
-| A check that should hold for good | repeatable in gates: whatever the repo already drives or calls itself with, or one init recommends adding | proof that stays |
+| A check that should hold for good | repeatable in gates, and only what stays fast: whatever the repo already calls itself with; a browser or a model serves the look and the slow suite | proof that stays |
 | One look, nobody watching | runs in the background, logs in as the test user | a background builder can use it |
 | One look, the owner watching | visible to the owner | the owner sees what was checked |
 | Needs the owner's own login | holds the owner's logins | the only way in; it takes over the owner's tool, so never in the background |
@@ -58,4 +58,4 @@ tracker: <name> · through: <client, connector or skill> · copy: plan, report �
 <free prose: anything the owner wants ristretto to do or avoid here>
 ```
 
-Leave out a section the owner did not ask for: an absent section is today's default. Everything in the file binds every role.
+Leave out a section the owner did not ask for: an absent section is today's default. A slot the owner wants but the project cannot fill yet — no app to start, no test user, no tool that drives it — is written `none yet`, never left out: a build that adds it reports a `setup:` line, and the owner's session fills the slot after the build. Everything in the file binds every role.

@@ -24,6 +24,8 @@ function readDartJson(text) {
   const testSuite = new Map();
   const executed = new Set();
   const failing = new Set();
+  const started = new Map();
+  const times = new Map();
   let sawEvent = false;
   for (const line of text.split('\n')) {
     const t = line.trim();
@@ -36,6 +38,7 @@ function readDartJson(text) {
     if (e.type === 'testStart' && e.test) {
       names.set(e.test.id, e.test.name);
       testSuite.set(e.test.id, e.test.suiteID);
+      if (typeof e.time === 'number') started.set(e.test.id, e.time);
     }
     if (e.type === 'testDone') {
       if (e.hidden || e.skipped) continue; // bookkeeping, or did not run
@@ -44,9 +47,11 @@ function readDartJson(text) {
       const id = `${suites.get(testSuite.get(e.testID)) || ''}::${name}`;
       executed.add(id);
       if (e.result !== 'success') failing.add(id);
+      const from = started.get(e.testID);
+      if (typeof e.time === 'number' && from !== undefined) times.set(id, Math.max(times.get(id) ?? 0, e.time - from));
     }
   }
-  return sawEvent ? { executed, failing } : null;
+  return sawEvent ? { executed, failing, times } : null;
 }
 
 function readReport(absPath) {

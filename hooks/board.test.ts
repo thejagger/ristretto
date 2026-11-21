@@ -210,6 +210,18 @@ describe('one repo: the four views (v1)', () => {
     await clock.settle()
   }
 
+  test('rest: the slow suite\'s last run, when the owner ran it; nothing when never run', async ($, on) => {
+    const w = world()
+    w.files['.ristretto/slow.json'] = JSON.stringify({ at: NOW - 3 * 86400000, head: 'x', verdict: 'red', ran: 4, failing: ['e2e::journey'] })
+    await start($, on, w)
+    expect(await texts(await mount($))).toContain('slow tests · last run 3 days ago · 1 failing')
+  })
+
+  test('rest: no slow run, no slow line', async ($, on) => {
+    await start($, on)
+    expect(await texts(await mount($))).not.toContain('slow tests')
+  })
+
   test('rest: whose turn it is: what to test, what is blocked, what comes next', async ($, on) => {
     await start($, on)
     const ui = await mount($)
@@ -682,6 +694,16 @@ describe('v1: the steps, prep and its pins', () => {
     const opens = w.opens ?? 0
     await $.command.run({ command: 'ristretto:prep', args: '', presentation: { isFullscreen: false, columns: 80 } } as any).catch(() => {})
     expect((w.opens ?? 0) - opens).toBe(1)
+  })
+
+  test('init talks the setup through as prep does: the pane opens, INIT pins what it settles', async ($, on) => {
+    const { w } = await start($, on)
+    const opens = w.opens ?? 0
+    await $.command.run({ command: 'ristretto:init', args: '', presentation: shown } as any).catch(() => {})
+    expect((w.opens ?? 0) - opens).toBe(1)
+    expect(w.state!.prep).toMatchObject({ kind: 'init', id: null })
+    await $.turn.complete(turnEnd('decided: Git → never push') as any).catch(() => {})
+    expect(w.state!.pins.points.map((p: any) => p.topic)).toEqual(['Git'])
   })
 
   test('a build ends prep, clears its pins and opens the pane where it docks', async ($, on) => {

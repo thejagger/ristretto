@@ -38,6 +38,7 @@ Then open with the overview, in chat:
 - **What's there** — a few lines: what exists, what this would touch.
 - **Each open point** — the options, each with a score out of 5 and what decides between them: price, a link to the source, maturity, fit with this repo, best practice. Your recommendation, and why in a clause.
 - **Settled** — what the ticket, the code or an earlier plan already decides, cited, so nobody asks it again.
+- **The setup**, one line, only when it has a `none yet` slot that this session has a tool for, or that this feature would fill: init can take the tool now; the build fills the slot itself.
 
 Only what would change a decision earns a line. A clear ticket's overview is a few lines and a ready plan; an idea or a refactor gets the full spread.
 
@@ -91,7 +92,7 @@ Default to **one** plan per input: the ID is the git-tracking key, and over-spli
 - Provides: <public surface another feature uses, at type level — `sendOtp(phone: string): Promise<OtpToken>` — only when one depends on this; else —>
 ```
 
-- **Acceptance** is what the user gets. Every line becomes a test that runs for the life of the repo, so write only what you would want a build stopped for. What only a real run can tell — a score, a latency — say so in the line; it is measured, never promised.
+- **Acceptance** is what the user gets. Every line is proven by the build — by a behaviour test, often one for several lines, or by a look during the build — so write only what you would want a build stopped for. How a line is proven is the builder's call; a slow test — a browser, a model, an upload, run only when the owner asks — exists only where the owner wants one, as a decision `make sure → <what>`. What only a real run can tell — a score, a latency — say so in the line; it is measured, never promised.
 - **A refactor's acceptance** is that behaviour stays the same and the suite stays green, plus anything it must newly make possible. The shape it is after is a decision.
 - **`[human]`** only where `${CLAUDE_PLUGIN_ROOT}/briefs/common.md`'s reach test says so, and never about production. It should feel rare.
 - **Decisions** hold what you settled together, product or code. What was never discussed is the builder's to decide, and the build records it as `taken:`.

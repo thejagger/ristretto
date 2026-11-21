@@ -20,6 +20,12 @@ assert.deepStrictEqual([...r.executed].sort(),
   ['test/sample_test.dart::fails', 'test/sample_test.dart::passes']);
 assert.deepStrictEqual([...r.failing], ['test/sample_test.dart::fails']);
 
+// 2c. Per-test times from the Dart JSON reporter: testDone.time − testStart.time, in ms.
+r = readReport(path.join(__dirname, 'junit.fixtures', 'dart.jsonl'));
+assert.strictEqual(r.times.get('test/sample_test.dart::passes'), 13);
+assert.strictEqual(r.times.get('test/sample_test.dart::fails'), 13);
+assert.ok(!r.times.has('test/sample_test.dart::ignored'), 'a skipped test has no time');
+
 // 3. Neither format → null, so the caller falls back to the exit code.
 assert.strictEqual(readReport(path.join(__dirname, 'testreport.js')), null);
 assert.strictEqual(readReport(path.join(__dirname, 'nope.nothing')), null);

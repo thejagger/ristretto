@@ -77,5 +77,13 @@ default), `lockWait` (how long a run waits for the repo-wide gate lock), `watchd
 long the agent waiting on these gates may itself stay silent). Defaults hold across
 stacks; touch them only when one is actually wrong for this repo.
 
+**Two suites.** In `gates`, `test` and `testChanged` are the fast suite, the only one a gate runs.
+`testSlow` is the slow suite — a browser, a model call, an upload — run only when the owner
+says "run the slow tests"; a `{files}` in it runs one file alone, and `testSlowReport` is its
+report. `slowPaths` (globs) says where its tests live: required with `testSlow`, it keeps those
+files out of `{files}`, and the `test` command must leave them out too — a folder, a tag, a
+project, as the runner allows. `slowTest` (top level, seconds, default 2): a new test in the fast suite
+slower than that fails `verify`; it needs a `testReport` that records times.
+
 `.ristretto.json` belongs in git; `.ristretto/` (transient state) belongs in
 `.gitignore`.
